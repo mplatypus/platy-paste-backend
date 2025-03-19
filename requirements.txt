@@ -1,2 +1,0 @@
-Quart==0.19.4
-Quart-Discord==2.1.4
