@@ -30,7 +30,6 @@ future_not_send = "allow"
 # Doesn't play nicely with tokio::select!
 redundant_pub_crate = "allow"
 
-
 [dependencies]
 # Async
 tokio = { version = "1", features = ["full"] }
@@ -69,3 +68,17 @@ base64 = "0.22"
 time = "0.3"
 bitflags = { version = "2.8", features = ["serde"] }
 getrandom = "0.3"
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3
+
+[profile.dev.package.backtrace]
+opt-level = 3
+
+# Enable incremental compilation for dev builds to improve re-compilation time.
+[profile.dev]
+incremental = true
+
+# Enable LTO for release builds to reduce binary size.
+[profile.release]
+lto = true
