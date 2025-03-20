@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, owner_token, paste_id, type FROM documents WHERE owner_token = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_token",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "paste_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bpchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a1e7fcbb85b51cda99fc2a2d5e654c26b59932003185887b9c1f2483e435c165"
+}

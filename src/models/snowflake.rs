@@ -1,4 +1,9 @@
-use std::{fmt, num::ParseIntError, str::FromStr, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fmt,
+    num::ParseIntError,
+    str::FromStr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 use sqlx::{Decode, Encode};
@@ -23,7 +28,7 @@ impl Snowflake {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_millis() as u64;
-        
+
         let id = getrandom::u64().map_err(|e| AppError::NotFound(e.to_string()))?;
 
         let new_snowflake = Snowflake::new((timestamp << 22) | (id as u64 & 0x3FFFFF));
@@ -32,7 +37,7 @@ impl Snowflake {
     }
 
     /// Id
-    /// 
+    ///
     /// Get the ID for the snowflake.
     pub fn id(&self) -> u64 {
         self.0
@@ -60,9 +65,9 @@ impl FromStr for Snowflake {
     }
 }
 
-impl Into<String> for Snowflake {
-    fn into(self) -> String {
-        self.to_string()
+impl From<Snowflake> for String {
+    fn from(value: Snowflake) -> Self {
+        value.to_string()
     }
 }
 
