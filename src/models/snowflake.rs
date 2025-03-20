@@ -19,11 +19,11 @@ use super::error::AppError;
 pub struct Snowflake(u64);
 
 impl Snowflake {
-    pub fn new(id: u64) -> Snowflake {
-        Snowflake(id)
+    pub const fn new(id: u64) -> Self {
+        Self(id)
     }
 
-    pub async fn generate(db: &Database) -> Result<Snowflake, AppError> {
+    pub fn generate(_db: &Database) -> Result<Self, AppError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
@@ -31,7 +31,7 @@ impl Snowflake {
 
         let id = getrandom::u64().map_err(|e| AppError::NotFound(e.to_string()))?;
 
-        let new_snowflake = Snowflake::new((timestamp << 22) | (id as u64 & 0x3FFFFF));
+        let new_snowflake = Self::new((timestamp << 22) | (id as u64 & 0x003F_FFFF));
 
         Ok(new_snowflake)
     }
@@ -39,21 +39,21 @@ impl Snowflake {
     /// Id
     ///
     /// Get the ID for the snowflake.
-    pub fn id(&self) -> u64 {
+    pub const fn id(&self) -> u64 {
         self.0
     }
 
     /// Created At
     ///
     /// The time since epoch, that this ID was created at.
-    pub fn created_at(&self) -> u64 {
+    pub const fn created_at(&self) -> u64 {
         self.id() >> 22
     }
 }
 
 impl fmt::Display for Snowflake {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.id())
     }
 }
 
@@ -61,7 +61,7 @@ impl FromStr for Snowflake {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Snowflake(s.parse()?))
+        Ok(Self(s.parse()?))
     }
 }
 
@@ -75,7 +75,7 @@ impl TryFrom<String> for Snowflake {
     type Error = ParseIntError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(Snowflake(value.parse()?))
+        Ok(Self(value.parse()?))
     }
 }
 
@@ -83,30 +83,30 @@ impl TryFrom<&str> for Snowflake {
     type Error = ParseIntError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(Snowflake(value.parse()?))
+        Ok(Self(value.parse()?))
     }
 }
 
-impl Into<u64> for Snowflake {
-    fn into(self) -> u64 {
-        self.id()
+impl From<Snowflake> for u64 {
+    fn from(value: Snowflake) -> Self {
+        value.id()
     }
 }
 
 impl From<u64> for Snowflake {
     fn from(value: u64) -> Self {
-        Snowflake(value)
+        Self(value)
     }
 }
 
-impl Into<i64> for Snowflake {
-    fn into(self) -> i64 {
-        self.0 as i64
+impl From<Snowflake> for i64 {
+    fn from(value: Snowflake) -> Self {
+        value.id() as Self
     }
 }
 
 impl From<i64> for Snowflake {
     fn from(value: i64) -> Self {
-        Snowflake(value as u64)
+        Self(value as u64)
     }
 }

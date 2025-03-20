@@ -2,7 +2,7 @@ use std::sync::{Arc, Weak};
 
 use sqlx::{migrate, postgres::PgPool};
 
-use super::app::ApplicationState;
+use super::application::ApplicationState;
 
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -14,7 +14,7 @@ impl Database {
     /// Creates a new database instance
     ///
     /// Note: The database is not connected by default
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             pool: None,
             app: Weak::new(),
@@ -36,7 +36,7 @@ impl Database {
     /// ## Panics
     ///
     /// If the database is not connected
-    pub fn pool(&self) -> &PgPool {
+    pub const fn pool(&self) -> &PgPool {
         self.pool
             .as_ref()
             .expect("Database is not connected or has been closed.")
@@ -48,7 +48,7 @@ impl Database {
     ///
     /// `true` if the database is connected, `false` otherwise
     pub fn is_connected(&self) -> bool {
-        self.pool.as_ref().map_or(false, |pool| !pool.is_closed())
+        self.pool.as_ref().is_some_and(|pool| !pool.is_closed())
     }
 
     /// Connects to the database

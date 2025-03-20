@@ -15,8 +15,8 @@ pub struct Paste {
 }
 
 impl Paste {
-    pub fn new(id: Snowflake, owner_token: String, document_ids: Vec<Snowflake>) -> Paste {
-        Paste {
+    pub const fn new(id: Snowflake, owner_token: String, document_ids: Vec<Snowflake>) -> Self {
+        Self {
             id,
             owner_token,
             document_ids,
@@ -32,7 +32,7 @@ impl Paste {
     }
 
     pub fn clear_documents(&mut self) {
-        self.document_ids.clear()
+        self.document_ids.clear();
     }
 
     /// Fetch.
@@ -40,7 +40,7 @@ impl Paste {
     /// Fetch the pastes, via their ID.
     ///
     /// - [id]: The ID to look for.
-    pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Paste>, AppError> {
+    pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
             "SELECT id, owner_token, document_ids FROM pastes WHERE id = $1",
@@ -50,10 +50,10 @@ impl Paste {
         .await?;
 
         if let Some(q) = query {
-            return Ok(Some(Paste::new(
+            return Ok(Some(Self::new(
                 q.id.into(),
                 q.owner_token,
-                Paste::decode_document_ids(q.document_ids)?,
+                Self::decode_document_ids(&q.document_ids)?,
             )));
         }
 
@@ -65,7 +65,7 @@ impl Paste {
     /// Fetch all pastes owned by a token.
     ///
     /// - [token]: The Token to look for.
-    pub async fn fetch_all(db: &Database, token: String) -> Result<Vec<Paste>, AppError> {
+    pub async fn fetch_all(db: &Database, token: String) -> Result<Vec<Self>, AppError> {
         let query = sqlx::query!(
             "SELECT id, owner_token, document_ids FROM pastes WHERE owner_token = $1",
             token
@@ -73,13 +73,13 @@ impl Paste {
         .fetch_all(db.pool())
         .await?;
 
-        let mut pastes: Vec<Paste> = Vec::new();
+        let mut pastes: Vec<Self> = Vec::new();
         for record in query {
-            pastes.push(Paste::new(
+            pastes.push(Self::new(
                 record.id.into(),
                 record.owner_token,
-                Paste::decode_document_ids(record.document_ids)?,
-            ))
+                Self::decode_document_ids(&record.document_ids)?,
+            ));
         }
         Ok(pastes)
     }
@@ -87,7 +87,8 @@ impl Paste {
     /// Update.
     ///
     /// Update a existing paste.
-    pub async fn update(&self, db: &Database) -> Result<Paste, AppError> {
+    #[expect(clippy::unused_async)]
+    pub async fn update(&self, _db: &Database) -> Result<Self, AppError> {
         todo!()
     }
 
@@ -118,16 +119,18 @@ impl Paste {
         Ok(())
     }
 
-    fn decode_document_ids(document_ids_string: String) -> Result<Vec<Snowflake>, AppError> {
+    fn decode_document_ids(document_ids_string: &str) -> Result<Vec<Snowflake>, AppError> {
         let mut document_ids = Vec::new();
-        for document_id_string in document_ids_string.split("::").into_iter() {
-            document_ids.push(Snowflake::try_from(document_id_string)?)
+        for document_id_string in document_ids_string.split("::") {
+            document_ids.push(Snowflake::try_from(document_id_string)?);
         }
         Ok(document_ids)
     }
 
-    fn encode_document_ids(document_ids: Vec<Snowflake>) -> String {
-        let document_id_strings: Vec<String> = document_ids.iter().map(|v| v.to_string()).collect();
+    #[expect(dead_code)] // Remove when function is used used
+    fn encode_document_ids(document_ids: &[Snowflake]) -> String {
+        let document_id_strings: Vec<String> =
+            document_ids.iter().map(ToString::to_string).collect();
         document_id_strings.join("::")
     }
 }

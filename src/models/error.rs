@@ -1,7 +1,7 @@
 use aws_sdk_s3::error::{DisplayErrorContext, SdkError};
 use axum::{
     Json,
-    extract::multipart::{self, MultipartError},
+    extract::multipart::MultipartError,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -39,8 +39,7 @@ impl IntoResponse for AppError {
             Self::Database(_) => (StatusCode::BAD_REQUEST, "Database Error."),
             Self::Authentication(e) => return e.into_response(),
             Self::Multipart(e) => return e.into_response(),
-            Self::Json(_) => (StatusCode::BAD_REQUEST, ""),
-            Self::Reqwest(_) => (StatusCode::BAD_REQUEST, ""),
+            Self::Json(_) | Self::Reqwest(_) => (StatusCode::BAD_REQUEST, ""),
             Self::S3Client(_) => (StatusCode::INTERNAL_SERVER_ERROR, ""),
             Self::ParseIntError(_) => (StatusCode::BAD_REQUEST, "Failed to parse integer."),
             Self::NotFound(ref e) => (StatusCode::NOT_FOUND, &e.clone()),

@@ -23,14 +23,15 @@ pub enum DocumentType {
 }
 
 impl DocumentType {
-    pub fn from_file_type(file_type: String) -> DocumentType {
-        match file_type.to_lowercase().as_str() { // TODO: Is there more file types that should be matched?
-            "txt" => DocumentType::Text,
-            "py" => DocumentType::Python,
-            "rs" => DocumentType::Rust,
-            "sql" => DocumentType::Sql,
-            "md" => DocumentType::Markdown,
-            value => DocumentType::Unknown(value.to_string())
+    pub fn from_file_type(file_type: &str) -> Self {
+        match file_type.to_lowercase().as_str() {
+            // TODO: Is there more file types that should be matched?
+            "txt" => Self::Text,
+            "py" => Self::Python,
+            "rs" => Self::Rust,
+            "sql" => Self::Sql,
+            "md" => Self::Markdown,
+            value => Self::Unknown(value.to_string()),
         }
     }
 }
@@ -41,12 +42,12 @@ impl Serialize for DocumentType {
         S: Serializer,
     {
         match self {
-            DocumentType::Text => "text",
-            DocumentType::Python => "python",
-            DocumentType::Rust => "rust",
-            DocumentType::Sql => "sql",
-            DocumentType::Markdown => "markdown",
-            DocumentType::Unknown(unknown_type) => unknown_type,
+            Self::Text => "text",
+            Self::Python => "python",
+            Self::Rust => "rust",
+            Self::Sql => "sql",
+            Self::Markdown => "markdown",
+            Self::Unknown(unknown_type) => unknown_type,
         }
         .serialize(serializer)
     }
@@ -56,20 +57,20 @@ impl<'de> serde::Deserialize<'de> for DocumentType {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let value = String::deserialize(d)?;
 
-        Ok(DocumentType::from(value))
+        Ok(Self::from(value))
     }
 }
 
 impl From<String> for DocumentType {
     fn from(value: String) -> Self {
         match value.as_str() {
-            "text" => DocumentType::Text,
-            "python" => DocumentType::Python,
-            "rust" => DocumentType::Rust,
-            "sql" => DocumentType::Sql,
-            "markdown" => DocumentType::Markdown,
-            "unknown" => DocumentType::Unknown("unknown".to_string()), // the file type unknown is locked to unknown.
-            unknown => DocumentType::Unknown(unknown.to_string()),
+            "text" => Self::Text,
+            "python" => Self::Python,
+            "rust" => Self::Rust,
+            "sql" => Self::Sql,
+            "markdown" => Self::Markdown,
+            "unknown" => Self::Unknown("unknown".to_string()), // the file type unknown is locked to unknown.
+            unknown => Self::Unknown(unknown.to_string()),
         }
     }
 }
@@ -87,13 +88,13 @@ pub struct Document {
 }
 
 impl Document {
-    pub fn new(
+    pub const fn new(
         id: Snowflake,
         token: String,
         paste_id: Snowflake,
         doc_type: DocumentType,
-    ) -> Document {
-        Document {
+    ) -> Self {
+        Self {
             id,
             token,
             paste_id,
@@ -105,8 +106,8 @@ impl Document {
     ///
     /// Generate a URL to fetch the location of the document.
     ///
-    /// - [base_url]: The base url to append.
-    pub fn generate_url(&self, base_url: String) -> String {
+    /// - [`base_url`]: The base url to append.
+    pub fn generate_url(&self, base_url: &str) -> String {
         format!("{}/{}/{}", base_url, self.token, self.id)
     }
 
@@ -115,7 +116,7 @@ impl Document {
     /// Fetch the documents, via their ID.
     ///
     /// - [id]: The ID to look for.
-    pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Document>, AppError> {
+    pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
             "SELECT id, owner_token, paste_id, type FROM documents WHERE id = $1",
@@ -125,7 +126,7 @@ impl Document {
         .await?;
 
         if let Some(q) = query {
-            return Ok(Some(Document::new(
+            return Ok(Some(Self::new(
                 q.id.into(),
                 q.owner_token,
                 q.paste_id.into(),
@@ -141,7 +142,7 @@ impl Document {
     /// Fetch all documents owned by a token.
     ///
     /// - [token]: The Token to look for.
-    pub async fn fetch_all_token(db: &Database, token: String) -> Result<Vec<Document>, AppError> {
+    pub async fn fetch_all_token(db: &Database, token: String) -> Result<Vec<Self>, AppError> {
         let query = sqlx::query!(
             "SELECT id, owner_token, paste_id, type FROM documents WHERE owner_token = $1",
             token
@@ -149,14 +150,14 @@ impl Document {
         .fetch_all(db.pool())
         .await?;
 
-        let mut documents: Vec<Document> = Vec::new();
+        let mut documents: Vec<Self> = Vec::new();
         for record in query {
-            documents.push(Document::new(
+            documents.push(Self::new(
                 record.id.into(),
                 record.owner_token,
                 record.paste_id.into(),
                 DocumentType::from(record.r#type),
-            ))
+            ));
         }
         Ok(documents)
     }
@@ -166,7 +167,7 @@ impl Document {
     /// Fetch all documents owned by a paste.
     ///
     /// - [id]: The paste ID to look for.
-    pub async fn fetch_all_paste(db: &Database, id: Snowflake) -> Result<Vec<Document>, AppError> {
+    pub async fn fetch_all_paste(db: &Database, id: Snowflake) -> Result<Vec<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
             "SELECT id, owner_token, paste_id, type FROM documents WHERE paste_id = $1",
@@ -175,14 +176,14 @@ impl Document {
         .fetch_all(db.pool())
         .await?;
 
-        let mut documents: Vec<Document> = Vec::new();
+        let mut documents: Vec<Self> = Vec::new();
         for record in query {
-            documents.push(Document::new(
+            documents.push(Self::new(
                 record.id.into(),
                 record.owner_token,
                 record.paste_id.into(),
                 DocumentType::from(record.r#type),
-            ))
+            ));
         }
         Ok(documents)
     }
@@ -190,7 +191,8 @@ impl Document {
     /// Update.
     ///
     /// Update a existing paste.
-    pub async fn update(&self, db: &Database) -> Result<Paste, AppError> {
+    #[expect(clippy::unused_async)]
+    pub async fn update(&self, _db: &Database) -> Result<Paste, AppError> {
         todo!()
     }
 

@@ -1,9 +1,9 @@
-use aws_sdk_s3::{error::SdkError, operation::head_bucket::HeadBucketError, primitives::ByteStream};
+use aws_sdk_s3::{error::SdkError, operation::head_bucket::HeadBucketError};
 use bytes::{Bytes, BytesMut};
 
 use crate::models::{error::AppError, snowflake::Snowflake};
 
-use super::app::{ApplicationState, S3Client};
+use super::application::{ApplicationState, S3Client};
 
 use std::sync::{Arc, Weak};
 
@@ -40,12 +40,25 @@ impl S3Service {
     }
 
     pub async fn create_buckets(&self) -> Result<(), AppError> {
-        match self.client.head_bucket().bucket(self.document_bucket_name()).send().await {
+        match self
+            .client
+            .head_bucket()
+            .bucket(self.document_bucket_name())
+            .send()
+            .await
+        {
             Ok(_) => {
-                tracing::info!("S3 Bucket {} already exists, skipping creation.", self.document_bucket_name());
+                tracing::info!(
+                    "S3 Bucket {} already exists, skipping creation.",
+                    self.document_bucket_name()
+                );
             }
             Err(SdkError::ServiceError(e)) if matches!(e.err(), HeadBucketError::NotFound(_)) => {
-                self.client.create_bucket().bucket(self.document_bucket_name()).send().await?;
+                self.client
+                    .create_bucket()
+                    .bucket(self.document_bucket_name())
+                    .send()
+                    .await?;
                 tracing::info!("Created S3 bucket: {}", self.document_bucket_name());
             }
             Err(e) => return Err(e.into()),
@@ -57,7 +70,8 @@ impl S3Service {
     pub async fn fetch_document(&self, document_id: Snowflake) -> Result<Bytes, AppError> {
         let id: String = document_id.into();
 
-        let mut data = self.client
+        let mut data = self
+            .client
             .get_object()
             .bucket(self.document_bucket_name())
             .key(id)
@@ -72,14 +86,18 @@ impl S3Service {
         Ok(bytes.freeze())
     }
 
-    pub async fn create_document(&self, document_id: Snowflake, data: Bytes) -> Result<(), AppError> {
+    pub async fn create_document(
+        &self,
+        document_id: Snowflake,
+        data: Bytes,
+    ) -> Result<(), AppError> {
         let id: String = document_id.into();
 
         self.client
             .put_object()
             .bucket(self.document_bucket_name())
             .content_type("text/plain")
-            .key(format!("{}.txt", id))
+            .key(format!("{id}.txt"))
             .body(data.into())
             .send()
             .await?;

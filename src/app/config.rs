@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use derive_builder::Builder;
 use dotenvy::from_filename;
 use secrecy::SecretString;
@@ -29,7 +27,7 @@ impl Config {
         ConfigBuilder::default()
     }
 
-    pub fn from_env() -> Config {
+    pub fn from_env() -> Self {
         from_filename(".env").ok();
         Self::builder()
             .host(std::env::var("HOST").expect("HOST environment variable must be set."))
@@ -70,8 +68,8 @@ impl Config {
         self.host.clone()
     }
 
-    pub fn port(&self) -> u16 {
-        self.port.clone()
+    pub const fn port(&self) -> u16 {
+        self.port
     }
 
     pub fn database_url(&self) -> String {

@@ -47,10 +47,11 @@ async fn main() {
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
-    let state: Arc<app::app::ApplicationState> = match app::app::ApplicationState::new().await {
-        Ok(s) => s,
-        Err(err) => panic!("Failed to build state: {}", err),
-    };
+    let state: Arc<app::application::ApplicationState> =
+        match app::application::ApplicationState::new().await {
+            Ok(s) => s,
+            Err(err) => panic!("Failed to build state: {err}"),
+        };
 
     let app = Router::new()
         //.nest("/admin", rest::admin::generate_router())
@@ -71,7 +72,7 @@ async fn main() {
         port
     );
 
-    let listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port))
+    let listener = tokio::net::TcpListener::bind(format!("{host}:{port}"))
         .await
         .expect("Failed to bind to address");
 
