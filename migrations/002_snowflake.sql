@@ -1,3 +1,0 @@
-CREATE TABLE snowflake (
-    id BIGINT PRIMARY KEY
-);
