@@ -35,14 +35,19 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, reason): (StatusCode, &str) = match self {
-            Self::Database(_) => (StatusCode::BAD_REQUEST, "Database Error."),
+        let (status, reason, trace): (StatusCode, &str, String) = match self {
+            Self::Database(ref e) => (StatusCode::BAD_REQUEST, "Database Error", e.to_string()),
             Self::Authentication(e) => return e.into_response(),
             Self::Multipart(e) => return e.into_response(),
-            Self::Json(_) | Self::Reqwest(_) => (StatusCode::BAD_REQUEST, ""),
-            Self::S3Client(_) => (StatusCode::INTERNAL_SERVER_ERROR, ""),
-            Self::ParseIntError(_) => (StatusCode::BAD_REQUEST, "Failed to parse integer."),
-            Self::NotFound(ref e) => (StatusCode::NOT_FOUND, &e.clone()),
+            Self::Json(ref e) => (StatusCode::BAD_REQUEST, "Json Error", e.to_string()),
+            Self::Reqwest(ref e) => (StatusCode::BAD_REQUEST, "", e.to_string()),
+            Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error.", e.clone()),
+            Self::ParseIntError(ref e) => (
+                StatusCode::BAD_REQUEST,
+                "Failed to parse integer.",
+                e.to_string(),
+            ),
+            Self::NotFound(ref e) => (StatusCode::NOT_FOUND, &e.clone(), String::new()),
         };
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = %self);
@@ -53,7 +58,7 @@ impl IntoResponse for AppError {
                 .expect("Could not fetch current time.")
                 .as_secs(),
             reason: String::from(reason),
-            trace: None,
+            trace: Some(trace), // This should only appear if the trace is requested (the query contains trace=True)
         });
         (status, body).into_response()
     }
