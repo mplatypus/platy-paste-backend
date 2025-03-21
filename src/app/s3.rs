@@ -1,7 +1,7 @@
 use aws_sdk_s3::{error::SdkError, operation::head_bucket::HeadBucketError};
 use bytes::{Bytes, BytesMut};
 
-use crate::models::{error::AppError, snowflake::Snowflake};
+use crate::models::error::AppError;
 
 use super::application::{ApplicationState, S3Client};
 
@@ -67,14 +67,12 @@ impl S3Service {
         Ok(())
     }
 
-    pub async fn fetch_document(&self, document_id: Snowflake) -> Result<Bytes, AppError> {
-        let id: String = document_id.into();
-
+    pub async fn fetch_document(&self, document_path: String) -> Result<Bytes, AppError> {
         let mut data = self
             .client
             .get_object()
             .bucket(self.document_bucket_name())
-            .key(id)
+            .key(document_path)
             .send()
             .await?;
 
@@ -88,16 +86,14 @@ impl S3Service {
 
     pub async fn create_document(
         &self,
-        document_id: Snowflake,
+        document_path: String,
         data: Bytes,
     ) -> Result<(), AppError> {
-        let id: String = document_id.into();
-
         self.client
             .put_object()
             .bucket(self.document_bucket_name())
             .content_type("text/plain")
-            .key(format!("{id}.txt"))
+            .key(document_path)
             .body(data.into())
             .send()
             .await?;
@@ -105,13 +101,11 @@ impl S3Service {
         Ok(())
     }
 
-    pub async fn delete_document(&self, document_id: Snowflake) -> Result<(), AppError> {
-        let id: String = document_id.into();
-
+    pub async fn delete_document(&self, document_path: String) -> Result<(), AppError> {
         self.client
             .delete_object()
             .bucket(self.document_bucket_name())
-            .key(id)
+            .key(document_path)
             .send()
             .await?;
 
