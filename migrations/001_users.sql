@@ -1,5 +1,0 @@
-CREATE TABLE IF NOT EXISTS users (
-    "token" CHAR(25) NOT NULL PRIMARY KEY,
-    "email" TEXT NOT NULL UNIQUE,
-    "permissions" BIGINT NOT NULL
-);
