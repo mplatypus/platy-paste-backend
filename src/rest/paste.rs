@@ -37,9 +37,9 @@ async fn get_paste(
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
-    let mut documents = Vec::new();
-    for document_id in paste.document_ids {
-        let document = Document::fetch(&app.database, document_id)
+    let mut response_documents = Vec::new();
+    for document_id in &paste.document_ids {
+        let document = Document::fetch(&app.database, *document_id)
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!("Could not find document with ID: {document_id}"))
@@ -47,7 +47,7 @@ async fn get_paste(
 
         let content = {
             if query.request_content {
-                let data = app.s3.fetch_document(document.id).await?;
+                let data = app.s3.fetch_document(document.generate_path()).await?;
                 let d: &str = &String::from_utf8_lossy(&data);
                 Some(d.to_string())
             } else {
@@ -55,22 +55,12 @@ async fn get_paste(
             }
         };
 
-        let response_document = PostPasteResponseDocument {
-            id: document.id,
-            token: document.token,
-            paste_id: document.paste_id,
-            document_type: document.doc_type,
-            content,
-        };
+        let response_document = ResponseDocument::from_document(document, content);
 
-        documents.push(response_document);
+        response_documents.push(response_document);
     }
 
-    let paste_response = PostPasteResponse {
-        id: paste.id,
-        token: paste.owner_token,
-        documents,
-    };
+    let paste_response = ResponsePaste::from_paste(&paste, response_documents);
 
     Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
@@ -88,17 +78,32 @@ async fn get_pastes(
     Json(body): Json<GetPastesBody>,
     //_: Token
 ) -> Result<Response, AppError> {
-    let mut pastes = Vec::new();
+    let mut response_pastes: Vec<ResponsePaste> = Vec::new();
 
-    for paste in body.pastes {
-        let paste = Paste::fetch(&app.database, paste)
+    for paste_id in body.pastes {
+        let paste = Paste::fetch(&app.database, paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
-        pastes.push(paste);
+        let mut response_documents = Vec::new();
+        for document_id in &paste.document_ids {
+            let document = Document::fetch(&app.database, *document_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("Could not find document with ID: {document_id}"))
+                })?;
+
+            let response_document = ResponseDocument::from_document(document, None);
+
+            response_documents.push(response_document);
+        }
+
+        let response_paste = ResponsePaste::from_paste(&paste, response_documents);
+
+        response_pastes.push(response_paste);
     }
 
-    Ok((StatusCode::OK, Json(pastes)).into_response())
+    Ok((StatusCode::OK, Json(response_pastes)).into_response())
 }
 
 #[derive(Deserialize, Serialize)]
@@ -112,12 +117,10 @@ async fn post_paste(
     Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    tracing::debug!("Here 1");
     let paste_id = Snowflake::generate(&app.database)?;
 
-    let mut documents: Vec<PostPasteResponseDocument> = Vec::new();
+    let mut response_documents: Vec<ResponseDocument> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
-        tracing::debug!("Here 2");
         if field
             .content_type()
             .is_some_and(|v| ["text/plain"].contains(&v))
@@ -125,7 +128,6 @@ async fn post_paste(
             let name = field.name().unwrap_or("unknown").to_string();
             let headers = field.headers().clone();
             let data = field.bytes().await?;
-            tracing::debug!("Here 3 ({})", name.clone());
             let document_id = Snowflake::generate(&app.database)?;
 
             let document_type = headers.get("").map_or_else(
@@ -140,61 +142,39 @@ async fn post_paste(
                 },
             );
 
-            tracing::debug!("Here 4 ({})", name.clone());
+            let document = Document::new(document_id, paste_id, document_type);
 
-            app.s3.create_document(document_id, data.clone()).await?;
-
-            tracing::debug!("Here 5 ({})", name.clone());
-
-            let document = Document::new(
-                document_id,
-                String::new(), // FIXME: This should use the token that owns this paste.
-                paste_id,
-                document_type,
-            );
+            app.s3
+                .create_document(document.generate_path(), data.clone())
+                .await?;
 
             document.update(&app.database).await?;
 
-            tracing::debug!("Here 6 ({})", name.clone());
-
-            let response_document = PostPasteResponseDocument {
-                id: document.id,
-                token: String::new(), // FIXME: This should use the token that owns this paste.
-                paste_id,
-                document_type: document.doc_type,
-                content: {
-                    if query.request_content {
-                        let d: &str = &String::from_utf8_lossy(&data);
-                        Some(d.to_string())
-                    } else {
-                        None
-                    }
-                },
+            let content = {
+                if query.request_content {
+                    let d: &str = &String::from_utf8_lossy(&data);
+                    Some(d.to_string())
+                } else {
+                    None
+                }
             };
 
-            tracing::debug!("Here 7 ({})", name.clone());
+            let response_document = ResponseDocument::from_document(document, content);
 
-            documents.push(response_document);
+            response_documents.push(response_document);
         }
     }
 
-    tracing::debug!("Here 8");
-
     let paste = Paste::new(
         paste_id,
-        String::new(), // FIXME: This should use the token that owns this paste.
-        documents.iter().map(|d| d.id).collect(),
+        None,
+        None,
+        response_documents.iter().map(|d| d.id).collect(),
     );
 
     paste.update(&app.database).await?;
 
-    tracing::debug!("Here 9");
-
-    let response = PostPasteResponse {
-        id: paste_id,
-        token: String::new(), // FIXME: This should use the token that owns this paste.
-        documents,
-    };
+    let response = ResponsePaste::from_paste(&paste, response_documents);
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -206,21 +186,49 @@ pub struct PostPasteQuery {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct PostPasteResponse {
+pub struct ResponsePaste {
     /// The ID for the paste.
     pub id: Snowflake,
+    /// The user that created this paste.
+    pub owner_id: Option<Snowflake>,
     /// The token that created the paste.
-    pub token: String,
+    pub owner_token: Option<String>,
     /// The documents attached to the paste.
-    pub documents: Vec<PostPasteResponseDocument>,
+    pub documents: Vec<ResponseDocument>,
+}
+
+impl ResponsePaste {
+    pub const fn new(
+        id: Snowflake,
+        owner_id: Option<Snowflake>,
+        owner_token: Option<String>,
+        documents: Vec<ResponseDocument>,
+    ) -> Self {
+        Self {
+            id,
+            owner_id,
+            owner_token,
+            documents,
+        }
+    }
+
+    pub fn from_paste(paste: &Paste, documents: Vec<ResponseDocument>) -> Self {
+        let owner_id = {
+            if paste.owner_token.is_some() {
+                None
+            } else {
+                paste.owner_id
+            }
+        };
+
+        Self::new(paste.id, owner_id, paste.owner_token.clone(), documents)
+    }
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct PostPasteResponseDocument {
+pub struct ResponseDocument {
     /// The ID for the document.
     pub id: Snowflake,
-    /// The token that created the document.
-    pub token: String,
     /// The paste ID the document is attached too.
     pub paste_id: Snowflake,
     /// The type of document.
@@ -228,6 +236,26 @@ pub struct PostPasteResponseDocument {
     pub document_type: DocumentType,
     /// The content of the document.
     pub content: Option<String>,
+}
+
+impl ResponseDocument {
+    pub const fn new(
+        id: Snowflake,
+        paste_id: Snowflake,
+        document_type: DocumentType,
+        content: Option<String>,
+    ) -> Self {
+        Self {
+            id,
+            paste_id,
+            document_type,
+            content,
+        }
+    }
+
+    pub fn from_document(document: Document, content: Option<String>) -> Self {
+        Self::new(document.id, document.paste_id, document.doc_type, content)
+    }
 }
 
 async fn patch_paste(
