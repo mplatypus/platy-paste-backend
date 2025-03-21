@@ -39,13 +39,13 @@ impl DocumentType {
 
     pub const fn to_file_type(&self) -> &'static str {
         match self {
-            // TODO: Is there more file types that should be matched?
             Self::Text => "txt",
             Self::Python => "py",
             Self::Rust => "rs",
             Self::Sql => "sql",
             Self::Markdown => "md",
-            #[allow(clippy::match_same_arms)] // This is only here due to the fact that "unknown" might change in the future.
+            #[allow(clippy::match_same_arms)]
+            // This is only here due to the fact that "unknown" might change in the future.
             Self::Unknown(_) => "txt",
         }
     }
@@ -125,10 +125,15 @@ impl Document {
     }
 
     /// Generate Path.
-    /// 
+    ///
     /// Generate the path to the resource.
     pub fn generate_path(&self) -> String {
-        format!("{}/{}.{}", self.paste_id, self.id, self.doc_type.to_file_type())
+        format!(
+            "{}/{}.{}",
+            self.paste_id,
+            self.id,
+            self.doc_type.to_file_type()
+        )
     }
 
     /// Fetch.
