@@ -1,8 +1,10 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::app::database::Database;
 
-use super::{error::AppError, paste::Paste, snowflake::Snowflake};
+use super::{error::AppError, snowflake::Snowflake};
 
 #[derive(Clone, Debug)]
 pub enum DocumentType {
@@ -34,6 +36,19 @@ impl DocumentType {
             value => Self::Unknown(value.to_string()),
         }
     }
+
+    pub const fn to_file_type(&self) -> &'static str {
+        match self {
+            // TODO: Is there more file types that should be matched?
+            Self::Text => "txt",
+            Self::Python => "py",
+            Self::Rust => "rs",
+            Self::Sql => "sql",
+            Self::Markdown => "md",
+            #[allow(clippy::match_same_arms)] // This is only here due to the fact that "unknown" might change in the future.
+            Self::Unknown(_) => "txt",
+        }
+    }
 }
 
 impl Serialize for DocumentType {
@@ -41,15 +56,7 @@ impl Serialize for DocumentType {
     where
         S: Serializer,
     {
-        match self {
-            Self::Text => "text",
-            Self::Python => "python",
-            Self::Rust => "rust",
-            Self::Sql => "sql",
-            Self::Markdown => "markdown",
-            Self::Unknown(unknown_type) => unknown_type,
-        }
-        .serialize(serializer)
+        self.to_string().serialize(serializer)
     }
 }
 
@@ -75,12 +82,24 @@ impl From<String> for DocumentType {
     }
 }
 
+impl fmt::Display for DocumentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let doc_type = match self {
+            Self::Text => "text",
+            Self::Python => "python",
+            Self::Rust => "rust",
+            Self::Sql => "sql",
+            Self::Markdown => "markdown",
+            Self::Unknown(unknown_type) => unknown_type,
+        };
+        write!(f, "{doc_type}")
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Document {
     /// The ID of the document.
     pub id: Snowflake,
-    /// The token that owns the document.
-    pub token: String,
     /// The paste that owns the document.
     pub paste_id: Snowflake,
     /// The type of document.
@@ -88,15 +107,9 @@ pub struct Document {
 }
 
 impl Document {
-    pub const fn new(
-        id: Snowflake,
-        token: String,
-        paste_id: Snowflake,
-        doc_type: DocumentType,
-    ) -> Self {
+    pub const fn new(id: Snowflake, paste_id: Snowflake, doc_type: DocumentType) -> Self {
         Self {
             id,
-            token,
             paste_id,
             doc_type,
         }
@@ -108,7 +121,14 @@ impl Document {
     ///
     /// - [`base_url`]: The base url to append.
     pub fn generate_url(&self, base_url: &str) -> String {
-        format!("{}/{}/{}", base_url, self.token, self.id)
+        format!("{}/documents/{}", base_url, self.generate_path())
+    }
+
+    /// Generate Path.
+    /// 
+    /// Generate the path to the resource.
+    pub fn generate_path(&self) -> String {
+        format!("{}/{}.{}", self.paste_id, self.id, self.doc_type.to_file_type())
     }
 
     /// Fetch.
@@ -119,7 +139,7 @@ impl Document {
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, owner_token, paste_id, type FROM documents WHERE id = $1",
+            "SELECT id, paste_id, type FROM documents WHERE id = $1",
             paste_id
         )
         .fetch_optional(db.pool())
@@ -128,38 +148,12 @@ impl Document {
         if let Some(q) = query {
             return Ok(Some(Self::new(
                 q.id.into(),
-                q.owner_token,
                 q.paste_id.into(),
                 DocumentType::from(q.r#type),
             )));
         }
 
         Ok(None)
-    }
-
-    /// Fetch All Token.
-    ///
-    /// Fetch all documents owned by a token.
-    ///
-    /// - [token]: The Token to look for.
-    pub async fn fetch_all_token(db: &Database, token: String) -> Result<Vec<Self>, AppError> {
-        let query = sqlx::query!(
-            "SELECT id, owner_token, paste_id, type FROM documents WHERE owner_token = $1",
-            token
-        )
-        .fetch_all(db.pool())
-        .await?;
-
-        let mut documents: Vec<Self> = Vec::new();
-        for record in query {
-            documents.push(Self::new(
-                record.id.into(),
-                record.owner_token,
-                record.paste_id.into(),
-                DocumentType::from(record.r#type),
-            ));
-        }
-        Ok(documents)
     }
 
     /// Fetch All Paste.
@@ -170,7 +164,7 @@ impl Document {
     pub async fn fetch_all_paste(db: &Database, id: Snowflake) -> Result<Vec<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, owner_token, paste_id, type FROM documents WHERE paste_id = $1",
+            "SELECT id, paste_id, type FROM documents WHERE paste_id = $1",
             paste_id
         )
         .fetch_all(db.pool())
@@ -180,7 +174,6 @@ impl Document {
         for record in query {
             documents.push(Self::new(
                 record.id.into(),
-                record.owner_token,
                 record.paste_id.into(),
                 DocumentType::from(record.r#type),
             ));
@@ -191,9 +184,18 @@ impl Document {
     /// Update.
     ///
     /// Update a existing paste.
-    #[expect(clippy::unused_async)]
-    pub async fn update(&self, _db: &Database) -> Result<Paste, AppError> {
-        todo!()
+    pub async fn update(&self, db: &Database) -> Result<(), AppError> {
+        let document_id: i64 = self.id.into();
+        let paste_id: i64 = self.paste_id.into();
+
+        sqlx::query!(
+            "INSERT INTO documents(id, paste_id, type) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET type = $3",
+            document_id,
+            paste_id,
+            self.doc_type.to_string()
+        ).execute(db.pool()).await?;
+
+        Ok(())
     }
 
     /// Delete.
@@ -204,19 +206,6 @@ impl Document {
     pub async fn delete(&self, db: &Database, id: Snowflake) -> Result<(), AppError> {
         let paste_id: i64 = id.into();
         sqlx::query!("DELETE FROM documents WHERE id = $1", paste_id,)
-            .execute(db.pool())
-            .await?;
-
-        Ok(())
-    }
-
-    /// Delete All.
-    ///
-    /// Delete all existing pastes owned by a token.
-    ///
-    ///  - [token]: The Token to delete from.
-    pub async fn delete_all(db: &Database, token: String) -> Result<(), AppError> {
-        sqlx::query!("DELETE FROM documents WHERE owner_token = $1", token,)
             .execute(db.pool())
             .await?;
 
