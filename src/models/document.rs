@@ -1,100 +1,8 @@
-use std::fmt;
-
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::app::database::Database;
 
 use super::{error::AppError, snowflake::Snowflake};
-
-#[derive(Clone, Debug)]
-pub enum DocumentType {
-    /// Represents a text document.
-    Text,
-    /// Represents a python document.
-    Python,
-    /// Represents a rust document.
-    Rust,
-    /// Represents an sql document.
-    Sql,
-    /// Represents a markdown document.
-    Markdown,
-    /// Represents a document of an unknown type.
-    ///
-    /// This should always be displayed as the `Text` type.
-    Unknown(String),
-}
-
-impl DocumentType {
-    pub fn from_file_type(file_type: &str) -> Self {
-        match file_type.to_lowercase().as_str() {
-            // TODO: Is there more file types that should be matched?
-            "txt" => Self::Text,
-            "py" => Self::Python,
-            "rs" => Self::Rust,
-            "sql" => Self::Sql,
-            "md" => Self::Markdown,
-            value => Self::Unknown(value.to_string()),
-        }
-    }
-
-    pub const fn to_file_type(&self) -> &'static str {
-        match self {
-            Self::Text => "txt",
-            Self::Python => "py",
-            Self::Rust => "rs",
-            Self::Sql => "sql",
-            Self::Markdown => "md",
-            #[allow(clippy::match_same_arms)]
-            // This is only here due to the fact that "unknown" might change in the future.
-            Self::Unknown(_) => "txt",
-        }
-    }
-}
-
-impl Serialize for DocumentType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for DocumentType {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let value = String::deserialize(d)?;
-
-        Ok(Self::from(value))
-    }
-}
-
-impl From<String> for DocumentType {
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "text" => Self::Text,
-            "python" => Self::Python,
-            "rust" => Self::Rust,
-            "sql" => Self::Sql,
-            "markdown" => Self::Markdown,
-            "unknown" => Self::Unknown("unknown".to_string()), // the file type unknown is locked to unknown.
-            unknown => Self::Unknown(unknown.to_string()),
-        }
-    }
-}
-
-impl fmt::Display for DocumentType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let doc_type = match self {
-            Self::Text => "text",
-            Self::Python => "python",
-            Self::Rust => "rust",
-            Self::Sql => "sql",
-            Self::Markdown => "markdown",
-            Self::Unknown(unknown_type) => unknown_type,
-        };
-        write!(f, "{doc_type}")
-    }
-}
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Document {
@@ -103,15 +11,18 @@ pub struct Document {
     /// The paste that owns the document.
     pub paste_id: Snowflake,
     /// The type of document.
-    pub doc_type: DocumentType,
+    pub document_type: String,
+    /// The name of the document.
+    pub name: String
 }
 
 impl Document {
-    pub const fn new(id: Snowflake, paste_id: Snowflake, doc_type: DocumentType) -> Self {
+    pub const fn new(id: Snowflake, paste_id: Snowflake, document_type: String, name: String) -> Self {
         Self {
             id,
             paste_id,
-            doc_type,
+            document_type,
+            name
         }
     }
 
@@ -132,7 +43,18 @@ impl Document {
             "{}/{}.{}",
             self.paste_id,
             self.id,
-            self.doc_type.to_file_type()
+            self.document_type
+        )
+    }
+
+    /// Generate Full Name.
+    ///
+    /// Generate the proper name of the document.
+    pub fn generate_full_name(&self) -> String {
+        format!(
+            "{}.{}",
+            self.name,
+            self.document_type
         )
     }
 
@@ -144,7 +66,7 @@ impl Document {
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, paste_id, type FROM documents WHERE id = $1",
+            "SELECT id, paste_id, type, name FROM documents WHERE id = $1",
             paste_id
         )
         .fetch_optional(db.pool())
@@ -154,7 +76,8 @@ impl Document {
             return Ok(Some(Self::new(
                 q.id.into(),
                 q.paste_id.into(),
-                DocumentType::from(q.r#type),
+                q.r#type,
+                q.name
             )));
         }
 
@@ -169,7 +92,7 @@ impl Document {
     pub async fn fetch_all_paste(db: &Database, id: Snowflake) -> Result<Vec<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, paste_id, type FROM documents WHERE paste_id = $1",
+            "SELECT id, paste_id, type, name FROM documents WHERE paste_id = $1",
             paste_id
         )
         .fetch_all(db.pool())
@@ -180,7 +103,8 @@ impl Document {
             documents.push(Self::new(
                 record.id.into(),
                 record.paste_id.into(),
-                DocumentType::from(record.r#type),
+                record.r#type,
+                record.name
             ));
         }
         Ok(documents)
@@ -194,10 +118,11 @@ impl Document {
         let paste_id: i64 = self.paste_id.into();
 
         sqlx::query!(
-            "INSERT INTO documents(id, paste_id, type) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET type = $3",
+            "INSERT INTO documents(id, paste_id, type, name) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET type = $3, name = $4",
             document_id,
             paste_id,
-            self.doc_type.to_string()
+            self.document_type,
+            self.name
         ).execute(db.pool()).await?;
 
         Ok(())

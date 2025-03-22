@@ -8,5 +8,6 @@ CREATE TABLE IF NOT EXISTS pastes (
 CREATE TABLE IF NOT EXISTS documents (
     "id" BIGINT NOT NULL PRIMARY KEY, -- The ID of the document.
     "paste_id" BIGINT NOT NULL, -- The paste that owns this document.
-    "type" TEXT NOT NULL -- The type of the documents contents.
+    "type" TEXT NOT NULL, -- The type of the documents contents.
+    "name" TEXT NOT NULL -- The name of the document.
 );

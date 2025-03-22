@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     app::application::App,
     models::{
-        document::{Document, DocumentType},
+        document::Document,
         error::AppError,
         paste::Paste,
         snowflake::Snowflake,
@@ -118,15 +118,15 @@ async fn post_paste(
                 || {
                     let (_, document_type): (&str, &str) =
                         name.rsplit_once('.').unwrap_or(("", "unknown"));
-                    DocumentType::from_file_type(document_type)
+                    document_type.to_string()
                 },
                 |h| {
                     let val: &str = &String::from_utf8_lossy(h.as_bytes());
-                    DocumentType::from(val.to_string())
+                    val.to_string()
                 },
             );
 
-            let document = Document::new(document_id, paste_id, document_type);
+            let document = Document::new(document_id, paste_id, document_type, name);
 
             app.s3
                 .create_document(document.generate_path(), data.clone())
@@ -273,7 +273,9 @@ pub struct ResponseDocument {
     pub paste_id: Snowflake,
     /// The type of document.
     #[serde(rename = "type")]
-    pub document_type: DocumentType,
+    pub document_type: String,
+    /// The name of the document.
+    pub name: String,
     /// The content of the document.
     pub content: Option<String>,
 }
@@ -282,18 +284,20 @@ impl ResponseDocument {
     pub const fn new(
         id: Snowflake,
         paste_id: Snowflake,
-        document_type: DocumentType,
+        document_type: String,
+        name: String,
         content: Option<String>,
     ) -> Self {
         Self {
             id,
             paste_id,
             document_type,
+            name,
             content,
         }
     }
 
     pub fn from_document(document: Document, content: Option<String>) -> Self {
-        Self::new(document.id, document.paste_id, document.doc_type, content)
+        Self::new(document.id, document.paste_id, document.document_type, document.name, content)
     }
 }
