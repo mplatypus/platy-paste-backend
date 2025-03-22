@@ -20,18 +20,17 @@ use crate::{
 pub fn generate_router() -> Router<App> {
     Router::new()
         .route("/paste", get(get_paste))
-        .route("/paste/all", get(get_pastes))
+        .route("/pastes", get(get_pastes))
         .route("/paste", patch(patch_paste))
         .route("/paste", post(post_paste))
         .route("/paste", delete(delete_paste))
-        .route("/paste/all", delete(delete_pastes))
+        .route("/pastes", delete(delete_pastes))
         .layer(DefaultBodyLimit::disable())
 }
 
 async fn get_paste(
     State(app): State<App>,
     Query(query): Query<GetPasteQuery>,
-    //_: Token
 ) -> Result<Response, AppError> {
     let paste = Paste::fetch(&app.database, query.paste_id)
         .await?
@@ -65,22 +64,13 @@ async fn get_paste(
     Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct GetPasteQuery {
-    /// The ID for the paste to retrieve.
-    paste_id: Snowflake,
-    /// Whether to return the content of the documents.
-    request_content: bool,
-}
-
 async fn get_pastes(
     State(app): State<App>,
     Json(body): Json<GetPastesBody>,
-    //_: Token
 ) -> Result<Response, AppError> {
     let mut response_pastes: Vec<ResponsePaste> = Vec::new();
 
-    for paste_id in body.pastes {
+    for paste_id in body.paste_ids {
         let paste = Paste::fetch(&app.database, paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
@@ -104,12 +94,6 @@ async fn get_pastes(
     }
 
     Ok((StatusCode::OK, Json(response_pastes)).into_response())
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct GetPastesBody {
-    /// The ID's to get.
-    pub pastes: Vec<Snowflake>,
 }
 
 async fn post_paste(
@@ -179,10 +163,66 @@ async fn post_paste(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+async fn patch_paste(State(_app): State<App>) -> Result<Response, AppError> {
+    Ok(StatusCode::NOT_IMPLEMENTED.into_response())
+}
+
+async fn delete_paste(
+    State(app): State<App>,
+    Query(query): Query<DeletePasteQuery>,
+) -> Result<Response, AppError> {
+    Paste::delete(&app.database, query.paste_id).await?;
+
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+async fn delete_pastes(
+    State(app): State<App>,
+    Json(body): Json<DeletePastesBody>,
+) -> Result<Response, AppError> {
+    for paste_id in body.paste_ids {
+        Paste::delete(&app.database, paste_id).await?;
+    }
+
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+const fn _const_false() -> bool {
+    false
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct GetPasteQuery {
+    /// The ID for the paste to retrieve.
+    paste_id: Snowflake,
+    /// Whether to return the content of the documents.
+    #[serde(default = "_const_false")]
+    request_content: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct GetPastesBody {
+    /// The ID's to get.
+    pub paste_ids: Vec<Snowflake>,
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct PostPasteQuery {
     /// Whether to return the content.
+    #[serde(default = "_const_false")]
     pub request_content: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DeletePasteQuery {
+    /// The ID for the paste to retrieve.
+    paste_id: Snowflake,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DeletePastesBody {
+    /// The ID's to get.
+    pub paste_ids: Vec<Snowflake>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -256,25 +296,4 @@ impl ResponseDocument {
     pub fn from_document(document: Document, content: Option<String>) -> Self {
         Self::new(document.id, document.paste_id, document.doc_type, content)
     }
-}
-
-async fn patch_paste(
-    State(_app): State<App>,
-    //_: Token,
-) -> Result<Response, AppError> {
-    todo!("Implement me!")
-}
-
-async fn delete_paste(
-    State(_app): State<App>,
-    //_: Token
-) -> Result<Response, AppError> {
-    todo!("Implement me!")
-}
-
-async fn delete_pastes(
-    State(_app): State<App>,
-    //_: Token
-) -> Result<Response, AppError> {
-    todo!("Implement me!")
 }

@@ -117,7 +117,7 @@ impl Paste {
     /// Delete an existing paste.
     ///
     /// - [id]: The ID to delete from.
-    pub async fn delete(&self, db: &Database, id: Snowflake) -> Result<(), AppError> {
+    pub async fn delete(db: &Database, id: Snowflake) -> Result<(), AppError> {
         let paste_id: i64 = id.into();
         sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
             .execute(db.pool())
