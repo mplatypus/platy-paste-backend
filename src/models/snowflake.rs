@@ -5,14 +5,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserializer, Serialize, Serializer, de::Error as DEError};
 use sqlx::{Decode, Encode};
-
-use crate::app::database::Database;
 
 use super::error::AppError;
 
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// ## Snowflake
 ///
 /// A Simple snowflake implementation.
@@ -23,7 +21,7 @@ impl Snowflake {
         Self(id)
     }
 
-    pub fn generate(_db: &Database) -> Result<Self, AppError> {
+    pub fn generate() -> Result<Self, AppError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
@@ -48,6 +46,22 @@ impl Snowflake {
     /// The time since epoch, that this ID was created at.
     pub const fn created_at(&self) -> u64 {
         self.id() >> 22
+    }
+}
+
+impl Serialize for Snowflake {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.id().to_string().as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Snowflake {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let val = String::deserialize(d)?;
+        Ok(Self::new(val.parse().map_err(DEError::custom)?))
     }
 }
 

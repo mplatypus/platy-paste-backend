@@ -13,16 +13,21 @@ pub struct Document {
     /// The type of document.
     pub document_type: String,
     /// The name of the document.
-    pub name: String
+    pub name: String,
 }
 
 impl Document {
-    pub const fn new(id: Snowflake, paste_id: Snowflake, document_type: String, name: String) -> Self {
+    pub const fn new(
+        id: Snowflake,
+        paste_id: Snowflake,
+        document_type: String,
+        name: String,
+    ) -> Self {
         Self {
             id,
             paste_id,
             document_type,
-            name
+            name,
         }
     }
 
@@ -39,23 +44,14 @@ impl Document {
     ///
     /// Generate the path to the resource.
     pub fn generate_path(&self) -> String {
-        format!(
-            "{}/{}.{}",
-            self.paste_id,
-            self.id,
-            self.document_type
-        )
+        format!("{}/{}.{}", self.paste_id, self.id, self.document_type)
     }
 
     /// Generate Full Name.
     ///
     /// Generate the proper name of the document.
     pub fn generate_full_name(&self) -> String {
-        format!(
-            "{}.{}",
-            self.name,
-            self.document_type
-        )
+        format!("{}.{}", self.name, self.document_type)
     }
 
     /// Fetch.
@@ -77,7 +73,7 @@ impl Document {
                 q.id.into(),
                 q.paste_id.into(),
                 q.r#type,
-                q.name
+                q.name,
             )));
         }
 
@@ -104,7 +100,7 @@ impl Document {
                 record.id.into(),
                 record.paste_id.into(),
                 record.r#type,
-                record.name
+                record.name,
             ));
         }
         Ok(documents)

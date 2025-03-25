@@ -9,12 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     app::application::App,
-    models::{
-        document::Document,
-        error::AppError,
-        paste::Paste,
-        snowflake::Snowflake,
-    },
+    models::{document::Document, error::AppError, paste::Paste, snowflake::Snowflake},
 };
 
 pub fn generate_router() -> Router<App> {
@@ -101,7 +96,7 @@ async fn post_paste(
     Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let paste_id = Snowflake::generate(&app.database)?;
+    let paste_id = Snowflake::generate()?;
 
     let mut response_documents: Vec<ResponseDocument> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -112,7 +107,8 @@ async fn post_paste(
             let name = field.name().unwrap_or("unknown").to_string();
             let headers = field.headers().clone();
             let data = field.bytes().await?;
-            let document_id = Snowflake::generate(&app.database)?;
+
+            let document_id = Snowflake::generate()?;
 
             let document_type = headers.get("").map_or_else(
                 || {
@@ -298,6 +294,12 @@ impl ResponseDocument {
     }
 
     pub fn from_document(document: Document, content: Option<String>) -> Self {
-        Self::new(document.id, document.paste_id, document.document_type, document.name, content)
+        Self::new(
+            document.id,
+            document.paste_id,
+            document.document_type,
+            document.name,
+            content,
+        )
     }
 }
