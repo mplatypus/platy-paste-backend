@@ -71,7 +71,8 @@ async fn main() {
 
     let app = Router::new()
         .nest("/v1", rest::paste::generate_router())
-        .nest("/v1", rest::account::generate_router())
+        .nest("/v1", rest::user::generate_router())
+        .nest("/v1", rest::bot::generate_router())
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)

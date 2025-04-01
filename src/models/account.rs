@@ -740,3 +740,44 @@ impl FromRequestParts<App> for Token<AnyOptional> {
         ))
     }
 }
+
+/// Validate unique name.
+///
+/// validate that a name (provided) is unique.
+pub async fn validate_unique_name(db: &Database, name: String) -> Result<(), AppError> {
+    let user = User::fetch_with_name(db, name.clone()).await?;
+
+    if user.is_some() {
+        return Err(AppError::ConflictError(format!(
+            "Name '{name}' already exists."
+        )));
+    }
+
+    // Split into two separate functions to reduce DB calls.
+    let bot = Bot::fetch_with_name(db, name.clone()).await?;
+
+    if bot.is_some() {
+        return Err(AppError::ConflictError(format!(
+            "Name '{name}' already exists."
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn generate_token(_owner_id: Snowflake) -> Result<String, AppError> {
+    // FIXME: The owner ID should be added in base64, and then separated via a "." (owner ID, unique token.)
+    // maybe also encrypt the time it was created into it as well?
+    const TOKEN_LENGTH: usize = 25;
+
+    let mut buffer: Vec<u8> = vec![0; TOKEN_LENGTH];
+
+    getrandom::fill(&mut buffer).map_err(|e| AppError::NotFound(e.to_string()))?;
+
+    let ascii = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-");
+
+    Ok(buffer
+        .iter() // Convert to an iterator.
+        .map(|x| ascii.as_bytes()[(*x as usize) % ascii.len()] as char) // This maps the ascii table to the buffer
+        .collect::<String>()) // Collect the items into a string.
+}
