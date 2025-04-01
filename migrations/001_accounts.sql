@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS user_secrets (
 
 CREATE TABLE IF NOT EXISTS user_sessions (
     -- The token for the session.
-    "token" CHAR(25) NOT NULL PRIMARY KEY,
+    "token" TEXT NOT NULL PRIMARY KEY,
     -- The user ID used for the session.
     "id" BIGINT NOT NULL,
     -- The expiry of this session.
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS bots (
     -- The owner of the bot.
     "owner_id" BIGINT NOT NULL,
     -- The token of the bot.
-    "token" CHAR(25) NOT NULL UNIQUE,
+    "token" TEXT NOT NULL UNIQUE,
     -- The permissions of the bot.
     "permissions" BIGINT NOT NULL,
     -- Removes all bot tokens when the user that owns them gets deleted.

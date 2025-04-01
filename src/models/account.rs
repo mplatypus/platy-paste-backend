@@ -12,6 +12,7 @@ use axum_extra::{
         authorization::{Bearer, Credentials},
     },
 };
+use base64::{Engine, prelude::BASE64_URL_SAFE};
 use bitflags::bitflags;
 use bytes::Bytes;
 use secrecy::{ExposeSecret, SecretString};
@@ -765,9 +766,7 @@ pub async fn validate_unique_name(db: &Database, name: String) -> Result<(), App
     Ok(())
 }
 
-pub fn generate_token(_owner_id: Snowflake) -> Result<String, AppError> {
-    // FIXME: The owner ID should be added in base64, and then separated via a "." (owner ID, unique token.)
-    // maybe also encrypt the time it was created into it as well?
+pub fn generate_token(owner_id: Snowflake) -> Result<String, AppError> {
     const TOKEN_LENGTH: usize = 25;
 
     let mut buffer: Vec<u8> = vec![0; TOKEN_LENGTH];
@@ -776,8 +775,12 @@ pub fn generate_token(_owner_id: Snowflake) -> Result<String, AppError> {
 
     let ascii = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-");
 
-    Ok(buffer
+    let unique_token = buffer
         .iter() // Convert to an iterator.
         .map(|x| ascii.as_bytes()[(*x as usize) % ascii.len()] as char) // This maps the ascii table to the buffer
-        .collect::<String>()) // Collect the items into a string.
+        .collect::<String>(); // Collect the items into a string.
+
+    let owner_id_encrypted = BASE64_URL_SAFE.encode(owner_id.to_string());
+
+    Ok(format!("{owner_id_encrypted}.{unique_token}"))
 }
