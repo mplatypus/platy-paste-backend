@@ -15,7 +15,7 @@ pub fn generate_router() -> Router<App> {
         .route("/pastes", post(post_paste))
         .route("/pastes/{paste_id}", patch(patch_paste))
         .route("/pastes", delete(delete_pastes))
-        .route("/pastes/{paste_id}", delete(get_paste))
+        .route("/pastes/{paste_id}", delete(delete_paste))
         .layer(DefaultBodyLimit::disable())
 }
 
