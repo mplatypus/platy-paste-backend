@@ -1,7 +1,9 @@
 use std::marker::PhantomData;
 
 use axum::{
-    extract::FromRequestParts, http::{request::Parts, HeaderValue}, RequestPartsExt
+    RequestPartsExt,
+    extract::FromRequestParts,
+    http::{HeaderValue, request::Parts},
 };
 use axum_extra::{
     TypedHeader,
@@ -36,7 +38,12 @@ pub struct User {
 }
 
 impl User {
-    pub const fn new(id: Snowflake, name: String, email: String, permissions: UserPermissions) -> Self {
+    pub const fn new(
+        id: Snowflake,
+        name: String,
+        email: String,
+        permissions: UserPermissions,
+    ) -> Self {
         Self {
             id,
             name,
@@ -109,11 +116,11 @@ bitflags! {
         /// Can delete pastes.
         const DeletePaste = 1 << 2;
         /// Can edit others pastes.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const EditOtherPaste = 1 << 5;
         /// Can delete others pastes.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const DeleteOtherPaste = 1 << 6;
         /// Can edit account.
@@ -121,15 +128,15 @@ bitflags! {
         /// Can delete account.
         const DeleteAccount = 1 << 11;
         /// Can create accounts.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const CreateOtherAccount = 1 << 15;
         /// Can edit others accounts.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const EditOtherAccount = 1 << 16;
         /// Can delete other accounts.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const DeleteOtherAccount = 1 << 17;
         /// Can fetch bots.
@@ -141,15 +148,15 @@ bitflags! {
         /// Can delete bots.
         const DeleteBot = 1 << 23;
         /// Can fetch others bots.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const FetchOtherBot = 1 << 25;
         /// Can edit others bots.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const EditOtherBot = 1 << 26;
         /// Can delete others bots.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const DeleteOtherBot = 1 << 27;
     }
@@ -193,16 +200,13 @@ pub struct UserSecret {
     /// The owner ID of the secret.
     pub id: Snowflake,
     /// The password of the user.
-    pub password: SecretString
+    pub password: SecretString,
 }
 
 impl UserSecret {
     pub const fn new(id: Snowflake, password: SecretString) -> Self {
         // FIXME: Make sure to encrypt the password.
-        Self {
-            id,
-            password
-        }
+        Self { id, password }
     }
 
     pub fn password(&mut self, password: SecretString) {
@@ -212,18 +216,12 @@ impl UserSecret {
 
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let id: i64 = id.into();
-        let query = sqlx::query!(
-                "SELECT id, password FROM user_secrets WHERE id = $1",
-                id
-            )
+        let query = sqlx::query!("SELECT id, password FROM user_secrets WHERE id = $1", id)
             .fetch_optional(db.pool())
             .await?;
-        
+
         if let Some(q) = query {
-            return Ok(Some(Self::new(
-                q.id.into(),
-                q.password.into()
-            )));
+            return Ok(Some(Self::new(q.id.into(), q.password.into())));
         }
 
         Ok(None)
@@ -331,7 +329,8 @@ pub struct Bot {
     pub id: Snowflake,
     pub name: String,
     pub owner_id: Snowflake,
-    #[serde(skip_serializing)] // FIXME: This needs changing for when the user creates a new account, either a custom payload, or this does get serialized.
+    #[serde(skip_serializing)]
+    // FIXME: This needs changing for when the user creates a new account, either a custom payload, or this does get serialized.
     pub token: String,
     pub permissions: BotPermissions,
 }
@@ -473,15 +472,15 @@ bitflags! {
         /// Can delete pastes.
         const DeletePaste = 1 << 3;
         /// Can create pastes on owners behalf.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const CreateOwnerPaste = 1 << 10; // FIXME: I am not sure I want to keep this. Maybe if I do, add a boolean to pastes of whether a bot made/edited them or not.
         /// Can edit pastes on owners behalf.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const EditOwnerPaste = 1 << 11; // FIXME: I am not sure I want to keep this.
         /// Can delete pastes on owners behalf.
-        /// 
+        ///
         /// **note:** This is a dangerous permission to enable.
         const DeleteOwnerPaste = 1 << 12; // FIXME: I am not sure I want to keep this.
     }

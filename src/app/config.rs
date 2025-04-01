@@ -21,7 +21,7 @@ pub struct Config {
     /// The Minio Password.
     minio_password: SecretString,
     /// The domain to allow requests from.
-    /// 
+    ///
     /// Typically used for the frontend, this bypasses cors.
     domain: String,
 }

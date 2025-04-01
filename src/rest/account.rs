@@ -68,11 +68,15 @@ async fn get_user(
     Query(query): Query<GetUserQuery>,
 ) -> Result<Response, AppError> {
     if query.user_id.is_none() && query.user_name.is_none() {
-        return Err(AppError::BadRequest("`user_id` or `user_name` must be provided.".to_string()));
+        return Err(AppError::BadRequest(
+            "`user_id` or `user_name` must be provided.".to_string(),
+        ));
     }
 
     if query.user_id.is_some() && query.user_name.is_some() {
-        return Err(AppError::BadRequest("both `user_id` and `user_name` must not be provided in the same request.".to_string()));
+        return Err(AppError::BadRequest(
+            "both `user_id` and `user_name` must not be provided in the same request.".to_string(),
+        ));
     }
 
     let user = {
@@ -104,9 +108,15 @@ async fn post_user(
     let permissions = if let Some(p) = body.permissions {
         p // This needs to restrict to a certain set of permissions, either ignoring the permissions, or erroring out.
     } else {
-        UserPermissions::CreatePaste | UserPermissions::EditPaste | UserPermissions::DeletePaste
-            | UserPermissions::EditAccount | UserPermissions::DeleteAccount
-            | UserPermissions::FetchBot | UserPermissions::CreateBot | UserPermissions::EditBot | UserPermissions::DeleteBot
+        UserPermissions::CreatePaste
+            | UserPermissions::EditPaste
+            | UserPermissions::DeletePaste
+            | UserPermissions::EditAccount
+            | UserPermissions::DeleteAccount
+            | UserPermissions::FetchBot
+            | UserPermissions::CreateBot
+            | UserPermissions::EditBot
+            | UserPermissions::DeleteBot
     };
 
     let user = User::new(Snowflake::generate()?, body.name, body.email, permissions);
@@ -184,7 +194,7 @@ async fn get_user_session(
 
 async fn post_user_session(
     State(app): State<App>,
-    Json(body): Json<PostUserSessionBody>
+    Json(body): Json<PostUserSessionBody>,
 ) -> Result<Response, AppError> {
     // FIXME: This should use a secure password.
     // FIXME: This whole function might need rebuilding.
@@ -193,16 +203,14 @@ async fn post_user_session(
         .ok_or_else(|| AppError::NotFound("User authentication not found.".to_string()))?;
 
     if body.password != user_secret.password.expose_secret() {
-        return Err(AppError::Authentication(AuthError::NotFound("Authentication Invalid.".to_string()))); // FIXME: This is needs a proper error.
+        return Err(AppError::Authentication(AuthError::NotFound(
+            "Authentication Invalid.".to_string(),
+        ))); // FIXME: This is needs a proper error.
     }
 
     let expiry = OffsetDateTime::now_utc().saturating_add(Duration::days(28)); // FIXME: This should be settable via the environment.
 
-    let user_session = UserSession::new(
-        generate_token(user_secret.id)?,
-        user_secret.id,
-        expiry
-    );
+    let user_session = UserSession::new(generate_token(user_secret.id)?, user_secret.id, expiry);
 
     user_session.update(&app.database).await?;
 
@@ -338,7 +346,11 @@ async fn post_bot_reset_token(
 
     bot.update(&app.database).await?;
 
-    Ok((StatusCode::OK, Json(PostBotResetTokenResponse::from_bot(bot))).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(PostBotResetTokenResponse::from_bot(bot)),
+    )
+        .into_response())
 }
 
 async fn patch_bot(
@@ -407,7 +419,7 @@ pub struct GetUserQuery {
     user_id: Option<Snowflake>,
     /// The users name to search for.
     #[serde(default)]
-    user_name: Option<String>
+    user_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -422,18 +434,16 @@ pub struct PostUserBody {
     #[serde(default)]
     pub permissions: Option<UserPermissions>,
 }
- 
+
 #[derive(Serialize)]
 pub struct GetOAuthUserResponse {
     /// The URL to load.
-    pub url: String
+    pub url: String,
 }
 
 impl GetOAuthUserResponse {
     pub const fn new(url: String) -> Self {
-        Self {
-            url
-        }
+        Self { url }
     }
 }
 
@@ -470,7 +480,7 @@ pub struct PostUserSessionBody {
     /// The ID of the user.
     pub id: Snowflake,
     /// The password of the user to authenticate with.
-    pub password: String
+    pub password: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -508,7 +518,7 @@ pub struct PostBotBody {
 #[derive(Deserialize)]
 pub struct PostBotResetTokenQuery {
     /// The bot ID to reset the token for.
-    pub bot_id: Snowflake
+    pub bot_id: Snowflake,
 }
 
 #[derive(Serialize)]
@@ -533,7 +543,7 @@ impl PostBotResetTokenResponse {
             name,
             owner_id,
             token,
-            permissions
+            permissions,
         }
     }
 
