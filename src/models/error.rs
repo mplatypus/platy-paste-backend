@@ -29,6 +29,10 @@ pub enum AppError {
     Reqwest(#[from] reqwest::Error),
     #[error("Parse Int Error: {0}")]
     ParseIntError(#[from] ParseIntError),
+    #[error("Conflict Error: {0}")]
+    ConflictError(String),
+    #[error("Bad Request: {0}")]
+    BadRequest(String),
     #[error("Not Found: {0}")]
     NotFound(String),
 }
@@ -47,6 +51,8 @@ impl IntoResponse for AppError {
                 "Failed to parse integer.",
                 e.to_string(),
             ),
+            Self::ConflictError(ref e) => (StatusCode::CONFLICT, "Conflict", e.clone()),
+            Self::BadRequest(ref e) => (StatusCode::BAD_REQUEST, "Bad Request", e.clone()),
             Self::NotFound(ref e) => (StatusCode::NOT_FOUND, &e.clone(), String::new()),
         };
         if status == StatusCode::INTERNAL_SERVER_ERROR {
@@ -91,6 +97,8 @@ pub enum AuthError {
     MissingPermissions,
     #[error("The token provided does not exist")]
     InvalidToken,
+    #[error("The token provided has expired")]
+    ExpiredToken,
     #[error("Not Found: {0}")]
     NotFound(String),
 }
@@ -101,6 +109,7 @@ impl IntoResponse for AuthError {
             Self::MissingCredentials => (StatusCode::UNAUTHORIZED, "Missing Credentials."),
             Self::MissingPermissions => (StatusCode::UNAUTHORIZED, "Missing Permissions."),
             Self::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid Token."),
+            Self::ExpiredToken => (StatusCode::UNAUTHORIZED, "Expired Token."),
             Self::NotFound(_) => (StatusCode::NOT_FOUND, "Not Found"),
         };
 
