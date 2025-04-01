@@ -1,15 +1,21 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Query, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     app::application::App,
-    models::{document::Document, error::AppError, paste::Paste, snowflake::Snowflake},
+    models::{
+        account::{AnyOptional, AnyRequired, BotPermissions, Required, Token, UserPermissions},
+        document::Document,
+        error::{AppError, AuthError},
+        paste::Paste,
+        snowflake::Snowflake,
+    },
 };
 
 pub fn generate_router() -> Router<App> {
@@ -94,8 +100,37 @@ async fn get_pastes(
 async fn post_paste(
     State(app): State<App>,
     Query(query): Query<PostPasteQuery>,
+    token: Token<AnyOptional>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    
+    let owner_id: Option<Snowflake> = {
+        let authenticated = token
+            .authentication
+            .required()
+            .as_ref();
+
+        match authenticated {
+            Some(Required::UserSession(user_session)) => {
+                if let Some(user) = user_session.fetch_owner(&app.database).await? {
+                    if !user.permissions.contains(UserPermissions::CreatePaste) {
+                        return Err(AppError::Authentication(AuthError::MissingPermissions))
+                    }
+                } else {
+                    return Err(AppError::NotFound("Could not find owner.".to_string())) // FIXME: This should be a proper dedicated error.
+                }
+                Some(user_session.id)
+            },
+            Some(Required::Bot(bot)) => {
+                if !bot.permissions.contains(BotPermissions::CreatePaste) {
+                    return Err(AppError::Authentication(AuthError::MissingPermissions))
+                }
+                Some(bot.id)
+            },
+            None => None
+        }
+    };
+
     let paste_id = Snowflake::generate()?;
 
     let mut response_documents: Vec<ResponseDocument> = Vec::new();
@@ -147,8 +182,7 @@ async fn post_paste(
 
     let paste = Paste::new(
         paste_id,
-        None,
-        None,
+        owner_id,
         response_documents.iter().map(|d| d.id).collect(),
     );
 
@@ -159,25 +193,68 @@ async fn post_paste(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-async fn patch_paste(State(_app): State<App>) -> Result<Response, AppError> {
+async fn patch_paste(
+    State(_app): State<App>,
+    _token: Token<AnyRequired>,
+) -> Result<Response, AppError> {
     Ok(StatusCode::NOT_IMPLEMENTED.into_response())
 }
 
 async fn delete_paste(
     State(app): State<App>,
     Query(query): Query<DeletePasteQuery>,
+    token: Token<AnyRequired>,
 ) -> Result<Response, AppError> {
-    Paste::delete(&app.database, query.paste_id).await?;
+    let owner_id: Snowflake = match token.authentication.required() {
+        Required::UserSession(user_session) => {
+            if let Some(user) = user_session.fetch_owner(&app.database).await? {
+                if !user.permissions.contains(UserPermissions::DeletePaste) {
+                    return Err(AppError::Authentication(AuthError::MissingPermissions))
+                }
+            } else {
+                return Err(AppError::NotFound("Could not find owner.".to_string())) // FIXME: This should be a proper dedicated error.
+            }
+            user_session.id
+        },
+        Required::Bot(bot) => {
+            if !bot.permissions.contains(BotPermissions::DeletePaste) {
+                return Err(AppError::Authentication(AuthError::MissingPermissions))
+            }
+            bot.id
+        },
+    };
+
+    Paste::delete_with_id(&app.database, query.paste_id, owner_id).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn delete_pastes(
     State(app): State<App>,
+    token: Token<AnyRequired>,
     Json(body): Json<DeletePastesBody>,
 ) -> Result<Response, AppError> {
+    let owner_id: Snowflake = match token.authentication.required() {
+        Required::UserSession(user_session) => {
+            if let Some(user) = user_session.fetch_owner(&app.database).await? {
+                if !user.permissions.contains(UserPermissions::DeletePaste) {
+                    return Err(AppError::Authentication(AuthError::MissingPermissions))
+                }
+            } else {
+                return Err(AppError::NotFound("Could not find owner.".to_string())) // FIXME: This should be a proper dedicated error.
+            }
+            user_session.id
+        },
+        Required::Bot(bot) => {
+            if !bot.permissions.contains(BotPermissions::DeletePaste) {
+                return Err(AppError::Authentication(AuthError::MissingPermissions))
+            }
+            bot.id
+        },
+    };
+
     for paste_id in body.paste_ids {
-        Paste::delete(&app.database, paste_id).await?;
+        Paste::delete_with_id(&app.database, paste_id, owner_id).await?;
     }
 
     Ok(StatusCode::NO_CONTENT.into_response())
@@ -222,13 +299,16 @@ pub struct DeletePastesBody {
 }
 
 #[derive(Deserialize, Serialize)]
+/// Response Paste.
+///
+/// The response sent with a paste.
+///
+/// > **Note:** The `owner_id` and `owner_token` can both be `None` or one can be `Some(_)`. Both will never exist.
 pub struct ResponsePaste {
     /// The ID for the paste.
     pub id: Snowflake,
     /// The user that created this paste.
     pub owner_id: Option<Snowflake>,
-    /// The token that created the paste.
-    pub owner_token: Option<String>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
@@ -237,27 +317,17 @@ impl ResponsePaste {
     pub const fn new(
         id: Snowflake,
         owner_id: Option<Snowflake>,
-        owner_token: Option<String>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
             owner_id,
-            owner_token,
             documents,
         }
     }
 
-    pub fn from_paste(paste: &Paste, documents: Vec<ResponseDocument>) -> Self {
-        let owner_id = {
-            if paste.owner_token.is_some() {
-                None
-            } else {
-                paste.owner_id
-            }
-        };
-
-        Self::new(paste.id, owner_id, paste.owner_token.clone(), documents)
+    pub const fn from_paste(paste: &Paste, documents: Vec<ResponseDocument>) -> Self {
+        Self::new(paste.id, paste.owner_id, documents)
     }
 }
 
