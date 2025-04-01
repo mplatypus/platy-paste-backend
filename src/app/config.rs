@@ -20,6 +20,10 @@ pub struct Config {
     minio_user: String,
     /// The Minio Password.
     minio_password: SecretString,
+    /// The domain to allow requests from.
+    /// 
+    /// Typically used for the frontend, this bypasses cors.
+    domain: String,
 }
 
 impl Config {
@@ -60,6 +64,7 @@ impl Config {
                     .expect("MINIO_PASSWORD environment variable must be set.")
                     .into(),
             )
+            .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
             .build()
             .expect("Failed to create application configuration.")
     }
@@ -94,5 +99,9 @@ impl Config {
 
     pub fn minio_password(&self) -> SecretString {
         self.minio_password.clone()
+    }
+
+    pub fn domain(&self) -> String {
+        self.domain.clone()
     }
 }
