@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, paste_id, type, name FROM documents WHERE paste_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "paste_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0a91e150b86dda76bccc5f1a54bd4d482b64895de62557c46be97977ff80aceb"
+}
