@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
@@ -20,20 +20,21 @@ use crate::{
 
 pub fn generate_router() -> Router<App> {
     Router::new()
-        .route("/paste", get(get_paste))
         .route("/pastes", get(get_pastes))
-        .route("/paste", patch(patch_paste))
-        .route("/paste", post(post_paste))
-        .route("/paste", delete(delete_paste))
+        .route("/pastes/{paste_id}", get(get_paste))
+        .route("/pastes", post(post_paste))
+        .route("/pastes/{paste_id}", patch(patch_paste))
         .route("/pastes", delete(delete_pastes))
+        .route("/pastes/{paste_id}", delete(delete_paste))
         .layer(DefaultBodyLimit::disable())
 }
 
 async fn get_paste(
     State(app): State<App>,
+    Path(paste_id): Path<Snowflake>,
     Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
-    let paste = Paste::fetch(&app.database, query.paste_id)
+    let paste = Paste::fetch(&app.database, paste_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
@@ -46,7 +47,7 @@ async fn get_paste(
             })?;
 
         let content = {
-            if query.request_content {
+            if query.include_content {
                 let data = app.s3.fetch_document(document.generate_path()).await?;
                 let d: &str = &String::from_utf8_lossy(&data);
                 Some(d.to_string())
@@ -103,31 +104,27 @@ async fn post_paste(
     token: Token<AnyOptional>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    
     let owner_id: Option<Snowflake> = {
-        let authenticated = token
-            .authentication
-            .required()
-            .as_ref();
+        let authenticated = token.authentication.required().as_ref();
 
         match authenticated {
             Some(Required::UserSession(user_session)) => {
                 if let Some(user) = user_session.fetch_owner(&app.database).await? {
                     if !user.permissions.contains(UserPermissions::CreatePaste) {
-                        return Err(AppError::Authentication(AuthError::MissingPermissions))
+                        return Err(AppError::Authentication(AuthError::MissingPermissions));
                     }
                 } else {
-                    return Err(AppError::NotFound("Could not find owner.".to_string())) // FIXME: This should be a proper dedicated error.
+                    return Err(AppError::NotFound("Could not find owner.".to_string())); // FIXME: This should be a proper dedicated error.
                 }
                 Some(user_session.id)
-            },
+            }
             Some(Required::Bot(bot)) => {
                 if !bot.permissions.contains(BotPermissions::CreatePaste) {
-                    return Err(AppError::Authentication(AuthError::MissingPermissions))
+                    return Err(AppError::Authentication(AuthError::MissingPermissions));
                 }
                 Some(bot.id)
-            },
-            None => None
+            }
+            None => None,
         }
     };
 
@@ -166,7 +163,7 @@ async fn post_paste(
             document.update(&app.database).await?;
 
             let content = {
-                if query.request_content {
+                if query.include_content {
                     let d: &str = &String::from_utf8_lossy(&data);
                     Some(d.to_string())
                 } else {
@@ -202,29 +199,29 @@ async fn patch_paste(
 
 async fn delete_paste(
     State(app): State<App>,
-    Query(query): Query<DeletePasteQuery>,
+    Path(paste_id): Path<Snowflake>,
     token: Token<AnyRequired>,
 ) -> Result<Response, AppError> {
     let owner_id: Snowflake = match token.authentication.required() {
         Required::UserSession(user_session) => {
             if let Some(user) = user_session.fetch_owner(&app.database).await? {
                 if !user.permissions.contains(UserPermissions::DeletePaste) {
-                    return Err(AppError::Authentication(AuthError::MissingPermissions))
+                    return Err(AppError::Authentication(AuthError::MissingPermissions));
                 }
             } else {
-                return Err(AppError::NotFound("Could not find owner.".to_string())) // FIXME: This should be a proper dedicated error.
+                return Err(AppError::NotFound("Could not find owner.".to_string())); // FIXME: This should be a proper dedicated error.
             }
             user_session.id
-        },
+        }
         Required::Bot(bot) => {
             if !bot.permissions.contains(BotPermissions::DeletePaste) {
-                return Err(AppError::Authentication(AuthError::MissingPermissions))
+                return Err(AppError::Authentication(AuthError::MissingPermissions));
             }
             bot.id
-        },
+        }
     };
 
-    Paste::delete_with_id(&app.database, query.paste_id, owner_id).await?;
+    Paste::delete_with_id(&app.database, paste_id, owner_id).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -238,22 +235,22 @@ async fn delete_pastes(
         Required::UserSession(user_session) => {
             if let Some(user) = user_session.fetch_owner(&app.database).await? {
                 if !user.permissions.contains(UserPermissions::DeletePaste) {
-                    return Err(AppError::Authentication(AuthError::MissingPermissions))
+                    return Err(AppError::Authentication(AuthError::MissingPermissions));
                 }
             } else {
-                return Err(AppError::NotFound("Could not find owner.".to_string())) // FIXME: This should be a proper dedicated error.
+                return Err(AppError::NotFound("Could not find owner.".to_string())); // FIXME: This should be a proper dedicated error.
             }
             user_session.id
-        },
+        }
         Required::Bot(bot) => {
             if !bot.permissions.contains(BotPermissions::DeletePaste) {
-                return Err(AppError::Authentication(AuthError::MissingPermissions))
+                return Err(AppError::Authentication(AuthError::MissingPermissions));
             }
             bot.id
-        },
+        }
     };
 
-    for paste_id in body.paste_ids {
+    for paste_id in body.ids {
         Paste::delete_with_id(&app.database, paste_id, owner_id).await?;
     }
 
@@ -266,11 +263,11 @@ const fn _const_false() -> bool {
 
 #[derive(Deserialize, Serialize)]
 pub struct GetPasteQuery {
-    /// The ID for the paste to retrieve.
-    paste_id: Snowflake,
-    /// Whether to return the content of the documents.
-    #[serde(default = "_const_false")]
-    request_content: bool,
+    /// Whether to return the content(s) of the documents.
+    ///
+    /// Defaults to False.
+    #[serde(default, rename = "content")]
+    pub include_content: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -281,21 +278,17 @@ pub struct GetPastesBody {
 
 #[derive(Deserialize, Serialize)]
 pub struct PostPasteQuery {
-    /// Whether to return the content.
-    #[serde(default = "_const_false")]
-    pub request_content: bool,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct DeletePasteQuery {
-    /// The ID for the paste to retrieve.
-    paste_id: Snowflake,
+    /// Whether to return the content(s) of the documents.
+    ///
+    /// Defaults to false.
+    #[serde(default, rename = "content")]
+    pub include_content: bool,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct DeletePastesBody {
     /// The ID's to get.
-    pub paste_ids: Vec<Snowflake>,
+    pub ids: Vec<Snowflake>,
 }
 
 #[derive(Deserialize, Serialize)]
