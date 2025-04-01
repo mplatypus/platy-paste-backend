@@ -10,11 +10,13 @@ Features:
             - [x] Singular
             - [x] Multiple
         - [ ] Post
+            - [ ] Authentication
             - [x] Singular
             - [ ] Limits (name, type, content)
         - [ ] Patch
-            - [ ] Singular
+            - [ ] Authentication
         - [x] Delete
+            - [ ] Authentication
             - [x] Singular
             - [x] Multiple
     - [ ] Document
@@ -24,6 +26,53 @@ Features:
     - [ ] Document Types
         - [ ] Fetch
             - [ ] Singular
+    - [ ] User
+        - [ ] Fetch
+            - [ ] Singular
+            - [ ] Multiple
+        - [ ] Post
+            - [ ] Authentication
+            - [ ] Name
+            - [ ] Permissions
+            - [ ] email/password
+            - [ ] oauth
+            - [ ] ratelimits via captcha? (might not be backend related.)
+        - [ ] Patch
+            - [ ] Authentication
+        - [ ] Delete
+            - [ ] Authentication
+            - [ ] Singular
+    - [ ] User Session
+        - [ ] Fetch
+            - [ ] Singular
+        - [ ] Post
+            - [ ] Singular
+        - [ ] Delete
+            - [ ] Singular
+            - [ ] Multiple
+    - [ ] Bot
+        - [ ] Fetch
+            - [ ] Authentication
+            - [ ] Singular
+            - [ ] Multiple
+        - [ ] Post
+            - [ ] Authentication
+            - [ ] Singular
+        - [ ] Patch
+            - [ ] Authentication
+            - [ ] Name
+            - [ ] Permissions
+        - [ ] Delete
+            - [ ] Authentication
+            - [ ] Singular
+            - [ ] Multiple
 - [ ] Authentication
     - [ ] User
+        - [ ] Email/Password Authentication
+            - [ ] Authentication
+            - [ ] Add OAuth2 connection(s)
+        - [ ] OAuth2
+            - [ ] Authentication
+            - [ ] Support multiple OAuth2 connections
+            - [ ] Convert to Email/Password account
     - [ ] Bot
