@@ -1,4 +1,4 @@
-//pub mod token;
+pub mod account;
 pub mod document;
 pub mod error;
 pub mod paste;
