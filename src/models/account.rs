@@ -82,6 +82,16 @@ impl User {
         .await?)
     }
 
+    pub async fn fetch_with_email(db: &Database, email: String) -> Result<Option<Self>, AppError> {
+        Ok(sqlx::query_as!(
+            Self,
+            "SELECT id, name, email, permissions FROM users WHERE email = $1",
+            email
+        )
+        .fetch_optional(db.pool())
+        .await?)
+    }
+
     pub async fn update(&self, db: &Database) -> Result<(), AppError> {
         let id: i64 = self.id.into();
         let permissions: i64 = self.permissions.into();

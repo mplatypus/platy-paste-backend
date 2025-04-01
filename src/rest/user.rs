@@ -27,6 +27,7 @@ pub fn generate_router() -> Router<App> {
         .route("/users/{user_id}", get(get_user))
         .route("/users", get(get_users))
         .route("/users", post(post_user))
+        .route("/users/auth", post(post_user_auth))
         .route("/users/{user_id}", patch(patch_user))
         .route("/users/{user_id}", delete(delete_user))
         .route("/users", delete(delete_users))
@@ -34,14 +35,13 @@ pub fn generate_router() -> Router<App> {
             "/users/{user_id}/sessions/{session_token}",
             get(get_user_session),
         )
-        .route("/users/{user_id}/sessions", post(post_user_session))
         .route(
             "/users/{user_id}/sessions/{session_token}",
             delete(delete_user_session),
         )
         .route("/users/{user_id}/sessions", delete(delete_user_sessions))
         .route(
-            "/users/{user_id}/session/all",
+            "/users/{user_id}/sessions/all",
             delete(delete_all_user_sessions),
         )
         .layer(DefaultBodyLimit::disable())
@@ -62,7 +62,7 @@ async fn get_users(
     State(_app): State<App>,
     Json(_body): Json<GetUsersBody>,
 ) -> Result<Response, AppError> {
-    todo!("Implement me!");
+    todo!("Implement me!"); // FIXME: Implement this function.
 }
 
 async fn post_user(
@@ -97,6 +97,33 @@ async fn post_user(
     user_secret.update(&app.database).await?;
 
     Ok((StatusCode::OK, Json(user)).into_response())
+}
+
+async fn post_user_auth(
+    State(app): State<App>,
+    Json(body): Json<PostUserAuthBody>,
+) -> Result<Response, AppError> {
+    let user = User::fetch_with_email(&app.database, body.email)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found.".to_string()))?;
+
+    let user_secret = UserSecret::fetch(&app.database, user.id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found.".to_string()))?;
+
+    if body.password.expose_secret() != user_secret.password.expose_secret() {
+        return Err(AppError::Authentication(AuthError::NotFound(
+            "User not found.".to_string(),
+        ))); // FIXME: This is needs a proper error.
+    }
+
+    let expiry = OffsetDateTime::now_utc().saturating_add(Duration::days(28)); // FIXME: This should be settable via the environment.
+
+    let user_session = UserSession::new(generate_token(user_secret.id)?, user_secret.id, expiry);
+
+    user_session.update(&app.database).await?;
+
+    Ok((StatusCode::OK, Json(user_session)).into_response())
 }
 
 async fn patch_user(
@@ -147,7 +174,7 @@ async fn delete_users(
     State(_app): State<App>,
     Json(_body): Json<DeleteUsersBody>,
 ) -> Result<Response, AppError> {
-    todo!("Implement me!");
+    todo!("Implement me!"); // FIXME: Implement this function.
 }
 
 async fn get_user_session(
@@ -164,31 +191,6 @@ async fn get_user_session(
         UserSession::delete(&app.database, user_session.token).await?;
         return Err(AppError::Authentication(AuthError::ExpiredToken));
     }
-
-    Ok((StatusCode::OK, Json(user_session)).into_response())
-}
-
-async fn post_user_session(
-    State(app): State<App>,
-    Json(body): Json<PostUserSessionBody>,
-) -> Result<Response, AppError> {
-    // FIXME: This should use a secure password.
-    // FIXME: This whole function might need rebuilding.
-    let user_secret = UserSecret::fetch(&app.database, body.id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("User authentication not found.".to_string()))?;
-
-    if body.password != user_secret.password.expose_secret() {
-        return Err(AppError::Authentication(AuthError::NotFound(
-            "Authentication Invalid.".to_string(),
-        ))); // FIXME: This is needs a proper error.
-    }
-
-    let expiry = OffsetDateTime::now_utc().saturating_add(Duration::days(28)); // FIXME: This should be settable via the environment.
-
-    let user_session = UserSession::new(generate_token(user_secret.id)?, user_secret.id, expiry);
-
-    user_session.update(&app.database).await?;
 
     Ok((StatusCode::OK, Json(user_session)).into_response())
 }
@@ -213,7 +215,7 @@ async fn delete_user_sessions(
     State(_app): State<App>,
     Json(_body): Json<DeleteUserSessionsBody>,
 ) -> Result<Response, AppError> {
-    todo!("Implement me!");
+    todo!("Implement me!"); // FIXME: Implement this function.
 }
 
 async fn delete_all_user_sessions(
@@ -248,6 +250,14 @@ pub struct PostUserBody {
     /// The permissions to give to the user.
     #[serde(default)]
     pub permissions: Option<UserPermissions>,
+}
+
+#[derive(Deserialize)]
+pub struct PostUserAuthBody {
+    /// The email to give the user.
+    pub email: String,
+    /// The password ot use for the account.
+    pub password: SecretString,
 }
 
 #[derive(Deserialize)]
