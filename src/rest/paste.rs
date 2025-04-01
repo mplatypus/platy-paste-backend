@@ -1,10 +1,6 @@
 use axum::{
-    Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Query, State},
-    response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State}, response::{IntoResponse, Response}, routing::{delete, get, patch, post}, http::StatusCode, Json, Router
 };
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -14,20 +10,21 @@ use crate::{
 
 pub fn generate_router() -> Router<App> {
     Router::new()
-        .route("/paste", get(get_paste))
         .route("/pastes", get(get_pastes))
-        .route("/paste", patch(patch_paste))
-        .route("/paste", post(post_paste))
-        .route("/paste", delete(delete_paste))
+        .route("/pastes/{paste_id}", get(get_paste))
+        .route("/pastes", post(post_paste))
+        .route("/pastes/{paste_id}", patch(patch_paste))
         .route("/pastes", delete(delete_pastes))
+        .route("/pastes/{paste_id}", delete(get_paste))
         .layer(DefaultBodyLimit::disable())
 }
 
 async fn get_paste(
     State(app): State<App>,
+    Path(paste_id): Path<Snowflake>,
     Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
-    let paste = Paste::fetch(&app.database, query.paste_id)
+    let paste = Paste::fetch(&app.database, paste_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
@@ -40,7 +37,7 @@ async fn get_paste(
             })?;
 
         let content = {
-            if query.request_content {
+            if query.include_content {
                 let data = app.s3.fetch_document(document.generate_path()).await?;
                 let d: &str = &String::from_utf8_lossy(&data);
                 Some(d.to_string())
@@ -131,7 +128,7 @@ async fn post_paste(
             document.update(&app.database).await?;
 
             let content = {
-                if query.request_content {
+                if query.include_content {
                     let d: &str = &String::from_utf8_lossy(&data);
                     Some(d.to_string())
                 } else {
@@ -165,9 +162,9 @@ async fn patch_paste(State(_app): State<App>) -> Result<Response, AppError> {
 
 async fn delete_paste(
     State(app): State<App>,
-    Query(query): Query<DeletePasteQuery>,
+    Path(paste_id): Path<Snowflake>
 ) -> Result<Response, AppError> {
-    Paste::delete(&app.database, query.paste_id).await?;
+    Paste::delete(&app.database, paste_id).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -176,7 +173,7 @@ async fn delete_pastes(
     State(app): State<App>,
     Json(body): Json<DeletePastesBody>,
 ) -> Result<Response, AppError> {
-    for paste_id in body.paste_ids {
+    for paste_id in body.ids {
         Paste::delete(&app.database, paste_id).await?;
     }
 
@@ -189,11 +186,11 @@ const fn _const_false() -> bool {
 
 #[derive(Deserialize, Serialize)]
 pub struct GetPasteQuery {
-    /// The ID for the paste to retrieve.
-    paste_id: Snowflake,
-    /// Whether to return the content of the documents.
-    #[serde(default = "_const_false")]
-    request_content: bool,
+    /// Whether to return the content(s) of the documents.
+    /// 
+    /// Defaults to False.
+    #[serde(default, rename = "content")]
+    pub include_content: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -204,21 +201,17 @@ pub struct GetPastesBody {
 
 #[derive(Deserialize, Serialize)]
 pub struct PostPasteQuery {
-    /// Whether to return the content.
-    #[serde(default = "_const_false")]
-    pub request_content: bool,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct DeletePasteQuery {
-    /// The ID for the paste to retrieve.
-    paste_id: Snowflake,
+    /// Whether to return the content(s) of the documents.
+    /// 
+    /// Defaults to false.
+    #[serde(default, rename = "content")]
+    pub include_content: bool,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct DeletePastesBody {
     /// The ID's to get.
-    pub paste_ids: Vec<Snowflake>,
+    pub ids: Vec<Snowflake>,
 }
 
 #[derive(Deserialize, Serialize)]
