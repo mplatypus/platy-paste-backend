@@ -1,7 +1,6 @@
 FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
 WORKDIR /app
 
-# Install necessary dependencies for OpenSSL and musl
 ENV SQLX_OFFLINE=true
 
 FROM chef AS planner
@@ -24,5 +23,11 @@ WORKDIR /app
 
 # Copy binary directly instead of full 'bin' directory
 COPY --from=builder /app/target/release/platy-paste /usr/local/bin/platy-paste
+
+RUN <<EOF
+  apt-get update
+  apt-get install -y ca-certificates
+  rm -rf /var/lib/apt/lists/*
+EOF
 
 ENTRYPOINT ["/usr/local/bin/platy-paste"]
