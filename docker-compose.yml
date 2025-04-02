@@ -33,9 +33,9 @@ services:
   minio:
     container_name: platy-paste-backend-minio
     image: quay.io/minio/minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    expose:
+      - 9000
+      - 9001
     networks:
       - platy-paste-backend
     environment:
@@ -65,7 +65,7 @@ services:
     build:
       context: .
     ports:
-      - 5454:5454
+      - ${PORT:?error}:${PORT:?error}
 
 networks:
   platy-paste-backend:
