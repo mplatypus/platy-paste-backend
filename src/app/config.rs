@@ -57,7 +57,8 @@ impl Config {
                     .into(),
             )
             .minio_root_user(
-                std::env::var("MINIO_ROOT_USER").expect("MINIO_ROOT_USER environment variable must be set."),
+                std::env::var("MINIO_ROOT_USER")
+                    .expect("MINIO_ROOT_USER environment variable must be set."),
             )
             .minio_root_password(
                 std::env::var("MINIO_ROOT_PASSWORD")
