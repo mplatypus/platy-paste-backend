@@ -35,6 +35,7 @@ pub fn generate_router() -> Router<App> {
             "/users/{user_id}/sessions/{session_token}",
             get(get_user_session),
         )
+        .route("/users/{user_id}/sessions", get(get_user_sessions))
         .route(
             "/users/{user_id}/sessions/{session_token}",
             delete(delete_user_session),
@@ -193,6 +194,13 @@ async fn get_user_session(
     }
 
     Ok((StatusCode::OK, Json(user_session)).into_response())
+}
+
+async fn get_user_sessions(
+    State(_app): State<App>,
+    Query(_query): Query<GetUserSessionQuery>,
+) -> Result<Response, AppError> {
+    todo!("Implement me!"); // FIXME: Implement this function.
 }
 
 async fn delete_user_session(
