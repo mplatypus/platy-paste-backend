@@ -68,4 +68,5 @@ services:
       - 5454:5454
 
 networks:
-  - platy-paste-backend
+  platy-paste-backend:
+    external: false
