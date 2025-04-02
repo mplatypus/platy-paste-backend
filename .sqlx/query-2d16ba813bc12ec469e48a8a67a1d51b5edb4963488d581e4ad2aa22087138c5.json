@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, owner_token, paste_id, type FROM documents WHERE paste_id = $1",
+  "query": "SELECT id, paste_id, type, name FROM documents WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -10,17 +10,17 @@
       },
       {
         "ordinal": 1,
-        "name": "owner_token",
-        "type_info": "Bpchar"
-      },
-      {
-        "ordinal": 2,
         "name": "paste_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
         "type_info": "Text"
       }
     ],
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "b595c7d810d574650a3f5eceeed72f7fe4b9814a43d17276adaecbc9f3f2b2f5"
+  "hash": "2d16ba813bc12ec469e48a8a67a1d51b5edb4963488d581e4ad2aa22087138c5"
 }
