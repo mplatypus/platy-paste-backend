@@ -76,3 +76,4 @@ Features:
             - [ ] Support multiple OAuth2 connections
             - [ ] Convert to Email/Password account
     - [ ] Bot
+    - [ ] Unique names (bots and users can't have the same name)
