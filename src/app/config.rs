@@ -17,9 +17,9 @@ pub struct Config {
     /// The S3 Service Secret Key.
     s3_secret_key: SecretString,
     /// The Minio User.
-    minio_user: String,
+    minio_root_user: String,
     /// The Minio Password.
-    minio_password: SecretString,
+    minio_root_password: SecretString,
     /// The domain to allow requests from.
     ///
     /// Typically used for the frontend, this bypasses cors.
@@ -56,12 +56,12 @@ impl Config {
                     .expect("S3_SECRET_KEY environment variable must be set.")
                     .into(),
             )
-            .minio_user(
-                std::env::var("MINIO_USER").expect("MINIO_USER environment variable must be set."),
+            .minio_root_user(
+                std::env::var("MINIO_ROOT_USER").expect("MINIO_ROOT_USER environment variable must be set."),
             )
-            .minio_password(
-                std::env::var("MINIO_PASSWORD")
-                    .expect("MINIO_PASSWORD environment variable must be set.")
+            .minio_root_password(
+                std::env::var("MINIO_ROOT_PASSWORD")
+                    .expect("MINIO_ROOT_PASSWORD environment variable must be set.")
                     .into(),
             )
             .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
@@ -93,12 +93,12 @@ impl Config {
         self.s3_secret_key.clone()
     }
 
-    pub fn minio_user(&self) -> String {
-        self.minio_user.clone()
+    pub fn minio_root_user(&self) -> String {
+        self.minio_root_user.clone()
     }
 
-    pub fn minio_password(&self) -> SecretString {
-        self.minio_password.clone()
+    pub fn minio_root_password(&self) -> SecretString {
+        self.minio_root_password.clone()
     }
 
     pub fn domain(&self) -> String {
