@@ -1,5 +1,5 @@
 [package]
-name = "Platy-Paste"
+name = "platy-paste"
 version = "0.1.0"
 edition = "2024"
 
@@ -51,7 +51,7 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 tracing-appender = "0.2"
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "tls-rustls"] }
 aws-config = "1.5"
 aws-sdk-s3 = "1.76"
 # Payload
