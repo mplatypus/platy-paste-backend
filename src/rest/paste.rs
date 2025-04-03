@@ -1,5 +1,9 @@
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State}, response::{IntoResponse, Response}, routing::{delete, get, patch, post}, http::StatusCode, Json, Router
+    Json, Router,
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{delete, get, patch, post},
 };
 use serde::{Deserialize, Serialize};
 
@@ -162,7 +166,7 @@ async fn patch_paste(State(_app): State<App>) -> Result<Response, AppError> {
 
 async fn delete_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>
+    Path(paste_id): Path<Snowflake>,
 ) -> Result<Response, AppError> {
     Paste::delete(&app.database, paste_id).await?;
 
@@ -187,7 +191,7 @@ const fn _const_false() -> bool {
 #[derive(Deserialize, Serialize)]
 pub struct GetPasteQuery {
     /// Whether to return the content(s) of the documents.
-    /// 
+    ///
     /// Defaults to False.
     #[serde(default, rename = "content")]
     pub include_content: bool,
@@ -202,7 +206,7 @@ pub struct GetPastesBody {
 #[derive(Deserialize, Serialize)]
 pub struct PostPasteQuery {
     /// Whether to return the content(s) of the documents.
-    /// 
+    ///
     /// Defaults to false.
     #[serde(default, rename = "content")]
     pub include_content: bool,
