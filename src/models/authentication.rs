@@ -1,11 +1,17 @@
-use axum::{extract::FromRequestParts, http::request::Parts, RequestPartsExt};
-use axum_extra::{headers::{authorization::Bearer, Authorization}, TypedHeader};
-use base64::{prelude::BASE64_URL_SAFE, Engine};
+use axum::{RequestPartsExt, extract::FromRequestParts, http::request::Parts};
+use axum_extra::{
+    TypedHeader,
+    headers::{Authorization, authorization::Bearer},
+};
+use base64::{Engine, prelude::BASE64_URL_SAFE};
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::app::{application::App, database::Database};
 
-use super::{error::{AppError, AuthError}, snowflake::Snowflake};
+use super::{
+    error::{AppError, AuthError},
+    snowflake::Snowflake,
+};
 
 pub struct Token {
     /// The paste ID the token is attached too.
@@ -15,14 +21,8 @@ pub struct Token {
 }
 
 impl Token {
-    pub const fn new(
-        paste_id: Snowflake,
-        token: SecretString
-    ) -> Self {
-        Self {
-            paste_id,
-            token
-        }
+    pub const fn new(paste_id: Snowflake, token: SecretString) -> Self {
+        Self { paste_id, token }
     }
 
     pub const fn paste_id(&self) -> Snowflake {
@@ -49,7 +49,9 @@ impl Token {
             "INSERT INTO paste_tokens(paste_id, token) VALUES ($1, $2)",
             paste_id,
             self.token.expose_secret()
-        ).execute(db.pool()).await?;
+        )
+        .execute(db.pool())
+        .await?;
 
         Ok(())
     }
@@ -97,5 +99,7 @@ pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, AppError> {
 
     let paste_id_encrypted = BASE64_URL_SAFE.encode(paste_id.to_string());
 
-    Ok(SecretString::new(format!("{paste_id_encrypted}.{unique_token}").into()))
+    Ok(SecretString::new(
+        format!("{paste_id_encrypted}.{unique_token}").into(),
+    ))
 }

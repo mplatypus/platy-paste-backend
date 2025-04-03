@@ -15,11 +15,7 @@ pub struct Paste {
 }
 
 impl Paste {
-    pub const fn new(
-        id: Snowflake,
-        edited: bool,
-        document_ids: Vec<Snowflake>,
-    ) -> Self {
+    pub const fn new(id: Snowflake, edited: bool, document_ids: Vec<Snowflake>) -> Self {
         Self {
             id,
             edited,
@@ -83,8 +79,6 @@ impl Paste {
 
         Ok(())
     }
-
-
 
     /// Delete.
     ///
