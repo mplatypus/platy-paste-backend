@@ -20,6 +20,8 @@ pub struct Config {
     minio_root_user: String,
     /// The Minio Password.
     minio_root_password: SecretString,
+    /// The domain to use for cors.
+    domain: String,
 }
 
 impl Config {
@@ -53,13 +55,15 @@ impl Config {
                     .into(),
             )
             .minio_root_user(
-                std::env::var("MINIO_ROOT_USER").expect("MINIO_ROOT_USER environment variable must be set."),
+                std::env::var("MINIO_ROOT_USER")
+                    .expect("MINIO_ROOT_USER environment variable must be set."),
             )
             .minio_root_password(
                 std::env::var("MINIO_ROOT_PASSWORD")
                     .expect("MINIO_ROOT_PASSWORD environment variable must be set.")
                     .into(),
             )
+            .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
             .build()
             .expect("Failed to create application configuration.")
     }
@@ -94,5 +98,9 @@ impl Config {
 
     pub fn minio_root_password(&self) -> SecretString {
         self.minio_root_password.clone()
+    }
+
+    pub fn domain(&self) -> String {
+        self.domain.clone()
     }
 }
