@@ -25,5 +25,5 @@ Features:
         - [ ] Fetch
             - [ ] Singular
 - [ ] Authentication
-    - [ ] User
-    - [ ] Bot
+    - [ ] Paste
+        - [ ] Authentication
