@@ -10,7 +10,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     app::application::App,
-    models::{authentication::{generate_token, Token}, document::Document, error::{AppError, AuthError}, paste::Paste, snowflake::Snowflake},
+    models::{
+        authentication::{Token, generate_token},
+        document::Document,
+        error::{AppError, AuthError},
+        paste::Paste,
+        snowflake::Snowflake,
+    },
 };
 
 pub fn generate_router() -> Router<App> {
@@ -154,10 +160,7 @@ async fn post_paste(
 
     paste.update(&app.database).await?;
 
-    let paste_token = Token::new(
-        paste_id,
-        generate_token(paste_id)?,
-    );
+    let paste_token = Token::new(paste_id, generate_token(paste_id)?);
 
     paste_token.update(&app.database).await?;
 
@@ -166,17 +169,14 @@ async fn post_paste(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-async fn patch_paste(
-    State(_app): State<App>,
-    _token: Token
-) -> Result<Response, AppError> {
+async fn patch_paste(State(_app): State<App>, _token: Token) -> Result<Response, AppError> {
     Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
 }
 
 async fn delete_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
-    token: Token
+    token: Token,
 ) -> Result<Response, AppError> {
     if token.paste_id() != paste_id {
         return Err(AppError::Authentication(AuthError::InvalidToken)); // FIXME: This might need changing.
@@ -249,11 +249,13 @@ impl ResponsePaste {
         }
     }
 
-    pub fn from_paste(paste: &Paste, token: Option<Token>, documents: Vec<ResponseDocument>) -> Self {
-        let token_value: Option<String> = {
-            token.map(|t| t.token().expose_secret().to_string())
-        };
-        
+    pub fn from_paste(
+        paste: &Paste,
+        token: Option<Token>,
+        documents: Vec<ResponseDocument>,
+    ) -> Self {
+        let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
+
         Self::new(paste.id, token_value, paste.edited, documents)
     }
 }
