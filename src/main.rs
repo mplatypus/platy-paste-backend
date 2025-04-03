@@ -2,9 +2,10 @@ pub mod app;
 pub mod models;
 pub mod rest;
 
-use axum::Router;
+use axum::{Router, http::HeaderValue};
+use http::{Method, header};
 use time::{UtcOffset, format_description};
-use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
 
@@ -53,11 +54,30 @@ async fn main() {
             Err(err) => panic!("Failed to build state: {err}"),
         };
 
+    let cors = CorsLayer::new()
+        .allow_origin(
+            state
+                .config
+                .domain()
+                .parse::<HeaderValue>()
+                .expect("Failed to parse CORS domain."),
+        )
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::ACCEPT, header::CONTENT_TYPE, header::AUTHORIZATION]);
+
     let app = Router::new()
         //.nest("/admin", rest::admin::generate_router())
         .nest("/v1", rest::paste::generate_router())
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
+        .layer(cors)
         .with_state(state.clone());
 
     let host = state.config.host();
