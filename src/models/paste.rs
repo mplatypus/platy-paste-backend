@@ -8,10 +8,8 @@ use super::{error::AppError, snowflake::Snowflake};
 pub struct Paste {
     /// The ID of the paste.
     pub id: Snowflake,
-    /// The owner ID that owns the paste.
-    pub owner_id: Option<Snowflake>,
-    /// The bot token that owns the paste.
-    pub owner_token: Option<String>,
+    /// Whether the paste has been edited.
+    pub edited: bool,
     /// The document ID's.
     pub document_ids: Vec<Snowflake>,
 }
@@ -19,16 +17,18 @@ pub struct Paste {
 impl Paste {
     pub const fn new(
         id: Snowflake,
-        owner_id: Option<Snowflake>,
-        owner_token: Option<String>,
+        edited: bool,
         document_ids: Vec<Snowflake>,
     ) -> Self {
         Self {
             id,
-            owner_id,
-            owner_token,
+            edited,
             document_ids,
         }
+    }
+
+    pub fn set_edited(&mut self) {
+        self.edited = true;
     }
 
     pub fn add_document(&mut self, document_id: Snowflake) {
@@ -51,7 +51,7 @@ impl Paste {
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, owner_id, owner_token, document_ids FROM pastes WHERE id = $1",
+            "SELECT id, edited, document_ids FROM pastes WHERE id = $1",
             paste_id
         )
         .fetch_optional(db.pool())
@@ -60,8 +60,7 @@ impl Paste {
         if let Some(q) = query {
             return Ok(Some(Self::new(
                 q.id.into(),
-                q.owner_id.map(std::convert::Into::into),
-                q.owner_token,
+                q.edited,
                 Self::decode_document_ids(&q.document_ids)?,
             )));
         }
@@ -69,70 +68,32 @@ impl Paste {
         Ok(None)
     }
 
-    /// Fetch All.
-    ///
-    /// Fetch all pastes owned by a token.
-    ///
-    /// - [token]: The Token to look for.
-    pub async fn fetch_all(db: &Database, token: String) -> Result<Vec<Self>, AppError> {
-        let query = sqlx::query!(
-            "SELECT id, owner_id, owner_token, document_ids FROM pastes WHERE owner_token = $1",
-            token
-        )
-        .fetch_all(db.pool())
-        .await?;
-
-        let mut pastes: Vec<Self> = Vec::new();
-        for record in query {
-            pastes.push(Self::new(
-                record.id.into(),
-                record.owner_id.map(std::convert::Into::into),
-                record.owner_token,
-                Self::decode_document_ids(&record.document_ids)?,
-            ));
-        }
-        Ok(pastes)
-    }
-
     /// Update.
     ///
     /// Update a existing paste.
     pub async fn update(&self, db: &Database) -> Result<(), AppError> {
         let paste_id: i64 = self.id.into();
-        let owner_id: Option<i64> = self.owner_id.map(std::convert::Into::into);
 
         sqlx::query!(
-            "INSERT INTO pastes(id, owner_id, owner_token, document_ids) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET document_ids = $4",
+            "INSERT INTO pastes(id, edited, document_ids) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET edited = $2, document_ids = $3",
             paste_id,
-            owner_id,
-            self.owner_token,
+            self.edited,
             Self::encode_document_ids(&self.document_ids)
         ).execute(db.pool()).await?;
 
         Ok(())
     }
 
+
+
     /// Delete.
     ///
-    /// Delete an existing paste.
+    /// Delete an existing paste with the provided ID.
     ///
     /// - [id]: The ID to delete from.
-    pub async fn delete(db: &Database, id: Snowflake) -> Result<(), AppError> {
+    pub async fn delete_with_id(db: &Database, id: Snowflake) -> Result<(), AppError> {
         let paste_id: i64 = id.into();
         sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
-            .execute(db.pool())
-            .await?;
-
-        Ok(())
-    }
-
-    /// Delete All.
-    ///
-    /// Delete all existing pastes owned by a token.
-    ///
-    ///  - [token]: The Token to delete from.
-    pub async fn delete_all(db: &Database, token: String) -> Result<(), AppError> {
-        sqlx::query!("DELETE FROM pastes WHERE owner_token = $1", token,)
             .execute(db.pool())
             .await?;
 

@@ -5,11 +5,12 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     app::application::App,
-    models::{document::Document, error::AppError, paste::Paste, snowflake::Snowflake},
+    models::{authentication::{generate_token, Token}, document::Document, error::{AppError, AuthError}, paste::Paste, snowflake::Snowflake},
 };
 
 pub fn generate_router() -> Router<App> {
@@ -18,7 +19,6 @@ pub fn generate_router() -> Router<App> {
         .route("/pastes/{paste_id}", get(get_paste))
         .route("/pastes", post(post_paste))
         .route("/pastes/{paste_id}", patch(patch_paste))
-        .route("/pastes", delete(delete_pastes))
         .route("/pastes/{paste_id}", delete(delete_paste))
         .layer(DefaultBodyLimit::disable())
 }
@@ -55,7 +55,7 @@ async fn get_paste(
         response_documents.push(response_document);
     }
 
-    let paste_response = ResponsePaste::from_paste(&paste, response_documents);
+    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 
     Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
@@ -84,7 +84,7 @@ async fn get_pastes(
             response_documents.push(response_document);
         }
 
-        let response_paste = ResponsePaste::from_paste(&paste, response_documents);
+        let response_paste = ResponsePaste::from_paste(&paste, None, response_documents);
 
         response_pastes.push(response_paste);
     }
@@ -148,38 +148,41 @@ async fn post_paste(
 
     let paste = Paste::new(
         paste_id,
-        None,
-        None,
+        false,
         response_documents.iter().map(|d| d.id).collect(),
     );
 
     paste.update(&app.database).await?;
 
-    let response = ResponsePaste::from_paste(&paste, response_documents);
+    let paste_token = Token::new(
+        paste_id,
+        generate_token(paste_id)?,
+    );
+
+    paste_token.update(&app.database).await?;
+
+    let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-async fn patch_paste(State(_app): State<App>) -> Result<Response, AppError> {
-    Ok(StatusCode::NOT_IMPLEMENTED.into_response())
+async fn patch_paste(
+    State(_app): State<App>,
+    _token: Token
+) -> Result<Response, AppError> {
+    Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
 }
 
 async fn delete_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
+    token: Token
 ) -> Result<Response, AppError> {
-    Paste::delete(&app.database, paste_id).await?;
-
-    Ok(StatusCode::NO_CONTENT.into_response())
-}
-
-async fn delete_pastes(
-    State(app): State<App>,
-    Json(body): Json<DeletePastesBody>,
-) -> Result<Response, AppError> {
-    for paste_id in body.ids {
-        Paste::delete(&app.database, paste_id).await?;
+    if token.paste_id() != paste_id {
+        return Err(AppError::Authentication(AuthError::InvalidToken)); // FIXME: This might need changing.
     }
+
+    Paste::delete_with_id(&app.database, paste_id).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -222,10 +225,11 @@ pub struct DeletePastesBody {
 pub struct ResponsePaste {
     /// The ID for the paste.
     pub id: Snowflake,
-    /// The user that created this paste.
-    pub owner_id: Option<Snowflake>,
-    /// The token that created the paste.
-    pub owner_token: Option<String>,
+    /// The token attached to the paste.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    /// Whether the paste has been edited.
+    pub edited: bool,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
@@ -233,28 +237,24 @@ pub struct ResponsePaste {
 impl ResponsePaste {
     pub const fn new(
         id: Snowflake,
-        owner_id: Option<Snowflake>,
-        owner_token: Option<String>,
+        token: Option<String>,
+        edited: bool,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
-            owner_id,
-            owner_token,
+            token,
+            edited,
             documents,
         }
     }
 
-    pub fn from_paste(paste: &Paste, documents: Vec<ResponseDocument>) -> Self {
-        let owner_id = {
-            if paste.owner_token.is_some() {
-                None
-            } else {
-                paste.owner_id
-            }
+    pub fn from_paste(paste: &Paste, token: Option<Token>, documents: Vec<ResponseDocument>) -> Self {
+        let token_value: Option<String> = {
+            token.map(|t| t.token().expose_secret().to_string())
         };
-
-        Self::new(paste.id, owner_id, paste.owner_token.clone(), documents)
+        
+        Self::new(paste.id, token_value, paste.edited, documents)
     }
 }
 
