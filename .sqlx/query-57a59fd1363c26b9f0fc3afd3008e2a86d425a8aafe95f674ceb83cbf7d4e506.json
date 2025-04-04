@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, owner_id, owner_token, document_ids FROM pastes WHERE owner_token = $1",
+  "query": "SELECT id, edited, document_ids FROM pastes WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -10,31 +10,25 @@
       },
       {
         "ordinal": 1,
-        "name": "owner_id",
-        "type_info": "Int8"
+        "name": "edited",
+        "type_info": "Bool"
       },
       {
         "ordinal": 2,
-        "name": "owner_token",
-        "type_info": "Bpchar"
-      },
-      {
-        "ordinal": 3,
         "name": "document_ids",
         "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Bpchar"
+        "Int8"
       ]
     },
     "nullable": [
       false,
-      true,
-      true,
+      false,
       false
     ]
   },
-  "hash": "0d1841efcf5239b354c8fa257572261cf1e639ca3627b22ee6c1fe5d651c9398"
+  "hash": "57a59fd1363c26b9f0fc3afd3008e2a86d425a8aafe95f674ceb83cbf7d4e506"
 }
