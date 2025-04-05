@@ -32,8 +32,8 @@ Below is a list of features. The checked boxes mean they have been implemented.
         - [ ] Fetch
             - [ ] Singular
 - [ ] Authentication
-    - [ ] User
-    - [ ] Bot
+    - [ ] Paste
+        - [ ] Authentication
 
 
 ## Setup
