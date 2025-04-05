@@ -1,12 +1,49 @@
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State}, response::{IntoResponse, Response}, routing::{delete, get, patch, post}, http::StatusCode, Json, Router
+    Json, Router,
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{delete, get, patch, post},
 };
+use regex::Regex;
+use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     app::application::App,
-    models::{document::Document, error::AppError, paste::Paste, snowflake::Snowflake},
+    models::{
+        authentication::{Token, generate_token},
+        document::Document,
+        error::{AppError, AuthError},
+        paste::Paste,
+        snowflake::Snowflake,
+    },
 };
+
+/* FIXME: Unsure if this is actually needed.
+/// Supported mimes are the ones that will be supported by the website.
+const SUPPORTED_MIMES: &[&str] = &[
+    // Text mimes
+    "text/x-asm",
+    "text/x-c",
+    "text/plain",
+    "text/markdown",
+    "text/css",
+    "text/csv",
+    "text/html",
+    "text/x-java-source",
+    "text/javascript",
+    "text/x-pascal",
+    "text/x-python",
+    // Application mimes
+    "application/json"
+];
+*/
+
+/// Unsupported mimes, are ones that will be declined.
+const UNSUPPORTED_MIMES: &[&str] = &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
+
+const DEFAULT_MIME: &str = "text/plain";
 
 pub fn generate_router() -> Router<App> {
     Router::new()
@@ -14,7 +51,6 @@ pub fn generate_router() -> Router<App> {
         .route("/pastes/{paste_id}", get(get_paste))
         .route("/pastes", post(post_paste))
         .route("/pastes/{paste_id}", patch(patch_paste))
-        .route("/pastes", delete(delete_pastes))
         .route("/pastes/{paste_id}", delete(delete_paste))
         .layer(DefaultBodyLimit::disable())
 }
@@ -51,7 +87,7 @@ async fn get_paste(
         response_documents.push(response_document);
     }
 
-    let paste_response = ResponsePaste::from_paste(&paste, response_documents);
+    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 
     Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
@@ -80,7 +116,7 @@ async fn get_pastes(
             response_documents.push(response_document);
         }
 
-        let response_paste = ResponsePaste::from_paste(&paste, response_documents);
+        let response_paste = ResponsePaste::from_paste(&paste, None, response_documents);
 
         response_pastes.push(response_paste);
     }
@@ -97,97 +133,92 @@ async fn post_paste(
 
     let mut response_documents: Vec<ResponseDocument> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
-        if field
-            .content_type()
-            .is_some_and(|v| ["text/plain"].contains(&v))
-        {
-            let name = field.name().unwrap_or("unknown").to_string();
-            let headers = field.headers().clone();
-            let data = field.bytes().await?;
+        let document_type = {
+            match field.content_type() {
+                Some(content_type) => {
+                    if contains_mime(UNSUPPORTED_MIMES, content_type) {
+                        return Err(AppError::NotFound(
+                            "The mime type provided, is not supported.".to_string(),
+                        ));
+                    }
 
-            let document_id = Snowflake::generate()?;
-
-            let document_type = headers.get("").map_or_else(
-                || {
-                    let (_, document_type): (&str, &str) =
-                        name.rsplit_once('.').unwrap_or(("", "unknown"));
-                    document_type.to_string()
-                },
-                |h| {
-                    let val: &str = &String::from_utf8_lossy(h.as_bytes());
-                    val.to_string()
-                },
-            );
-
-            let document = Document::new(document_id, paste_id, document_type, name);
-
-            app.s3
-                .create_document(document.generate_path(), data.clone())
-                .await?;
-
-            document.update(&app.database).await?;
-
-            let content = {
-                if query.include_content {
-                    let d: &str = &String::from_utf8_lossy(&data);
-                    Some(d.to_string())
-                } else {
-                    None
+                    content_type.to_string()
                 }
-            };
+                None => DEFAULT_MIME.to_string(),
+            }
+        };
+        let name = field.name().unwrap_or("unknown").to_string();
+        let data = field.bytes().await?;
 
-            let response_document = ResponseDocument::from_document(document, content);
+        let document_id = Snowflake::generate()?;
 
-            response_documents.push(response_document);
-        }
+        let document = Document::new(document_id, paste_id, document_type, name);
+
+        app.s3
+            .create_document(document.generate_path(), data.clone())
+            .await?;
+
+        document.update(&app.database).await?;
+
+        let content = {
+            if query.include_content {
+                let d: &str = &String::from_utf8_lossy(&data);
+                Some(d.to_string())
+            } else {
+                None
+            }
+        };
+
+        let response_document = ResponseDocument::from_document(document, content);
+
+        response_documents.push(response_document);
+    }
+
+    if response_documents.is_empty() {
+        return Err(AppError::NotFound(
+            "Failed to parse provided documents.".to_string(),
+        )); // FIXME: This needs a custom error.
     }
 
     let paste = Paste::new(
         paste_id,
-        None,
-        None,
+        false,
         response_documents.iter().map(|d| d.id).collect(),
     );
 
     paste.update(&app.database).await?;
 
-    let response = ResponsePaste::from_paste(&paste, response_documents);
+    let paste_token = Token::new(paste_id, generate_token(paste_id)?);
+
+    paste_token.update(&app.database).await?;
+
+    let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-async fn patch_paste(State(_app): State<App>) -> Result<Response, AppError> {
-    Ok(StatusCode::NOT_IMPLEMENTED.into_response())
+async fn patch_paste(State(_app): State<App>, _token: Token) -> Result<Response, AppError> {
+    Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
 }
 
 async fn delete_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>
+    Path(paste_id): Path<Snowflake>,
+    token: Token,
 ) -> Result<Response, AppError> {
-    Paste::delete(&app.database, paste_id).await?;
-
-    Ok(StatusCode::NO_CONTENT.into_response())
-}
-
-async fn delete_pastes(
-    State(app): State<App>,
-    Json(body): Json<DeletePastesBody>,
-) -> Result<Response, AppError> {
-    for paste_id in body.ids {
-        Paste::delete(&app.database, paste_id).await?;
+    if token.paste_id() != paste_id {
+        return Err(AppError::Authentication(AuthError::InvalidToken)); // FIXME: This might need changing.
     }
 
-    Ok(StatusCode::NO_CONTENT.into_response())
-}
+    Paste::delete_with_id(&app.database, paste_id).await?;
 
-const fn _const_false() -> bool {
-    false
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct GetPasteQuery {
     /// Whether to return the content(s) of the documents.
-    /// 
+    ///
     /// Defaults to False.
     #[serde(default, rename = "content")]
     pub include_content: bool,
@@ -202,7 +233,7 @@ pub struct GetPastesBody {
 #[derive(Deserialize, Serialize)]
 pub struct PostPasteQuery {
     /// Whether to return the content(s) of the documents.
-    /// 
+    ///
     /// Defaults to false.
     #[serde(default, rename = "content")]
     pub include_content: bool,
@@ -218,10 +249,11 @@ pub struct DeletePastesBody {
 pub struct ResponsePaste {
     /// The ID for the paste.
     pub id: Snowflake,
-    /// The user that created this paste.
-    pub owner_id: Option<Snowflake>,
-    /// The token that created the paste.
-    pub owner_token: Option<String>,
+    /// The token attached to the paste.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    /// Whether the paste has been edited.
+    pub edited: bool,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
@@ -229,28 +261,26 @@ pub struct ResponsePaste {
 impl ResponsePaste {
     pub const fn new(
         id: Snowflake,
-        owner_id: Option<Snowflake>,
-        owner_token: Option<String>,
+        token: Option<String>,
+        edited: bool,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
-            owner_id,
-            owner_token,
+            token,
+            edited,
             documents,
         }
     }
 
-    pub fn from_paste(paste: &Paste, documents: Vec<ResponseDocument>) -> Self {
-        let owner_id = {
-            if paste.owner_token.is_some() {
-                None
-            } else {
-                paste.owner_id
-            }
-        };
+    pub fn from_paste(
+        paste: &Paste,
+        token: Option<Token>,
+        documents: Vec<ResponseDocument>,
+    ) -> Self {
+        let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
-        Self::new(paste.id, owner_id, paste.owner_token.clone(), documents)
+        Self::new(paste.id, token_value, paste.edited, documents)
     }
 }
 
@@ -295,4 +325,32 @@ impl ResponseDocument {
             content,
         )
     }
+}
+
+// FIXME: This whole function needs rebuilding. I do not like the way its made.
+// For example, the regex values. Can I have them as constants in any way? or are they super light when unwrapping?
+// Any way to shrink the `.capture` call so that its not being called each time?
+fn contains_mime(mimes: &[&str], value: &str) -> bool {
+    let match_all_mime =
+        Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/\*$").expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
+    let split_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/(?P<right>[a-zA-Z0-9\*]+)$")
+        .expect("Failed to build split mime regex."); // extracts the left and right parts of the mime.
+
+    if let Some(split_mime_value) = split_mime.captures(value) {
+        for mime in mimes {
+            if mime == &value {
+                return true;
+            } else if let Some(capture) = match_all_mime.captures(mime) {
+                if let (Some(mime_value_left), Some(capture_value_left)) =
+                    (split_mime_value.name("left"), capture.name("left"))
+                {
+                    if mime_value_left.as_str() == capture_value_left.as_str() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
 }
