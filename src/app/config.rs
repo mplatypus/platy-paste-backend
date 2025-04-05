@@ -22,6 +22,26 @@ pub struct Config {
     minio_root_password: SecretString,
     /// The domain to use for cors.
     domain: String,
+    /// The maximum allowed documents.
+    global_paste_documents: usize,
+    /// Maximum paste body size.
+    global_paste_total_document_size_limit: usize,
+    /// Individual paste document size.
+    global_paste_document_size_limit: usize,
+    /// Global rate limiter.
+    global_rate_limiter: u32,
+    /// Global paste rate limiter.
+    global_paste_rate_limiter: u32,
+    /// Get pastes rate limiter.
+    get_pastes_rate_limiter: u32,
+    /// Get paste rate limiter.
+    get_paste_rate_limiter: u32,
+    /// Post paste rate limiter.
+    post_paste_rate_limiter: u32,
+    /// Patch paste rate limiter.
+    patch_paste_rate_limiter: u32,
+    /// Delete paste rate limiter.
+    delete_paste_rate_limiter: u32,
 }
 
 impl Config {
@@ -64,6 +84,68 @@ impl Config {
                     .into(),
             )
             .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
+            .global_paste_documents(
+                std::env::var("GLOBAL_PASTE_DOCUMENTS")
+                    .expect("GLOBAL_PASTE_DOCUMENTS environment variable must be set.")
+                    .parse()
+                    .expect("GLOBAL_PASTE_DOCUMENTS requires an integer."),
+            )
+            .global_paste_total_document_size_limit(
+                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT")
+                    .expect(
+                        "SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT environment variable must be set.",
+                    )
+                    .parse()
+                    .expect("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT requires an integer."),
+            )
+            .global_paste_document_size_limit(
+                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT")
+                    .expect("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT environment variable must be set.")
+                    .parse()
+                    .expect("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT requires an integer."),
+            )
+            .global_rate_limiter(
+                std::env::var("RATE_LIMIT_GLOBAL")
+                    .expect("RATE_LIMIT_GLOBAL environment variable must be set.")
+                    .parse()
+                    .expect("RATE_LIMIT_GLOBAL requires an integer."),
+            )
+            .global_paste_rate_limiter(
+                std::env::var("RATE_LIMIT_GLOBAL_PASTE")
+                    .expect("RATE_LIMIT_GLOBAL_PASTE environment variable must be set.")
+                    .parse()
+                    .expect("RATE_LIMIT_GLOBAL_PASTE requires an integer."),
+            )
+            .get_pastes_rate_limiter(
+                std::env::var("RATE_LIMIT_GET_PASTES")
+                    .expect("RATE_LIMIT_GET_PASTES environment variable must be set.")
+                    .parse()
+                    .expect("RATE_LIMIT_GET_PASTES requires an integer."),
+            )
+            .get_paste_rate_limiter(
+                std::env::var("RATE_LIMIT_GET_PASTE")
+                    .expect("RATE_LIMIT_GET_PASTE environment variable must be set.")
+                    .parse()
+                    .expect("RATE_LIMIT_GET_PASTE requires an integer."),
+            )
+            .post_paste_rate_limiter(
+                std::env::var("RATE_LIMIT_POST_PASTE")
+                    .expect("RATE_LIMIT_POST_PASTE environment variable must be set.")
+                    .parse()
+                    .expect("RATE_LIMIT_POST_PASTE requires an integer."),
+            )
+            .patch_paste_rate_limiter(
+                std::env::var("RATE_LIMIT_PATCH_PASTE")
+                    .expect("RATE_LIMIT_PATCH_PASTE environment variable must be set.")
+                    .parse()
+                    .expect("RATE_LIMIT_PATCH_PASTE requires an integer."),
+            )
+            .delete_paste_rate_limiter(
+                std::env::var("RATE_LIMIT_DELETE_PASTE")
+                    .expect("RATE_LIMIT_DELETE_PASTE environment variable must be set.")
+                    .parse()
+                    .expect("RATE_LIMIT_DELETEs_PASTE requires an integer."),
+            )
             .build()
             .expect("Failed to create application configuration.")
     }
@@ -102,5 +184,45 @@ impl Config {
 
     pub fn domain(&self) -> String {
         self.domain.clone()
+    }
+
+    pub const fn global_paste_documents(&self) -> usize {
+        self.global_paste_documents
+    }
+
+    pub const fn global_paste_total_document_size_limit(&self) -> usize {
+        self.global_paste_total_document_size_limit
+    }
+
+    pub const fn global_paste_document_size_limit(&self) -> usize {
+        self.global_paste_document_size_limit
+    }
+
+    pub const fn global_rate_limiter(&self) -> u32 {
+        self.global_rate_limiter
+    }
+
+    pub const fn global_paste_rate_limiter(&self) -> u32 {
+        self.global_paste_rate_limiter
+    }
+
+    pub const fn get_pastes_rate_limiter(&self) -> u32 {
+        self.get_pastes_rate_limiter
+    }
+
+    pub const fn get_paste_rate_limiter(&self) -> u32 {
+        self.get_paste_rate_limiter
+    }
+
+    pub const fn post_paste_rate_limiter(&self) -> u32 {
+        self.post_paste_rate_limiter
+    }
+
+    pub const fn patch_paste_rate_limiter(&self) -> u32 {
+        self.patch_paste_rate_limiter
+    }
+
+    pub const fn delete_paste_rate_limiter(&self) -> u32 {
+        self.delete_paste_rate_limiter
     }
 }

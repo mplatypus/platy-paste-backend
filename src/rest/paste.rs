@@ -1,3 +1,5 @@
+use std::{sync::Arc, time::Duration};
+
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
@@ -8,9 +10,10 @@ use axum::{
 use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
 use crate::{
-    app::application::App,
+    app::{application::App, config::Config},
     models::{
         authentication::{Token, generate_token},
         document::Document,
@@ -45,14 +48,98 @@ const UNSUPPORTED_MIMES: &[&str] = &["image/*", "video/*", "audio/*", "font/*", 
 
 const DEFAULT_MIME: &str = "text/plain";
 
-pub fn generate_router() -> Router<App> {
+pub fn generate_router(config: &Config) -> Router<App> {
+    let global_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.global_paste_rate_limiter()) // FIXME: Make into a config value.
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build global paste limiter."),
+        ),
+    };
+
+    let get_pastes_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.get_pastes_rate_limiter()) // FIXME: Make into a config value.
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build get pastes limiter."),
+        ),
+    };
+
+    let get_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.get_paste_rate_limiter()) // FIXME: Make into a config value.
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build get paste limiter."),
+        ),
+    };
+
+    let post_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.post_paste_rate_limiter()) // FIXME: Make into a config value.
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build post paste limiter."),
+        ),
+    };
+
+    let patch_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.patch_paste_rate_limiter()) // FIXME: Make into a config value.
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build patch paste limiter."),
+        ),
+    };
+
+    let delete_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.delete_paste_rate_limiter()) // FIXME: Make into a config value.
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build delete paste limiter."),
+        ),
+    };
+
     Router::new()
-        .route("/pastes", get(get_pastes))
-        .route("/pastes/{paste_id}", get(get_paste))
-        .route("/pastes", post(post_paste))
-        .route("/pastes/{paste_id}", patch(patch_paste))
-        .route("/pastes/{paste_id}", delete(delete_paste))
-        .layer(DefaultBodyLimit::disable())
+        .route("/pastes", get(get_pastes).layer(get_pastes_limiter))
+        .route(
+            "/pastes/{paste_id}",
+            get(get_paste).layer(get_paste_limiter),
+        )
+        .route("/pastes", post(post_paste).layer(post_paste_limiter))
+        .route(
+            "/pastes/{paste_id}",
+            patch(patch_paste).layer(patch_paste_limiter),
+        )
+        .route(
+            "/pastes/{paste_id}",
+            delete(delete_paste).layer(delete_paste_limiter),
+        )
+        .layer(global_limiter)
+        .layer(DefaultBodyLimit::max(
+            config.global_paste_total_document_size_limit() * 1024 * 1024,
+        ))
 }
 
 async fn get_paste(
@@ -131,7 +218,7 @@ async fn post_paste(
 ) -> Result<Response, AppError> {
     let paste_id = Snowflake::generate()?;
 
-    let mut response_documents: Vec<ResponseDocument> = Vec::new();
+    let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
         let document_type = {
             match field.content_type() {
@@ -150,40 +237,52 @@ async fn post_paste(
         let name = field.name().unwrap_or("unknown").to_string();
         let data = field.bytes().await?;
 
-        let document_id = Snowflake::generate()?;
+        if data.len() > (app.config.global_paste_document_size_limit() * 1024 * 1024) {
+            return Err(AppError::NotFound("Document too large.".to_string()));
+        }
 
-        let document = Document::new(document_id, paste_id, document_type, name);
+        let document = Document::new(Snowflake::generate()?, paste_id, document_type, name);
 
-        app.s3
-            .create_document(document.generate_path(), data.clone())
-            .await?;
-
-        document.update(&app.database).await?;
-
-        let content = {
-            if query.include_content {
-                let d: &str = &String::from_utf8_lossy(&data);
-                Some(d.to_string())
-            } else {
-                None
-            }
-        };
-
-        let response_document = ResponseDocument::from_document(document, content);
-
-        response_documents.push(response_document);
+        documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
 
-    if response_documents.is_empty() {
+    let final_documents: Vec<ResponseDocument> = documents
+        .iter()
+        .map(|(d, c)| {
+            let content = {
+                if query.include_content {
+                    Some(c.clone())
+                } else {
+                    None
+                }
+            };
+
+            ResponseDocument::from_document(d.clone(), content)
+        })
+        .collect();
+
+    if documents.len() > app.config.global_paste_documents() {
+        return Err(AppError::NotFound("Too many documents.".to_string()));
+    } // FIXME: This needs a custom error.
+
+    if documents.is_empty() {
         return Err(AppError::NotFound(
             "Failed to parse provided documents.".to_string(),
         )); // FIXME: This needs a custom error.
     }
 
+    for (document, content) in documents {
+        app.s3
+            .create_document(document.generate_path(), content.into())
+            .await?;
+
+        document.update(&app.database).await?;
+    }
+
     let paste = Paste::new(
         paste_id,
         false,
-        response_documents.iter().map(|d| d.id).collect(),
+        final_documents.iter().map(|d| d.id).collect(),
     );
 
     paste.update(&app.database).await?;
@@ -192,7 +291,7 @@ async fn post_paste(
 
     paste_token.update(&app.database).await?;
 
-    let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
+    let response = ResponsePaste::from_paste(&paste, Some(paste_token), final_documents);
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
