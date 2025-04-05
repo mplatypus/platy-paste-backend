@@ -41,13 +41,7 @@ const SUPPORTED_MIMES: &[&str] = &[
 */
 
 /// Unsupported mimes, are ones that will be declined.
-const UNSUPPORTED_MIMES: &[&str] = &[
-    "image/*",
-    "video/*",
-    "audio/*",
-    "font/*",
-    "application/pdf"
-];
+const UNSUPPORTED_MIMES: &[&str] = &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
 
 const DEFAULT_MIME: &str = "text/plain";
 
@@ -143,12 +137,14 @@ async fn post_paste(
             match field.content_type() {
                 Some(content_type) => {
                     if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                        return Err(AppError::NotFound("The mime type provided, is not supported.".to_string()));
+                        return Err(AppError::NotFound(
+                            "The mime type provided, is not supported.".to_string(),
+                        ));
                     }
 
                     content_type.to_string()
-                },
-                None => DEFAULT_MIME.to_string()
+                }
+                None => DEFAULT_MIME.to_string(),
             }
         };
         let name = field.name().unwrap_or("unknown").to_string();
@@ -179,7 +175,9 @@ async fn post_paste(
     }
 
     if response_documents.is_empty() {
-        return Err(AppError::NotFound("Failed to parse provided documents.".to_string())); // FIXME: This needs a custom error.
+        return Err(AppError::NotFound(
+            "Failed to parse provided documents.".to_string(),
+        )); // FIXME: This needs a custom error.
     }
 
     let paste = Paste::new(
@@ -333,15 +331,19 @@ impl ResponseDocument {
 // For example, the regex values. Can I have them as constants in any way? or are they super light when unwrapping?
 // Any way to shrink the `.capture` call so that its not being called each time?
 fn contains_mime(mimes: &[&str], value: &str) -> bool {
-    let match_all_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/\*$").expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
-    let split_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/(?P<right>[a-zA-Z0-9\*]+)$").expect("Failed to build split mime regex."); // extracts the left and right parts of the mime.
+    let match_all_mime =
+        Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/\*$").expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
+    let split_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/(?P<right>[a-zA-Z0-9\*]+)$")
+        .expect("Failed to build split mime regex."); // extracts the left and right parts of the mime.
 
     if let Some(split_mime_value) = split_mime.captures(value) {
         for mime in mimes {
             if mime == &value {
                 return true;
             } else if let Some(capture) = match_all_mime.captures(mime) {
-                if let (Some(mime_value_left), Some(capture_value_left)) = (split_mime_value.name("left"), capture.name("left")) {
+                if let (Some(mime_value_left), Some(capture_value_left)) =
+                    (split_mime_value.name("left"), capture.name("left"))
+                {
                     if mime_value_left.as_str() == capture_value_left.as_str() {
                         return true;
                     }
