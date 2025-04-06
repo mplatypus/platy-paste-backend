@@ -15,12 +15,12 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum AppError {
+    #[error("Authentication error: {0}")]
+    Authentication(#[from] AuthError),
     #[error("Database transaction failed: {0}")]
     Database(#[from] sqlx::Error),
     #[error("S3 Client failed: {0}")]
     S3Client(String),
-    #[error("Authentication error: {0}")]
-    Authentication(#[from] AuthError),
     #[error("Multipart error: {0}")]
     Multipart(#[from] MultipartError),
     #[error("JSON Error: {0}")]
@@ -28,7 +28,11 @@ pub enum AppError {
     #[error("Reqwest Error: {0}")]
     Reqwest(#[from] reqwest::Error),
     #[error("Parse Int Error: {0}")]
-    ParseIntError(#[from] ParseIntError),
+    ParseInt(#[from] ParseIntError),
+    #[error("Internal Server Error: {0}")]
+    InternalServer(String),
+    #[error("Bad Request Error: {0}")]
+    BadRequest(String),
     #[error("Not Found: {0}")]
     NotFound(String),
 }
@@ -36,18 +40,24 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, reason, trace): (StatusCode, &str, String) = match self {
-            Self::Database(ref e) => (StatusCode::BAD_REQUEST, "Database Error", e.to_string()),
             Self::Authentication(e) => return e.into_response(),
+            Self::Database(ref e) => (StatusCode::BAD_REQUEST, "Database Error", e.to_string()),
             Self::Multipart(e) => return e.into_response(),
             Self::Json(ref e) => (StatusCode::BAD_REQUEST, "Json Error", e.to_string()),
             Self::Reqwest(ref e) => (StatusCode::BAD_REQUEST, "", e.to_string()),
-            Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error.", e.clone()),
-            Self::ParseIntError(ref e) => (
+            Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error", e.clone()),
+            Self::ParseInt(ref e) => (
                 StatusCode::BAD_REQUEST,
-                "Failed to parse integer.",
+                "Failed to parse integer",
                 e.to_string(),
             ),
-            Self::NotFound(ref e) => (StatusCode::NOT_FOUND, &e.clone(), String::new()),
+            Self::InternalServer(ref e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                e.clone(),
+            ),
+            Self::BadRequest(ref e) => (StatusCode::BAD_REQUEST, "Bad Request", e.clone()),
+            Self::NotFound(ref e) => (StatusCode::NOT_FOUND, "Not Found", e.clone()),
         };
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = %self);
@@ -91,17 +101,17 @@ pub enum AuthError {
     MissingPermissions,
     #[error("The token provided does not exist")]
     InvalidToken,
-    #[error("Not Found: {0}")]
-    NotFound(String),
+    #[error("The token was valid, but the paste ID did not match")]
+    ForbiddenPasteId,
 }
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, reason): (StatusCode, &str) = match self {
-            Self::MissingCredentials => (StatusCode::UNAUTHORIZED, "Missing Credentials."),
-            Self::MissingPermissions => (StatusCode::UNAUTHORIZED, "Missing Permissions."),
-            Self::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid Token."),
-            Self::NotFound(_) => (StatusCode::NOT_FOUND, "Not Found"),
+            Self::MissingCredentials => (StatusCode::UNAUTHORIZED, "Missing Credentials"),
+            Self::MissingPermissions => (StatusCode::UNAUTHORIZED, "Missing Permissions"),
+            Self::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid Token"),
+            Self::ForbiddenPasteId => (StatusCode::FORBIDDEN, "Invalid Paste ID"),
         };
 
         let body = Json(ErrorResponse {

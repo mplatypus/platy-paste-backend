@@ -88,7 +88,9 @@ pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, AppError> {
 
     let mut buffer: Vec<u8> = vec![0; TOKEN_LENGTH];
 
-    getrandom::fill(&mut buffer).map_err(|e| AppError::NotFound(e.to_string()))?;
+    getrandom::fill(&mut buffer).map_err(|e| {
+        AppError::InternalServer(format!("Failed to obtain a random integers: {e}"))
+    })?;
 
     let ascii = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-");
 
