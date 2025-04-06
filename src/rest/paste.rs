@@ -135,16 +135,16 @@ async fn post_paste(
             let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
                 .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
             let now = OffsetDateTime::now_utc();
-            let difference = (time - now).whole_hours();
+            let difference = (time - now).whole_seconds();
 
             if difference.is_negative() {
                 return Err(AppError::BadRequest(
-                    "The value provided is not a valid timestamp.".to_string(),
+                    "The timestamp provided is invalid.".to_string(),
                 ));
             }
 
             if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
-                if difference as usize > maximum_expiry_hours {
+                if difference as usize > maximum_expiry_hours * 3600 {
                     return Err(AppError::BadRequest(
                         "The time provided is too large.".to_string(),
                     ));
