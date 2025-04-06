@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sqlx::PgTransaction;
 
 use crate::app::database::Database;
 
@@ -85,7 +86,7 @@ impl Document {
     /// Fetch all documents owned by a paste.
     ///
     /// - [id]: The paste ID to look for.
-    pub async fn fetch_all_paste(db: &Database, id: Snowflake) -> Result<Vec<Self>, AppError> {
+    pub async fn fetch_all(db: &Database, id: Snowflake) -> Result<Vec<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name FROM documents WHERE paste_id = $1",
@@ -109,7 +110,7 @@ impl Document {
     /// Update.
     ///
     /// Update a existing paste.
-    pub async fn update(&self, db: &Database) -> Result<(), AppError> {
+    pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let document_id: i64 = self.id.into();
         let paste_id: i64 = self.paste_id.into();
 
@@ -119,7 +120,7 @@ impl Document {
             paste_id,
             self.document_type,
             self.name
-        ).execute(db.pool()).await?;
+        ).execute(transaction.as_mut()).await?;
 
         Ok(())
     }
