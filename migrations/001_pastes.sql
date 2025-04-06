@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS pastes (
     "id" BIGINT NOT NULL PRIMARY KEY,
     -- Whether the paste has been modified.
     "edited" BOOLEAN NOT NULL,
+    -- The expiry of the paste.
+    "expiry" TIMESTAMP WITH TIME ZONE,
     -- The documents attached to this paste.
     "document_ids" TEXT NOT NULL
 );

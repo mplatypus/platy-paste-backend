@@ -27,6 +27,8 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("Reqwest Error: {0}")]
     Reqwest(#[from] reqwest::Error),
+    #[error("Component Range Error: {0}")]
+    ComponentRange(#[from] time::error::ComponentRange),
     #[error("Parse Int Error: {0}")]
     ParseIntError(#[from] ParseIntError),
     #[error("Not Found: {0}")]
@@ -42,6 +44,11 @@ impl IntoResponse for AppError {
             Self::Json(ref e) => (StatusCode::BAD_REQUEST, "Json Error", e.to_string()),
             Self::Reqwest(ref e) => (StatusCode::BAD_REQUEST, "", e.to_string()),
             Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error.", e.clone()),
+            Self::ComponentRange(ref e) => (
+                StatusCode::BAD_REQUEST,
+                "Component Range Error",
+                e.to_string(),
+            ),
             Self::ParseIntError(ref e) => (
                 StatusCode::BAD_REQUEST,
                 "Failed to parse integer.",

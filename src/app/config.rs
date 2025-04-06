@@ -22,6 +22,8 @@ pub struct Config {
     minio_root_password: SecretString,
     /// The domain to use for cors.
     domain: String,
+    /// The maximum expiry for pastes.
+    maximum_expiry_hours: Option<usize>,
 }
 
 impl Config {
@@ -64,6 +66,10 @@ impl Config {
                     .into(),
             )
             .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
+            .maximum_expiry_hours(std::env::var("MAXIMUM_EXPIRY_HOURS").ok().map(|v| {
+                v.parse()
+                    .expect("MAXIMUM_EXPIRY_HOURS requires an integer.")
+            }))
             .build()
             .expect("Failed to create application configuration.")
     }
@@ -102,5 +108,9 @@ impl Config {
 
     pub fn domain(&self) -> String {
         self.domain.clone()
+    }
+
+    pub const fn maximum_expiry_hours(&self) -> Option<usize> {
+        self.maximum_expiry_hours
     }
 }
