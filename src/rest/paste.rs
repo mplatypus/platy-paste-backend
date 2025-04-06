@@ -146,7 +146,7 @@ async fn post_paste(
             if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
                 if difference as usize > maximum_expiry_hours * 3600 {
                     return Err(AppError::BadRequest(
-                        "The time provided is too large.".to_string(),
+                        "The timestamp provided is above the maximum.".to_string(),
                     ));
                 }
             }
