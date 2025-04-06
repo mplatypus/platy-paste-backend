@@ -8,7 +8,7 @@ use axum::{
 use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 use crate::{
     app::application::App,
@@ -127,7 +127,10 @@ async fn post_paste(
     let paste_id = Snowflake::generate()?;
 
     let expiry = {
-        if query.expiry.is_none() && app.config.maximum_expiry_hours().is_some() {
+        if query.expiry.is_none()
+            && app.config.default_expiry_hours().is_none()
+            && app.config.maximum_expiry_hours().is_some()
+        {
             return Err(AppError::BadRequest(
                 "A expiry time is required.".to_string(),
             ));
@@ -153,7 +156,12 @@ async fn post_paste(
 
             Some(time)
         } else {
-            None
+            app.config
+                .default_expiry_hours()
+                .map(|default_expiry_time| {
+                    OffsetDateTime::now_utc()
+                        .saturating_add(Duration::hours(default_expiry_time as i64))
+                })
         }
     };
 
