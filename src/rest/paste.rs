@@ -184,17 +184,20 @@ async fn post_paste(
     let expiry = {
         if let Some(expiry) = query.expiry {
             tracing::trace!("Expiry found! {}", expiry);
-            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)?;
+            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
+                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
             let now = OffsetDateTime::now_utc();
             let difference = (time - now).whole_hours();
 
             if difference.is_negative() {
-                return Err(AppError::NotFound("The value provided is not a valid timestamp.".to_string()));
+                return Err(AppError::NotFound(
+                    "The value provided is not a valid timestamp.".to_string(),
+                ));
             }
 
             if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
                 if difference as usize > maximum_expiry_hours {
-                    return Err(AppError::NotFound( 
+                    return Err(AppError::NotFound(
                         "The time provided is too large.".to_string(),
                     ));
                 }
