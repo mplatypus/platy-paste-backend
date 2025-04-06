@@ -5,7 +5,7 @@ use axum_extra::{
 };
 use base64::{Engine, prelude::BASE64_URL_SAFE};
 use secrecy::{ExposeSecret, SecretString};
-
+use sqlx::PgTransaction;
 use crate::app::{application::App, database::Database};
 
 use super::{
@@ -43,14 +43,14 @@ impl Token {
         .await?)
     }
 
-    pub async fn update(&self, db: &Database) -> Result<(), AppError> {
+    pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let paste_id: i64 = self.paste_id.into();
         sqlx::query!(
             "INSERT INTO paste_tokens(paste_id, token) VALUES ($1, $2)",
             paste_id,
             self.token.expose_secret()
         )
-        .execute(db.pool())
+        .execute(transaction.as_mut())
         .await?;
 
         Ok(())

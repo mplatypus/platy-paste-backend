@@ -64,14 +64,10 @@ async fn get_paste(
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
+    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    
     let mut response_documents = Vec::new();
-    for document_id in &paste.document_ids {
-        let document = Document::fetch(&app.database, *document_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Could not find document with ID: {document_id}"))
-            })?;
-
+    for document in documents {
         let content = {
             if query.include_content {
                 let data = app.s3.fetch_document(document.generate_path()).await?;
@@ -103,14 +99,10 @@ async fn get_pastes(
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
-        let mut response_documents = Vec::new();
-        for document_id in &paste.document_ids {
-            let document = Document::fetch(&app.database, *document_id)
-                .await?
-                .ok_or_else(|| {
-                    AppError::NotFound(format!("Could not find document with ID: {document_id}"))
-                })?;
+        let documents = Document::fetch_all(&app.database, paste.id).await?;
 
+        let mut response_documents = Vec::new();
+        for document in documents {
             let response_document = ResponseDocument::from_document(document, None);
 
             response_documents.push(response_document);
@@ -129,7 +121,16 @@ async fn post_paste(
     Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let mut transaction = app.database.pool().begin().await?;
+
     let paste_id = Snowflake::generate()?;
+
+    let paste = Paste::new(
+        paste_id,
+        false,
+    );
+
+    paste.update(&mut transaction).await?;
 
     let mut response_documents: Vec<ResponseDocument> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -158,7 +159,7 @@ async fn post_paste(
             .create_document(document.generate_path(), data.clone())
             .await?;
 
-        document.update(&app.database).await?;
+        document.update(&mut transaction).await?;
 
         let content = {
             if query.include_content {
@@ -180,17 +181,11 @@ async fn post_paste(
         ));
     }
 
-    let paste = Paste::new(
-        paste_id,
-        false,
-        response_documents.iter().map(|d| d.id).collect(),
-    );
-
-    paste.update(&app.database).await?;
-
     let paste_token = Token::new(paste_id, generate_token(paste_id)?);
 
-    paste_token.update(&app.database).await?;
+    paste_token.update(&mut transaction).await?;
+
+    transaction.commit().await?;
 
     let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
 
