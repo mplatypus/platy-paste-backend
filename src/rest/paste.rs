@@ -8,6 +8,7 @@ use axum::{
 use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::{
     app::application::App,
@@ -180,9 +181,34 @@ async fn post_paste(
         )); // FIXME: This needs a custom error.
     }
 
+    let expiry = {
+        if let Some(expiry) = query.expiry {
+            tracing::trace!("Expiry found! {}", expiry);
+            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)?;
+            let now = OffsetDateTime::now_utc();
+            let difference = (time - now).whole_hours();
+
+            if difference.is_negative() {
+                return Err(AppError::NotFound("The value provided is not a valid timestamp.".to_string()));
+            }
+
+            if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
+                if difference as usize > maximum_expiry_hours {
+                    return Err(AppError::NotFound( 
+                        "The time provided is too large.".to_string(),
+                    ));
+                }
+            }
+            Some(time)
+        } else {
+            None
+        }
+    };
+
     let paste = Paste::new(
         paste_id,
         false,
+        expiry,
         response_documents.iter().map(|d| d.id).collect(),
     );
 
@@ -237,6 +263,9 @@ pub struct PostPasteQuery {
     /// Defaults to false.
     #[serde(default, rename = "content")]
     pub include_content: bool,
+    /// The expiry time for the paste.
+    #[serde(default)]
+    pub expiry: Option<usize>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -254,6 +283,8 @@ pub struct ResponsePaste {
     pub token: Option<String>,
     /// Whether the paste has been edited.
     pub edited: bool,
+    /// The expiry time of the paste.
+    pub expiry: Option<usize>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
@@ -263,12 +294,14 @@ impl ResponsePaste {
         id: Snowflake,
         token: Option<String>,
         edited: bool,
+        expiry: Option<usize>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
             token,
             edited,
+            expiry,
             documents,
         }
     }
@@ -280,7 +313,9 @@ impl ResponsePaste {
     ) -> Self {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
-        Self::new(paste.id, token_value, paste.edited, documents)
+        let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
+
+        Self::new(paste.id, token_value, paste.edited, expiry, documents)
     }
 }
 
