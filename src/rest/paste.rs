@@ -66,7 +66,7 @@ async fn get_paste(
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
     let documents = Document::fetch_all(&app.database, paste.id).await?;
-    
+
     let mut response_documents = Vec::new();
     for document in documents {
         let content = {
@@ -127,37 +127,37 @@ async fn post_paste(
     let paste_id = Snowflake::generate()?;
 
     let expiry = {
-        if let Some(expiry) = query.expiry {
-            tracing::trace!("Expiry found! {}", expiry);
+        if query.expiry.is_none() && app.config.maximum_expiry_hours().is_some() {
+            return Err(AppError::BadRequest(
+                "A expiry time is required.".to_string(),
+            ));
+        } else if let Some(expiry) = query.expiry {
             let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
                 .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
             let now = OffsetDateTime::now_utc();
             let difference = (time - now).whole_hours();
 
             if difference.is_negative() {
-                return Err(AppError::NotFound(
+                return Err(AppError::BadRequest(
                     "The value provided is not a valid timestamp.".to_string(),
                 ));
             }
 
             if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
                 if difference as usize > maximum_expiry_hours {
-                    return Err(AppError::NotFound(
+                    return Err(AppError::BadRequest(
                         "The time provided is too large.".to_string(),
                     ));
                 }
             }
+
             Some(time)
         } else {
             None
         }
     };
 
-    let paste = Paste::new(
-        paste_id,
-        false,
-        expiry
-    );
+    let paste = Paste::new(paste_id, false, expiry);
 
     paste.update(&mut transaction).await?;
 
