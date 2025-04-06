@@ -27,7 +27,9 @@ impl Snowflake {
             .expect("Time went backwards")
             .as_millis() as u64;
 
-        let id = getrandom::u64().map_err(|e| AppError::NotFound(e.to_string()))?;
+        let id = getrandom::u64().map_err(|e| {
+            AppError::InternalServer(format!("Failed to obtain a random integer: {e}"))
+        })?;
 
         let new_snowflake = Self::new((timestamp << 22) | (id as u64 & 0x003F_FFFF));
 
