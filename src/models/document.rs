@@ -45,14 +45,7 @@ impl Document {
     ///
     /// Generate the path to the resource.
     pub fn generate_path(&self) -> String {
-        format!("{}/{}.{}", self.paste_id, self.id, self.document_type)
-    }
-
-    /// Generate Full Name.
-    ///
-    /// Generate the proper name of the document.
-    pub fn generate_full_name(&self) -> String {
-        format!("{}.{}", self.name, self.document_type)
+        format!("{}/{}-{}", self.paste_id, self.id, self.name)
     }
 
     /// Fetch.
@@ -81,7 +74,7 @@ impl Document {
         Ok(None)
     }
 
-    /// Fetch All Paste.
+    /// Fetch All Documents.
     ///
     /// Fetch all documents owned by a paste.
     ///
@@ -130,7 +123,7 @@ impl Document {
     /// Delete an existing paste.
     ///
     /// - [id]: The ID to delete from.
-    pub async fn delete(&self, db: &Database, id: Snowflake) -> Result<(), AppError> {
+    pub async fn delete(db: &Database, id: Snowflake) -> Result<(), AppError> {
         let paste_id: i64 = id.into();
         sqlx::query!("DELETE FROM documents WHERE id = $1", paste_id,)
             .execute(db.pool())
