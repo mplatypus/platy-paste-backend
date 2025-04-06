@@ -1,4 +1,5 @@
 use time::OffsetDateTime;
+use sqlx::PgTransaction;
 
 use crate::app::database::Database;
 
@@ -12,8 +13,6 @@ pub struct Paste {
     pub edited: bool,
     /// The time when the paste expires.
     pub expiry: Option<OffsetDateTime>,
-    /// The document ID's.
-    pub document_ids: Vec<Snowflake>,
 }
 
 impl Paste {
@@ -21,13 +20,11 @@ impl Paste {
         id: Snowflake,
         edited: bool,
         expiry: Option<OffsetDateTime>,
-        document_ids: Vec<Snowflake>,
     ) -> Self {
         Self {
             id,
             edited,
             expiry,
-            document_ids,
         }
     }
 
@@ -39,18 +36,6 @@ impl Paste {
         self.expiry = expiry;
     }
 
-    pub fn add_document(&mut self, document_id: Snowflake) {
-        self.document_ids.push(document_id);
-    }
-
-    pub fn remove_document(&mut self, index: usize) {
-        self.document_ids.remove(index);
-    }
-
-    pub fn clear_documents(&mut self) {
-        self.document_ids.clear();
-    }
-
     /// Fetch.
     ///
     /// Fetch the pastes, via their ID.
@@ -59,7 +44,7 @@ impl Paste {
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, edited, expiry, document_ids FROM pastes WHERE id = $1",
+            "SELECT id, edited, expiry FROM pastes WHERE id = $1",
             paste_id
         )
         .fetch_optional(db.pool())
@@ -70,7 +55,6 @@ impl Paste {
                 q.id.into(),
                 q.edited,
                 q.expiry,
-                Self::decode_document_ids(&q.document_ids)?,
             )));
         }
 
@@ -80,16 +64,15 @@ impl Paste {
     /// Update.
     ///
     /// Update a existing paste.
-    pub async fn update(&self, db: &Database) -> Result<(), AppError> {
+    pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, edited, expiry, document_ids) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET edited = $2, expiry = $3, document_ids = $4",
+            "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET edited = $2, expiry = $3",
             paste_id,
             self.edited,
-            self.expiry,
-            Self::encode_document_ids(&self.document_ids)
-        ).execute(db.pool()).await?;
+            self.expiry
+        ).execute(transaction.as_mut()).await?;
 
         Ok(())
     }
@@ -106,19 +89,5 @@ impl Paste {
             .await?;
 
         Ok(())
-    }
-
-    fn decode_document_ids(document_ids_string: &str) -> Result<Vec<Snowflake>, AppError> {
-        let mut document_ids = Vec::new();
-        for document_id_string in document_ids_string.split("::") {
-            document_ids.push(Snowflake::try_from(document_id_string)?);
-        }
-        Ok(document_ids)
-    }
-
-    fn encode_document_ids(document_ids: &[Snowflake]) -> String {
-        let document_id_strings: Vec<String> =
-            document_ids.iter().map(ToString::to_string).collect();
-        document_id_strings.join("::")
     }
 }

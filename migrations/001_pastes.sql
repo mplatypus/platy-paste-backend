@@ -4,16 +4,16 @@ CREATE TABLE IF NOT EXISTS pastes (
     -- Whether the paste has been modified.
     "edited" BOOLEAN NOT NULL,
     -- The expiry of the paste.
-    "expiry" TIMESTAMP WITH TIME ZONE,
-    -- The documents attached to this paste.
-    "document_ids" TEXT NOT NULL
+    "expiry" TIMESTAMP WITH TIME ZONE
 );
 
 CREATE TABLE IF NOT EXISTS paste_tokens (
     -- The paste ID attached to the token.
     "paste_id" BIGINT NOT NULL PRIMARY KEY,
     -- The token for the paste.
-    "token" TEXT NOT NULL UNIQUE
+    "token" TEXT NOT NULL UNIQUE,
+    -- Foreign key that deletes the paste token when the paste ID (owner) gets deleted.
+    FOREIGN KEY ("paste_id") REFERENCES pastes("id") ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -24,5 +24,7 @@ CREATE TABLE IF NOT EXISTS documents (
     -- The type of the documents contents.
     "type" TEXT NOT NULL,
     -- The name of the document.
-    "name" TEXT NOT NULL
+    "name" TEXT NOT NULL,
+    -- Foreign key that deletes the paste token when the paste ID (owner) gets deleted.
+    FOREIGN KEY ("paste_id") REFERENCES pastes("id") ON DELETE CASCADE
 );

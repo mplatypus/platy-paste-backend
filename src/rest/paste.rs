@@ -65,14 +65,10 @@ async fn get_paste(
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
+    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    
     let mut response_documents = Vec::new();
-    for document_id in &paste.document_ids {
-        let document = Document::fetch(&app.database, *document_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Could not find document with ID: {document_id}"))
-            })?;
-
+    for document in documents {
         let content = {
             if query.include_content {
                 let data = app.s3.fetch_document(document.generate_path()).await?;
@@ -104,14 +100,10 @@ async fn get_pastes(
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
-        let mut response_documents = Vec::new();
-        for document_id in &paste.document_ids {
-            let document = Document::fetch(&app.database, *document_id)
-                .await?
-                .ok_or_else(|| {
-                    AppError::NotFound(format!("Could not find document with ID: {document_id}"))
-                })?;
+        let documents = Document::fetch_all(&app.database, paste.id).await?;
 
+        let mut response_documents = Vec::new();
+        for document in documents {
             let response_document = ResponseDocument::from_document(document, None);
 
             response_documents.push(response_document);
@@ -130,56 +122,9 @@ async fn post_paste(
     Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let mut transaction = app.database.pool().begin().await?;
+
     let paste_id = Snowflake::generate()?;
-
-    let mut response_documents: Vec<ResponseDocument> = Vec::new();
-    while let Some(field) = multipart.next_field().await? {
-        let document_type = {
-            match field.content_type() {
-                Some(content_type) => {
-                    if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                        return Err(AppError::BadRequest(format!(
-                            "Invalid mime type received: {content_type}"
-                        )));
-                    }
-
-                    content_type.to_string()
-                }
-                None => DEFAULT_MIME.to_string(),
-            }
-        };
-        let name = field.name().unwrap_or("unknown").to_string();
-        let data = field.bytes().await?;
-
-        let document_id = Snowflake::generate()?;
-
-        let document = Document::new(document_id, paste_id, document_type, name);
-
-        app.s3
-            .create_document(document.generate_path(), data.clone())
-            .await?;
-
-        document.update(&app.database).await?;
-
-        let content = {
-            if query.include_content {
-                let d: &str = &String::from_utf8_lossy(&data);
-                Some(d.to_string())
-            } else {
-                None
-            }
-        };
-
-        let response_document = ResponseDocument::from_document(document, content);
-
-        response_documents.push(response_document);
-    }
-
-    if response_documents.is_empty() {
-        return Err(AppError::BadRequest(
-            "No documents were received.".to_string(),
-        ));
-    }
 
     let expiry = {
         if let Some(expiry) = query.expiry {
@@ -211,15 +156,65 @@ async fn post_paste(
     let paste = Paste::new(
         paste_id,
         false,
-        expiry,
-        response_documents.iter().map(|d| d.id).collect(),
+        expiry
     );
 
-    paste.update(&app.database).await?;
+    paste.update(&mut transaction).await?;
+
+    let mut response_documents: Vec<ResponseDocument> = Vec::new();
+    while let Some(field) = multipart.next_field().await? {
+        let document_type = {
+            match field.content_type() {
+                Some(content_type) => {
+                    if contains_mime(UNSUPPORTED_MIMES, content_type) {
+                        return Err(AppError::BadRequest(format!(
+                            "Invalid mime type received: {content_type}"
+                        )));
+                    }
+
+                    content_type.to_string()
+                }
+                None => DEFAULT_MIME.to_string(),
+            }
+        };
+        let name = field.name().unwrap_or("unknown").to_string();
+        let data = field.bytes().await?;
+
+        let document_id = Snowflake::generate()?;
+
+        let document = Document::new(document_id, paste_id, document_type, name);
+
+        app.s3
+            .create_document(document.generate_path(), data.clone())
+            .await?;
+
+        document.update(&mut transaction).await?;
+
+        let content = {
+            if query.include_content {
+                let d: &str = &String::from_utf8_lossy(&data);
+                Some(d.to_string())
+            } else {
+                None
+            }
+        };
+
+        let response_document = ResponseDocument::from_document(document, content);
+
+        response_documents.push(response_document);
+    }
+
+    if response_documents.is_empty() {
+        return Err(AppError::BadRequest(
+            "No documents were received.".to_string(),
+        ));
+    }
 
     let paste_token = Token::new(paste_id, generate_token(paste_id)?);
 
-    paste_token.update(&app.database).await?;
+    paste_token.update(&mut transaction).await?;
+
+    transaction.commit().await?;
 
     let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
 
