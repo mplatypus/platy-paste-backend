@@ -138,9 +138,9 @@ async fn post_paste(
             match field.content_type() {
                 Some(content_type) => {
                     if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                        return Err(AppError::NotFound(
-                            "The mime type provided, is not supported.".to_string(),
-                        ));
+                        return Err(AppError::BadRequest(format!(
+                            "Invalid mime type received: {content_type}"
+                        )));
                     }
 
                     content_type.to_string()
@@ -176,9 +176,9 @@ async fn post_paste(
     }
 
     if response_documents.is_empty() {
-        return Err(AppError::NotFound(
-            "Failed to parse provided documents.".to_string(),
-        )); // FIXME: This needs a custom error.
+        return Err(AppError::BadRequest(
+            "No documents were received.".to_string(),
+        ));
     }
 
     let expiry = {
@@ -233,7 +233,7 @@ async fn delete_paste(
     token: Token,
 ) -> Result<Response, AppError> {
     if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::InvalidToken)); // FIXME: This might need changing.
+        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
     Paste::delete_with_id(&app.database, paste_id).await?;
