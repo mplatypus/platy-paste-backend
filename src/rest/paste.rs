@@ -65,6 +65,13 @@ async fn get_paste(
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
+    if let Some(expiry) = paste.expiry {
+        if expiry < OffsetDateTime::now_utc() {
+            Paste::delete_with_id(&app.database, paste.id).await?;
+            return Err(AppError::NotFound("Paste not found.".to_string()));
+        }
+    }
+
     let documents = Document::fetch_all(&app.database, paste.id).await?;
 
     let mut response_documents = Vec::new();
@@ -99,6 +106,13 @@ async fn get_pastes(
         let paste = Paste::fetch(&app.database, paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
+        
+        if let Some(expiry) = paste.expiry {
+            if expiry < OffsetDateTime::now_utc() {
+                Paste::delete_with_id(&app.database, paste.id).await?;
+                return Err(AppError::NotFound("Paste not found.".to_string()));
+            }
+        }
 
         let documents = Document::fetch_all(&app.database, paste.id).await?;
 
