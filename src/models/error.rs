@@ -44,7 +44,7 @@ impl IntoResponse for AppError {
             Self::Database(ref e) => (StatusCode::BAD_REQUEST, "Database Error", e.to_string()),
             Self::Multipart(e) => return e.into_response(),
             Self::Json(ref e) => (StatusCode::BAD_REQUEST, "Json Error", e.to_string()),
-            Self::Reqwest(ref e) => (StatusCode::BAD_REQUEST, "", e.to_string()),
+            Self::Reqwest(ref e) => (StatusCode::BAD_REQUEST, "Reqwest Error", e.to_string()),
             Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error", e.clone()),
             Self::ParseInt(ref e) => (
                 StatusCode::BAD_REQUEST,
