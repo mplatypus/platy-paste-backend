@@ -14,6 +14,13 @@ pub struct S3Service {
 }
 
 impl S3Service {
+    /// New.
+    ///
+    /// Create a new S3 Service.
+    ///
+    /// ## Arguments
+    ///
+    /// - `client`: The client to use.
     pub const fn new(client: S3Client) -> Self {
         Self {
             client,
@@ -21,24 +28,41 @@ impl S3Service {
         }
     }
 
+    /// Bind to.
+    ///
+    /// Bind the application to the S3 Service.
+    ///
+    /// ## Arguments
+    ///
+    /// - `app`: The application to bind.
     pub fn bind_to(&mut self, app: Weak<ApplicationState>) {
         self.app = app;
     }
 
+    /// The application attached to the client.
     pub fn app(&self) -> Arc<ApplicationState> {
         self.app
             .upgrade()
             .expect("Application state has been dropped.")
     }
 
+    /// The S3 client attached to this service.
     pub const fn client(&self) -> &S3Client {
         &self.client
     }
 
+    /// The document bucket name.
     pub const fn document_bucket_name(&self) -> &'static str {
         "documents"
     }
 
+    /// Create buckets.
+    ///
+    /// Create the initial set of bucket(s).
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - If the buckets fail to be created.
     pub async fn create_buckets(&self) -> Result<(), AppError> {
         match self
             .client
@@ -67,6 +91,21 @@ impl S3Service {
         Ok(())
     }
 
+    /// Fetch a document
+    ///
+    /// Fetch an existing document.
+    ///
+    /// ## Arguments
+    ///
+    /// - `document_path` - The built path of the document.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - When the document cannot be found, or a read failure happens.
+    ///
+    /// ## Returns
+    ///
+    /// The [`Bytes`] of the document.
     pub async fn fetch_document(&self, document_path: String) -> Result<Bytes, AppError> {
         let mut data = self
             .client
@@ -84,6 +123,18 @@ impl S3Service {
         Ok(bytes.freeze())
     }
 
+    /// Create a document
+    ///
+    /// Create a new document.
+    ///
+    /// ## Arguments
+    ///
+    /// - `document_path`: The built path of the document.
+    /// - `data`: The data of the document.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - When the document could not be created.
     pub async fn create_document(
         &self,
         document_path: String,
@@ -101,6 +152,17 @@ impl S3Service {
         Ok(())
     }
 
+    /// Delete a document
+    ///
+    /// Delete an existing document.
+    ///
+    /// ## Arguments
+    ///
+    /// - `document_path`: The built path of the document.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - When the document could not be deleted.
     pub async fn delete_document(&self, document_path: String) -> Result<(), AppError> {
         self.client
             .delete_object()
