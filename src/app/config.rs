@@ -26,6 +26,26 @@ pub struct Config {
     maximum_expiry_hours: Option<usize>,
     /// The default expiry for pastes.
     default_expiry_hours: Option<usize>,
+    /// The maximum allowed documents in a paste.
+    global_paste_total_document_count: usize,
+    /// Maximum paste body size.
+    global_paste_total_document_size_limit: usize,
+    /// Individual paste document size.
+    global_paste_document_size_limit: usize,
+    /// Global rate limiter.
+    global_rate_limiter: u32,
+    /// Global paste rate limiter.
+    global_paste_rate_limiter: u32,
+    /// Get pastes rate limiter.
+    get_pastes_rate_limiter: u32,
+    /// Get paste rate limiter.
+    get_paste_rate_limiter: u32,
+    /// Post paste rate limiter.
+    post_paste_rate_limiter: u32,
+    /// Patch paste rate limiter.
+    patch_paste_rate_limiter: u32,
+    /// Delete paste rate limiter.
+    delete_paste_rate_limiter: u32,
 }
 
 impl Config {
@@ -33,6 +53,7 @@ impl Config {
         ConfigBuilder::default()
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         from_filename(".env").ok();
         let builder = Self::builder()
@@ -75,6 +96,51 @@ impl Config {
             .default_expiry_hours(std::env::var("DEFAULT_EXPIRY_HOURS").ok().map(|v| {
                 v.parse()
                     .expect("DEFAULT_EXPIRY_HOURS requires an integer.")
+            }))
+            .global_paste_total_document_count(
+                std::env::var("GLOBAL_PASTE_TOTAL_DOCUMENT_COUNT").map_or(10, |v| {
+                    v.parse()
+                        .expect("GLOBAL_PASTE_TOTAL_DOCUMENT_COUNT requires an integer.")
+                }),
+            )
+            .global_paste_total_document_size_limit(
+                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT").map_or(100, |v| {
+                    v.parse()
+                        .expect("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT requires an integer.")
+                }),
+            )
+            .global_paste_document_size_limit(
+                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT").map_or(15, |v| {
+                    v.parse()
+                        .expect("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT requires an integer.")
+                }),
+            )
+            .global_rate_limiter(std::env::var("RATE_LIMIT_GLOBAL").map_or(500, |v| {
+                v.parse().expect("RATE_LIMIT_GLOBAL requires an integer.")
+            }))
+            .global_paste_rate_limiter(std::env::var("RATE_LIMIT_GLOBAL_PASTE").map_or(500, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_GLOBAL_PASTE requires an integer.")
+            }))
+            .get_pastes_rate_limiter(std::env::var("RATE_LIMIT_GET_PASTES").map_or(40, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_GET_PASTES requires an integer.")
+            }))
+            .get_paste_rate_limiter(std::env::var("RATE_LIMIT_GET_PASTE").map_or(200, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_GET_PASTE requires an integer.")
+            }))
+            .post_paste_rate_limiter(std::env::var("RATE_LIMIT_POST_PASTE").map_or(100, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_POST_PASTE requires an integer.")
+            }))
+            .patch_paste_rate_limiter(std::env::var("RATE_LIMIT_PATCH_PASTE").map_or(120, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_PATCH_PASTE requires an integer.")
+            }))
+            .delete_paste_rate_limiter(std::env::var("RATE_LIMIT_DELETE_PASTE").map_or(200, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_DELETE_PASTE requires an integer.")
             }))
             .build()
             .expect("Failed to create application configuration.");
@@ -133,5 +199,45 @@ impl Config {
 
     pub const fn default_expiry_hours(&self) -> Option<usize> {
         self.default_expiry_hours
+    }
+
+    pub const fn global_paste_total_document_count(&self) -> usize {
+        self.global_paste_total_document_count
+    }
+
+    pub const fn global_paste_total_document_size_limit(&self) -> usize {
+        self.global_paste_total_document_size_limit
+    }
+
+    pub const fn global_paste_document_size_limit(&self) -> usize {
+        self.global_paste_document_size_limit
+    }
+
+    pub const fn global_rate_limiter(&self) -> u32 {
+        self.global_rate_limiter
+    }
+
+    pub const fn global_paste_rate_limiter(&self) -> u32 {
+        self.global_paste_rate_limiter
+    }
+
+    pub const fn get_pastes_rate_limiter(&self) -> u32 {
+        self.get_pastes_rate_limiter
+    }
+
+    pub const fn get_paste_rate_limiter(&self) -> u32 {
+        self.get_paste_rate_limiter
+    }
+
+    pub const fn post_paste_rate_limiter(&self) -> u32 {
+        self.post_paste_rate_limiter
+    }
+
+    pub const fn patch_paste_rate_limiter(&self) -> u32 {
+        self.patch_paste_rate_limiter
+    }
+
+    pub const fn delete_paste_rate_limiter(&self) -> u32 {
+        self.delete_paste_rate_limiter
     }
 }
