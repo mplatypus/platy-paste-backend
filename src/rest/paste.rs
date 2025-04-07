@@ -138,17 +138,31 @@ async fn post_paste(
 ) -> Result<Response, AppError> {
     let mut transaction = app.database.pool().begin().await?;
 
+    let body: PostPasteBody = {
+        if let Some(field) = multipart.next_field().await? {
+            if field.content_type().is_none_or(|content_type| content_type != "application/json") {
+                return Err(AppError::BadRequest("Payload must be of the type application/json.".to_string()));
+            }
+
+            let bytes = field.bytes().await?;
+
+            serde_json::from_slice(&bytes)?
+        } else {
+            return Err(AppError::BadRequest("Payload missing.".to_string()));
+        }
+    };
+
     let paste_id = Snowflake::generate()?;
 
     let expiry = {
-        if query.expiry.is_none()
+        if body.expiry.is_none()
             && app.config.default_expiry_hours().is_none()
             && app.config.maximum_expiry_hours().is_some()
         {
             return Err(AppError::BadRequest(
                 "A expiry time is required.".to_string(),
             ));
-        } else if let Some(expiry) = query.expiry {
+        } else if let Some(expiry) = body.expiry {
             let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
                 .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
             let now = OffsetDateTime::now_utc();
@@ -283,6 +297,10 @@ pub struct PostPasteQuery {
     /// Defaults to false.
     #[serde(default, rename = "content")]
     pub include_content: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct PostPasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
     pub expiry: Option<usize>,
