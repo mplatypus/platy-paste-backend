@@ -6,8 +6,8 @@ use axum::{Router, http::HeaderValue};
 use http::{Method, header};
 use models::paste::{ExpiryTaskMessage, expiry_tasks};
 use time::{UtcOffset, format_description};
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tokio::sync::mpsc;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
@@ -79,7 +79,7 @@ async fn main() {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(state.config.global_rate_limiter()) // FIXME: Make into a config value.
+                .burst_size(state.config.global_rate_limiter())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
