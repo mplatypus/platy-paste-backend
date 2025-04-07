@@ -19,7 +19,7 @@ pub struct Document {
 
 impl Document {
     /// New.
-    /// 
+    ///
     /// Create a new [`Document`] object.
     pub const fn new(
         id: Snowflake,
@@ -40,11 +40,11 @@ impl Document {
     /// Generate a URL to fetch the location of the document.
     ///
     /// ## Arguments
-    /// 
+    ///
     /// - `base_url` - The base url to append.
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// The URL generated.
     pub fn generate_url(&self, base_url: &str) -> String {
         format!("{}/documents/{}", base_url, self.generate_path())
@@ -53,9 +53,9 @@ impl Document {
     /// Generate Path.
     ///
     /// Generate the path to the resource.
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// The path generated.
     pub fn generate_path(&self) -> String {
         format!("{}/{}-{}", self.paste_id, self.id, self.name)
@@ -141,9 +141,9 @@ impl Document {
     /// Create (or update) a document.
     ///
     /// ## Arguments
-    /// 
+    ///
     /// - `transaction` The transaction to use.
-    /// 
+    ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
@@ -170,7 +170,7 @@ impl Document {
     ///
     /// - `db` - The database to make the request to.
     /// - `id` - The id of the document.
-    /// 
+    ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.

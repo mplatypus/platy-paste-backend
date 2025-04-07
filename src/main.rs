@@ -7,6 +7,7 @@ use http::{Method, header};
 use models::paste::{ExpiryTaskMessage, expiry_tasks};
 use time::{UtcOffset, format_description};
 use tokio::sync::mpsc;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
@@ -74,12 +75,25 @@ async fn main() {
         ])
         .allow_headers([header::ACCEPT, header::CONTENT_TYPE, header::AUTHORIZATION]);
 
+    let limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(state.config.global_rate_limiter())
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build global paste limiter."),
+        ),
+    };
+
     let app = Router::new()
         //.nest("/admin", rest::admin::generate_router())
-        .nest("/v1", rest::paste::generate_router())
+        .nest("/v1", rest::paste::generate_router(&state.config))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)
+        .layer(limiter)
         .with_state(state.clone());
 
     let host = state.config.host();

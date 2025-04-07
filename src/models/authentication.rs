@@ -22,7 +22,7 @@ pub struct Token {
 
 impl Token {
     /// New.
-    /// 
+    ///
     /// Create a new [`Token`] object.
     pub const fn new(paste_id: Snowflake, token: SecretString) -> Self {
         Self { paste_id, token }
@@ -68,9 +68,9 @@ impl Token {
     /// Update.
     ///
     /// Create a paste token.
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// - `transaction` The transaction to use.
     ///
     /// ## Errors
@@ -97,7 +97,7 @@ impl Token {
     ///
     /// - `db` - The database to make the request to.
     /// - `token` - The token of the paste.
-    /// 
+    ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.

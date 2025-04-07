@@ -1,3 +1,5 @@
+use std::{sync::Arc, time::Duration};
+
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
@@ -8,10 +10,11 @@ use axum::{
 use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
 use crate::{
-    app::application::App,
+    app::{application::App, config::Config},
     models::{
         authentication::{Token, generate_token},
         document::Document,
@@ -46,32 +49,116 @@ const UNSUPPORTED_MIMES: &[&str] = &["image/*", "video/*", "audio/*", "font/*", 
 
 const DEFAULT_MIME: &str = "text/plain";
 
-pub fn generate_router() -> Router<App> {
+pub fn generate_router(config: &Config) -> Router<App> {
+    let global_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.global_paste_rate_limiter())
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build global paste limiter."),
+        ),
+    };
+
+    let get_pastes_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.get_pastes_rate_limiter())
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build get pastes limiter."),
+        ),
+    };
+
+    let get_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.get_paste_rate_limiter())
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build get paste limiter."),
+        ),
+    };
+
+    let post_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.post_paste_rate_limiter())
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build post paste limiter."),
+        ),
+    };
+
+    let patch_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.patch_paste_rate_limiter())
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build patch paste limiter."),
+        ),
+    };
+
+    let delete_paste_limiter = GovernorLayer {
+        config: Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(60)
+                .burst_size(config.delete_paste_rate_limiter())
+                .period(Duration::from_secs(5))
+                .use_headers()
+                .finish()
+                .expect("Failed to build delete paste limiter."),
+        ),
+    };
+
     Router::new()
-        .route("/pastes", get(get_pastes))
-        .route("/pastes/{paste_id}", get(get_paste))
-        .route("/pastes", post(post_paste))
-        .route("/pastes/{paste_id}", patch(patch_paste))
-        .route("/pastes/{paste_id}", delete(delete_paste))
-        .layer(DefaultBodyLimit::disable())
+        .route("/pastes", get(get_pastes).layer(get_pastes_limiter))
+        .route(
+            "/pastes/{paste_id}",
+            get(get_paste).layer(get_paste_limiter),
+        )
+        .route("/pastes", post(post_paste).layer(post_paste_limiter))
+        .route(
+            "/pastes/{paste_id}",
+            patch(patch_paste).layer(patch_paste_limiter),
+        )
+        .route(
+            "/pastes/{paste_id}",
+            delete(delete_paste).layer(delete_paste_limiter),
+        )
+        .layer(global_limiter)
+        .layer(DefaultBodyLimit::max(
+            config.global_paste_total_document_size_limit() * 1024 * 1024,
+        ))
 }
 
 /// Get Paste.
-/// 
+///
 /// Get an existing paste.
-/// 
+///
 /// ## Path
-/// 
+///
 /// - `paste_id` - The pastes ID.
-/// 
+///
 /// ## Query
-/// 
+///
 /// References: [`GetPasteQuery`]
-/// 
+///
 /// - `content` - Whether to include the content or not.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `404` - The paste was not found.
 /// - `200` - The [`ResponsePaste`] object.
 async fn get_paste(
@@ -115,17 +202,17 @@ async fn get_paste(
 }
 
 /// Get Pastes.
-/// 
+///
 /// Get a list of existing pastes.
-/// 
+///
 /// ## Body
-/// 
+///
 /// References: [`GetPastesBody`]
-/// 
+///
 /// - `ids` - The pastes ID.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `200` - A list of [`ResponsePaste`] objects.
 async fn get_pastes(
     State(app): State<App>,
@@ -162,29 +249,28 @@ async fn get_pastes(
     Ok((StatusCode::OK, Json(response_pastes)).into_response())
 }
 
-
 /// Post Paste.
-/// 
+///
 /// Create a new paste.
-/// 
+///
 /// The first object in the multipart must be the body object.
-/// 
+///
 /// The following items will be the documents.
-/// 
+///
 /// ## Query
-/// 
+///
 /// References: [`PostPasteQuery`]
-/// 
+///
 /// - `content` - Whether to include the content or not.
-/// 
+///
 /// ## Body
-/// 
+///
 /// References: [`PostPasteBody`]
-/// 
+///
 /// - `expiry` - The expiry of the paste.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `400` - The body and/or documents are invalid.
 /// - `200` - The [`ResponsePaste`] object.
 #[allow(clippy::too_many_lines)]
@@ -250,7 +336,7 @@ async fn post_paste(
                 .default_expiry_hours()
                 .map(|default_expiry_time| {
                     OffsetDateTime::now_utc()
-                        .saturating_add(Duration::hours(default_expiry_time as i64))
+                        .saturating_add(time::Duration::hours(default_expiry_time as i64))
                 })
         }
     };
@@ -259,7 +345,7 @@ async fn post_paste(
 
     paste.update(&mut transaction).await?;
 
-    let mut response_documents: Vec<ResponseDocument> = Vec::new();
+    let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
         let document_type = {
             match field.content_type() {
@@ -278,35 +364,49 @@ async fn post_paste(
         let name = field.name().unwrap_or("unknown").to_string();
         let data = field.bytes().await?;
 
-        let document_id = Snowflake::generate()?;
+        if data.len() > (app.config.global_paste_document_size_limit() * 1024 * 1024) {
+            return Err(AppError::NotFound("Document too large.".to_string()));
+        }
 
-        let document = Document::new(document_id, paste_id, document_type, name);
+        let document = Document::new(Snowflake::generate()?, paste_id, document_type, name);
 
+        documents.push((document, String::from_utf8_lossy(&data).to_string()));
+    }
+
+    let final_documents: Vec<ResponseDocument> = documents
+        .iter()
+        .map(|(d, c)| {
+            let content = {
+                if query.include_content {
+                    Some(c.clone())
+                } else {
+                    None
+                }
+            };
+
+            ResponseDocument::from_document(d.clone(), content)
+        })
+        .collect();
+
+    if documents.len() > app.config.global_paste_total_document_count() {
+        return Err(AppError::BadRequest(
+            "Too many documents provided.".to_string(),
+        ));
+    }
+
+    if documents.is_empty() {
+        return Err(AppError::BadRequest("No documents provided.".to_string()));
+    }
+
+    for (document, content) in documents {
         app.s3
-            .create_document(document.generate_path(), data.clone())
+            .create_document(document.generate_path(), content.into())
             .await?;
 
         document.update(&mut transaction).await?;
-
-        let content = {
-            if query.include_content {
-                let d: &str = &String::from_utf8_lossy(&data);
-                Some(d.to_string())
-            } else {
-                None
-            }
-        };
-
-        let response_document = ResponseDocument::from_document(document, content);
-
-        response_documents.push(response_document);
     }
 
-    if response_documents.is_empty() {
-        return Err(AppError::BadRequest(
-            "No documents were received.".to_string(),
-        ));
-    }
+    paste.update(&mut transaction).await?;
 
     let paste_token = Token::new(paste_id, generate_token(paste_id)?);
 
@@ -314,38 +414,38 @@ async fn post_paste(
 
     transaction.commit().await?;
 
-    let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
+    let response = ResponsePaste::from_paste(&paste, Some(paste_token), final_documents);
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
 /// Patch Paste.
-/// 
+///
 /// Edit an existing paste.
-/// 
+///
 /// **Requires authentication.**
 async fn patch_paste(State(_app): State<App>, _token: Token) -> Result<Response, AppError> {
     Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
 }
 
 /// Delete Paste.
-/// 
+///
 /// Delete an existing paste.
-/// 
+///
 /// **Requires authentication.**
-/// 
+///
 /// ## Path
-/// 
+///
 /// - `content` - Whether to include the content or not.
-/// 
+///
 /// ## Body
-/// 
+///
 /// References: [`PostPasteBody`]
-/// 
+///
 /// - `expiry` - The expiry of the paste.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `401` - Invalid token and/or paste ID.
 /// - `204` - Successful deletion of the paste.
 async fn delete_paste(
@@ -416,7 +516,7 @@ pub struct ResponsePaste {
 
 impl ResponsePaste {
     /// New.
-    /// 
+    ///
     /// Create a new [`ResponsePaste`] object.
     pub const fn new(
         id: Snowflake,
@@ -435,17 +535,17 @@ impl ResponsePaste {
     }
 
     /// From Paste.
-    /// 
+    ///
     /// Create a new [`ResponsePaste`] from a [`Paste`] and [`ResponseDocument`]'s
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// - `paste` - The paste to extract from.
     /// - `token` - The token to use (if provided).
     /// - `documents` - The documents to attach.
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// The [`ResponsePaste`].
     pub fn from_paste(
         paste: &Paste,
@@ -477,7 +577,7 @@ pub struct ResponseDocument {
 
 impl ResponseDocument {
     /// New.
-    /// 
+    ///
     /// Create a new [`ResponseDocument`] object.
     pub const fn new(
         id: Snowflake,
@@ -496,16 +596,16 @@ impl ResponseDocument {
     }
 
     /// From Document.
-    /// 
+    ///
     /// Create a new [`ResponseDocument`] from a [`Document`] and its content.
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// - `document` - The document to extract from.
     /// - `content` - The content to use (if provided).
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// The [`ResponseDocument`].
     pub fn from_document(document: Document, content: Option<String>) -> Self {
         Self::new(
@@ -522,20 +622,20 @@ impl ResponseDocument {
 // For example, the regex values. Can I have them as constants in any way? or are they super light when unwrapping?
 // Any way to shrink the `.capture` call so that its not being called each time?
 /// Contains Mime.
-/// 
+///
 /// Checks if the mime is in the list of mimes.
-/// 
+///
 /// If a mime in the mimes list ends with an asterisk "*",
 /// at the end like `images/*` it will become a catch all,
 /// making all mimes that start with `images` return true.
-/// 
+///
 /// ## Arguments
-/// 
+///
 /// - `mimes` - The array of mimes to check in.
 /// - `value` - The value to look for.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// True if mime was found, otherwise False.
 fn contains_mime(mimes: &[&str], value: &str) -> bool {
     let match_all_mime =
