@@ -1,90 +1,157 @@
-use serde::{Deserialize, Serialize};
+use sqlx::PgTransaction;
+use std::time::Duration;
 
-use crate::app::database::Database;
+use time::OffsetDateTime;
+use tokio::{sync::mpsc::Receiver, time::sleep};
+
+use crate::{
+    app::{application::App, database::Database},
+    models::document::Document,
+};
 
 use super::{error::AppError, snowflake::Snowflake};
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Paste {
     /// The ID of the paste.
     pub id: Snowflake,
     /// Whether the paste has been edited.
     pub edited: bool,
-    /// The document ID's.
-    pub document_ids: Vec<Snowflake>,
+    /// The time when the paste expires.
+    pub expiry: Option<OffsetDateTime>,
 }
 
 impl Paste {
-    pub const fn new(id: Snowflake, edited: bool, document_ids: Vec<Snowflake>) -> Self {
-        Self {
-            id,
-            edited,
-            document_ids,
-        }
+    /// New.
+    /// 
+    /// Create a new [`Paste`] object.
+    pub const fn new(id: Snowflake, edited: bool, expiry: Option<OffsetDateTime>) -> Self {
+        Self { id, edited, expiry }
     }
 
+    /// Set Edited.
+    /// 
+    /// Update the paste so it shows as edited.
     pub fn set_edited(&mut self) {
         self.edited = true;
     }
 
-    pub fn add_document(&mut self, document_id: Snowflake) {
-        self.document_ids.push(document_id);
-    }
-
-    pub fn remove_document(&mut self, index: usize) {
-        self.document_ids.remove(index);
-    }
-
-    pub fn clear_documents(&mut self) {
-        self.document_ids.clear();
+    /// Set Expiry.
+    /// 
+    /// Set or remove the expiry on the paste.
+    pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
+        self.expiry = expiry;
     }
 
     /// Fetch.
     ///
-    /// Fetch the pastes, via their ID.
+    /// Fetch a paste via its ID.
     ///
-    /// - [id]: The ID to look for.
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The ID of the paste.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// - [`Option::Some`] - The [`Paste`] object.
+    /// - [`Option::None`] - No paste was found.
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, edited, document_ids FROM pastes WHERE id = $1",
+            "SELECT id, edited, expiry FROM pastes WHERE id = $1",
             paste_id
         )
         .fetch_optional(db.pool())
         .await?;
 
         if let Some(q) = query {
-            return Ok(Some(Self::new(
-                q.id.into(),
-                q.edited,
-                Self::decode_document_ids(&q.document_ids)?,
-            )));
+            return Ok(Some(Self::new(q.id.into(), q.edited, q.expiry)));
         }
 
         Ok(None)
     }
 
+    /// Fetch Between.
+    ///
+    /// Fetch all pastes between two times.
+    ///
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `start` - The start [`OffsetDateTime`] (inclusive).
+    /// - `end` - The end [`OffsetDateTime`] (inclusive).
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// A [`Vec`] of [`Paste`]'s.
+    pub async fn fetch_between(
+        db: &Database,
+        start: OffsetDateTime,
+        end: OffsetDateTime,
+    ) -> Result<Vec<Self>, AppError> {
+        let records = sqlx::query!(
+            "SELECT id, edited, expiry FROM pastes WHERE expiry >= $1 AND expiry <= $2",
+            start,
+            end
+        )
+        .fetch_all(db.pool())
+        .await?;
+
+        let mut pastes = Vec::new();
+        for record in records {
+            let paste = Self::new(record.id.into(), record.edited, record.expiry);
+
+            pastes.push(paste);
+        }
+
+        Ok(pastes)
+    }
+
     /// Update.
     ///
-    /// Update a existing paste.
-    pub async fn update(&self, db: &Database) -> Result<(), AppError> {
+    /// Create (or update) a document.
+    ///
+    /// ## Arguments
+    /// 
+    /// - `transaction` The transaction to use.
+    /// 
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, edited, document_ids) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET edited = $2, document_ids = $3",
+            "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET edited = $2, expiry = $3",
             paste_id,
             self.edited,
-            Self::encode_document_ids(&self.document_ids)
-        ).execute(db.pool()).await?;
+            self.expiry
+        ).execute(transaction.as_mut()).await?;
 
         Ok(())
     }
 
     /// Delete.
     ///
-    /// Delete an existing paste with the provided ID.
+    /// Delete a paste.
     ///
-    /// - [id]: The ID to delete from.
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The id of the paste.
+    /// 
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
     pub async fn delete_with_id(db: &Database, id: Snowflake) -> Result<(), AppError> {
         let paste_id: i64 = id.into();
         sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
@@ -93,18 +160,139 @@ impl Paste {
 
         Ok(())
     }
+}
 
-    fn decode_document_ids(document_ids_string: &str) -> Result<Vec<Snowflake>, AppError> {
-        let mut document_ids = Vec::new();
-        for document_id_string in document_ids_string.split("::") {
-            document_ids.push(Snowflake::try_from(document_id_string)?);
+#[derive(Clone, Debug)]
+pub enum ExpiryTaskMessage {
+    /// Cancel the expiry runners.
+    Cancel,
+}
+
+/// Expiry Tasks.
+/// 
+/// A task that deletes pastes (and their documents) when required.
+/// 
+/// ## Arguments
+/// 
+/// - `app` - The application to use.
+/// - `rx` - The [`Receiver`] to listen for messages.
+pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
+    const MINUTES: u64 = 50;
+
+    let pastes = match collect_nearby_expired_tasks(&app.database).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to collect all pastes to expire. Reason: {e}");
+            panic!("Failed to collect all pastes to expire. Reason: {e}")
         }
-        Ok(document_ids)
+    };
+
+    for paste in pastes {
+        let documents = match Document::fetch_all(&app.database, paste.id).await {
+            Ok(documents) => documents,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to fetch documents for paste {}. Reason: {}",
+                    paste.id,
+                    e
+                );
+                continue;
+            }
+        };
+
+        for document in documents {
+            match app.s3.delete_document(document.generate_path()).await {
+                Ok(()) => tracing::trace!(
+                    "Successfully deleted paste document (minio): {}",
+                    document.id
+                ),
+                Err(e) => tracing::trace!(
+                    "Failed to delete paste document: {} (minio). Reason: {}",
+                    document.id,
+                    e
+                ),
+            }
+        }
+
+        match Paste::delete_with_id(&app.database, paste.id).await {
+            Ok(()) => tracing::trace!("Successfully deleted paste: {}", paste.id),
+            Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e),
+        }
     }
 
-    fn encode_document_ids(document_ids: &[Snowflake]) -> String {
-        let document_id_strings: Vec<String> =
-            document_ids.iter().map(ToString::to_string).collect();
-        document_id_strings.join("::")
+    loop {
+        let sleep = sleep(Duration::from_secs(MINUTES * 60));
+        tokio::pin!(sleep);
+        tokio::select! {
+            biased;
+
+            msg = rx.recv() => {
+                match msg {
+                    Some(ExpiryTaskMessage::Cancel) => {
+                        println!("Received cancel message, shutting down.");
+                        break;
+                    }
+                    None => {
+                        println!("Channel closed, shutting down.");
+                        break;
+                    }
+                }
+            }
+            () = &mut sleep => {
+                let pastes = match collect_nearby_expired_tasks(&app.database).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("Failed to collect all pastes to expire. Reason: {e}");
+                        panic!("Failed to collect all pastes to expire. Reason: {e}")
+                    }
+                };
+
+                // FIXME: Please tell me there is a cleaner way of doing this.
+                for paste in pastes {
+                    let documents = match Document::fetch_all(&app.database, paste.id).await {
+                        Ok(documents) => documents,
+                        Err(e) => {
+                            tracing::warn!("Failed to fetch documents for paste {}. Reason: {}", paste.id, e);
+                            continue
+                        }
+                    };
+
+                    for document in documents {
+                        match app.s3.delete_document(document.generate_path()).await {
+                            Ok(()) => tracing::trace!("Successfully deleted paste document (minio): {}", document.id),
+                            Err(e) => tracing::trace!("Failed to delete paste document: {} (minio). Reason: {}", document.id, e)
+                        }
+                    }
+
+                    match Paste::delete_with_id(&app.database, paste.id).await {
+                        Ok(()) => tracing::trace!("Successfully deleted paste: {}", paste.id),
+                        Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e)
+                    }
+                }
+            }
+        }
     }
+}
+
+/// Collect Nearby Expired Tasks.
+///
+/// Fetch all the pastes, from EPOCH 0, to the current time.
+///
+/// ## Arguments
+///
+/// - `db` - The database to make the request to.
+///
+/// ## Errors
+///
+/// - [`AppError`] - The database had an error.
+///
+/// ## Returns
+///
+/// A [`Vec`] of [`Paste`]'s.
+async fn collect_nearby_expired_tasks(db: &Database) -> Result<Vec<Paste>, AppError> {
+    let start = OffsetDateTime::from_unix_timestamp(0)
+        .expect("Failed to make a timestamp with the time of 0.");
+    let end = OffsetDateTime::now_utc();
+
+    Paste::fetch_between(db, start, end).await
 }

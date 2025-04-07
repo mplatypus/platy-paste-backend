@@ -1,3 +1,4 @@
+use crate::app::{application::App, database::Database};
 use axum::{RequestPartsExt, extract::FromRequestParts, http::request::Parts};
 use axum_extra::{
     TypedHeader,
@@ -5,8 +6,7 @@ use axum_extra::{
 };
 use base64::{Engine, prelude::BASE64_URL_SAFE};
 use secrecy::{ExposeSecret, SecretString};
-
-use crate::app::{application::App, database::Database};
+use sqlx::PgTransaction;
 
 use super::{
     error::{AppError, AuthError},
@@ -14,25 +14,47 @@ use super::{
 };
 
 pub struct Token {
-    /// The paste ID the token is attached too.
+    /// The paste ID the token is attached to.
     paste_id: Snowflake,
-    /// The token the request is made for.
+    /// The token for the paste.
     token: SecretString,
 }
 
 impl Token {
+    /// New.
+    /// 
+    /// Create a new [`Token`] object.
     pub const fn new(paste_id: Snowflake, token: SecretString) -> Self {
         Self { paste_id, token }
     }
 
+    /// The owning paste ID.
     pub const fn paste_id(&self) -> Snowflake {
         self.paste_id
     }
 
+    /// The authentication token.
     pub fn token(&self) -> SecretString {
         self.token.clone()
     }
 
+    /// Fetch.
+    ///
+    /// Fetch a paste ID from its token.
+    ///
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `token` - The token of the paste.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// - [`Option::Some`] - The [`Token`] object.
+    /// - [`Option::None`] - No token was found.
     pub async fn fetch(db: &Database, token: String) -> Result<Option<Self>, AppError> {
         Ok(sqlx::query_as!(
             Self,
@@ -43,19 +65,42 @@ impl Token {
         .await?)
     }
 
-    pub async fn update(&self, db: &Database) -> Result<(), AppError> {
+    /// Update.
+    ///
+    /// Create a paste token.
+    /// 
+    /// ## Arguments
+    /// 
+    /// - `transaction` The transaction to use.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let paste_id: i64 = self.paste_id.into();
         sqlx::query!(
             "INSERT INTO paste_tokens(paste_id, token) VALUES ($1, $2)",
             paste_id,
             self.token.expose_secret()
         )
-        .execute(db.pool())
+        .execute(transaction.as_mut())
         .await?;
 
         Ok(())
     }
 
+    /// Delete.
+    ///
+    /// Delete a token.
+    ///
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `token` - The token of the paste.
+    /// 
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
     pub async fn delete(db: &Database, token: String) -> Result<(), AppError> {
         sqlx::query!("DELETE FROM paste_tokens WHERE token = $1", token,)
             .execute(db.pool())
@@ -88,7 +133,9 @@ pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, AppError> {
 
     let mut buffer: Vec<u8> = vec![0; TOKEN_LENGTH];
 
-    getrandom::fill(&mut buffer).map_err(|e| AppError::NotFound(e.to_string()))?;
+    getrandom::fill(&mut buffer).map_err(|e| {
+        AppError::InternalServer(format!("Failed to obtain a random integers: {e}"))
+    })?;
 
     let ascii = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-");
 

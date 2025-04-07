@@ -11,6 +11,7 @@ use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
+use time::OffsetDateTime;
 
 use crate::{
     app::{application::App, config::Config},
@@ -142,6 +143,24 @@ pub fn generate_router(config: &Config) -> Router<App> {
         ))
 }
 
+/// Get Paste.
+/// 
+/// Get an existing paste.
+/// 
+/// ## Path
+/// 
+/// - `paste_id` - The pastes ID.
+/// 
+/// ## Query
+/// 
+/// References: [`GetPasteQuery`]
+/// 
+/// - `content` - Whether to include the content or not.
+/// 
+/// ## Returns
+/// 
+/// - `404` - The paste was not found.
+/// - `200` - The [`ResponsePaste`] object.
 async fn get_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
@@ -151,14 +170,17 @@ async fn get_paste(
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
-    let mut response_documents = Vec::new();
-    for document_id in &paste.document_ids {
-        let document = Document::fetch(&app.database, *document_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Could not find document with ID: {document_id}"))
-            })?;
+    if let Some(expiry) = paste.expiry {
+        if expiry < OffsetDateTime::now_utc() {
+            Paste::delete_with_id(&app.database, paste.id).await?;
+            return Err(AppError::NotFound("Paste not found.".to_string()));
+        }
+    }
 
+    let documents = Document::fetch_all(&app.database, paste.id).await?;
+
+    let mut response_documents = Vec::new();
+    for document in documents {
         let content = {
             if query.include_content {
                 let data = app.s3.fetch_document(document.generate_path()).await?;
@@ -179,6 +201,19 @@ async fn get_paste(
     Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
 
+/// Get Pastes.
+/// 
+/// Get a list of existing pastes.
+/// 
+/// ## Body
+/// 
+/// References: [`GetPastesBody`]
+/// 
+/// - `ids` - The pastes ID.
+/// 
+/// ## Returns
+/// 
+/// - `200` - A list of [`ResponsePaste`] objects.
 async fn get_pastes(
     State(app): State<App>,
     Json(body): Json<GetPastesBody>,
@@ -190,14 +225,17 @@ async fn get_pastes(
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
-        let mut response_documents = Vec::new();
-        for document_id in &paste.document_ids {
-            let document = Document::fetch(&app.database, *document_id)
-                .await?
-                .ok_or_else(|| {
-                    AppError::NotFound(format!("Could not find document with ID: {document_id}"))
-                })?;
+        if let Some(expiry) = paste.expiry {
+            if expiry < OffsetDateTime::now_utc() {
+                Paste::delete_with_id(&app.database, paste.id).await?;
+                return Err(AppError::NotFound("Paste not found.".to_string()));
+            }
+        }
 
+        let documents = Document::fetch_all(&app.database, paste.id).await?;
+
+        let mut response_documents = Vec::new();
+        for document in documents {
             let response_document = ResponseDocument::from_document(document, None);
 
             response_documents.push(response_document);
@@ -211,12 +249,102 @@ async fn get_pastes(
     Ok((StatusCode::OK, Json(response_pastes)).into_response())
 }
 
+
+/// Post Paste.
+/// 
+/// Create a new paste.
+/// 
+/// The first object in the multipart must be the body object.
+/// 
+/// The following items will be the documents.
+/// 
+/// ## Query
+/// 
+/// References: [`PostPasteQuery`]
+/// 
+/// - `content` - Whether to include the content or not.
+/// 
+/// ## Body
+/// 
+/// References: [`PostPasteBody`]
+/// 
+/// - `expiry` - The expiry of the paste.
+/// 
+/// ## Returns
+/// 
+/// - `400` - The body and/or documents are invalid.
+/// - `200` - The [`ResponsePaste`] object.
+#[allow(clippy::too_many_lines)]
 async fn post_paste(
     State(app): State<App>,
     Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    let mut transaction = app.database.pool().begin().await?;
+
+    let body: PostPasteBody = {
+        if let Some(field) = multipart.next_field().await? {
+            if field
+                .content_type()
+                .is_none_or(|content_type| content_type != "application/json")
+            {
+                return Err(AppError::BadRequest(
+                    "Payload must be of the type application/json.".to_string(),
+                ));
+            }
+
+            let bytes = field.bytes().await?;
+
+            serde_json::from_slice(&bytes)?
+        } else {
+            return Err(AppError::BadRequest("Payload missing.".to_string()));
+        }
+    };
+
     let paste_id = Snowflake::generate()?;
+
+    let expiry = {
+        if body.expiry.is_none()
+            && app.config.default_expiry_hours().is_none()
+            && app.config.maximum_expiry_hours().is_some()
+        {
+            return Err(AppError::BadRequest(
+                "A expiry time is required.".to_string(),
+            ));
+        } else if let Some(expiry) = body.expiry {
+            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
+                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
+            let now = OffsetDateTime::now_utc();
+            let difference = (time - now).whole_seconds();
+
+            if difference.is_negative() {
+                return Err(AppError::BadRequest(
+                    "The timestamp provided is invalid.".to_string(),
+                ));
+            }
+
+            if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
+                if difference as usize > maximum_expiry_hours * 3600 {
+                    return Err(AppError::BadRequest(
+                        "The timestamp provided is above the maximum.".to_string(),
+                    ));
+                }
+            }
+
+            Some(time)
+        } else {
+            app.config
+                .default_expiry_hours()
+                .map(|default_expiry_time| {
+                    OffsetDateTime::now_utc()
+                        .saturating_add(time::Duration::hours(default_expiry_time as i64))
+                })
+        }
+    };
+
+    let paste = Paste::new(paste_id, false, expiry);
+
+    paste.update(&mut transaction).await?;
 
     let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -224,9 +352,9 @@ async fn post_paste(
             match field.content_type() {
                 Some(content_type) => {
                     if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                        return Err(AppError::NotFound(
-                            "The mime type provided, is not supported.".to_string(),
-                        ));
+                        return Err(AppError::BadRequest(format!(
+                            "Invalid mime type received: {content_type}"
+                        )));
                     }
 
                     content_type.to_string()
@@ -276,37 +404,58 @@ async fn post_paste(
             .create_document(document.generate_path(), content.into())
             .await?;
 
-        document.update(&app.database).await?;
+        document.update(&mut transaction).await?;
     }
 
-    let paste = Paste::new(
-        paste_id,
-        false,
-        final_documents.iter().map(|d| d.id).collect(),
-    );
-
-    paste.update(&app.database).await?;
+    paste.update(&mut transaction).await?;
 
     let paste_token = Token::new(paste_id, generate_token(paste_id)?);
 
-    paste_token.update(&app.database).await?;
+    paste_token.update(&mut transaction).await?;
+
+    transaction.commit().await?;
 
     let response = ResponsePaste::from_paste(&paste, Some(paste_token), final_documents);
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
+/// Patch Paste.
+/// 
+/// Edit an existing paste.
+/// 
+/// **Requires authentication.**
 async fn patch_paste(State(_app): State<App>, _token: Token) -> Result<Response, AppError> {
     Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
 }
 
+/// Delete Paste.
+/// 
+/// Delete an existing paste.
+/// 
+/// **Requires authentication.**
+/// 
+/// ## Path
+/// 
+/// - `content` - Whether to include the content or not.
+/// 
+/// ## Body
+/// 
+/// References: [`PostPasteBody`]
+/// 
+/// - `expiry` - The expiry of the paste.
+/// 
+/// ## Returns
+/// 
+/// - `401` - Invalid token and/or paste ID.
+/// - `204` - Successful deletion of the paste.
 async fn delete_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
     token: Token,
 ) -> Result<Response, AppError> {
     if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::InvalidToken)); // FIXME: This might need changing.
+        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
     Paste::delete_with_id(&app.database, paste_id).await?;
@@ -339,6 +488,13 @@ pub struct PostPasteQuery {
 }
 
 #[derive(Deserialize, Serialize)]
+pub struct PostPasteBody {
+    /// The expiry time for the paste.
+    #[serde(default)]
+    pub expiry: Option<usize>,
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct DeletePastesBody {
     /// The ID's to get.
     pub ids: Vec<Snowflake>,
@@ -353,25 +509,45 @@ pub struct ResponsePaste {
     pub token: Option<String>,
     /// Whether the paste has been edited.
     pub edited: bool,
+    /// The expiry time of the paste.
+    pub expiry: Option<usize>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
 
 impl ResponsePaste {
+    /// New.
+    /// 
+    /// Create a new [`ResponsePaste`] object.
     pub const fn new(
         id: Snowflake,
         token: Option<String>,
         edited: bool,
+        expiry: Option<usize>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
             token,
             edited,
+            expiry,
             documents,
         }
     }
 
+    /// From Paste.
+    /// 
+    /// Create a new [`ResponsePaste`] from a [`Paste`] and [`ResponseDocument`]'s
+    /// 
+    /// ## Arguments
+    /// 
+    /// - `paste` - The paste to extract from.
+    /// - `token` - The token to use (if provided).
+    /// - `documents` - The documents to attach.
+    /// 
+    /// ## Returns
+    /// 
+    /// The [`ResponsePaste`].
     pub fn from_paste(
         paste: &Paste,
         token: Option<Token>,
@@ -379,7 +555,9 @@ impl ResponsePaste {
     ) -> Self {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
-        Self::new(paste.id, token_value, paste.edited, documents)
+        let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
+
+        Self::new(paste.id, token_value, paste.edited, expiry, documents)
     }
 }
 
@@ -399,6 +577,9 @@ pub struct ResponseDocument {
 }
 
 impl ResponseDocument {
+    /// New.
+    /// 
+    /// Create a new [`ResponseDocument`] object.
     pub const fn new(
         id: Snowflake,
         paste_id: Snowflake,
@@ -415,6 +596,18 @@ impl ResponseDocument {
         }
     }
 
+    /// From Document.
+    /// 
+    /// Create a new [`ResponseDocument`] from a [`Document`] and its content.
+    /// 
+    /// ## Arguments
+    /// 
+    /// - `document` - The document to extract from.
+    /// - `content` - The content to use (if provided).
+    /// 
+    /// ## Returns
+    /// 
+    /// The [`ResponseDocument`].
     pub fn from_document(document: Document, content: Option<String>) -> Self {
         Self::new(
             document.id,
@@ -429,6 +622,22 @@ impl ResponseDocument {
 // FIXME: This whole function needs rebuilding. I do not like the way its made.
 // For example, the regex values. Can I have them as constants in any way? or are they super light when unwrapping?
 // Any way to shrink the `.capture` call so that its not being called each time?
+/// Contains Mime.
+/// 
+/// Checks if the mime is in the list of mimes.
+/// 
+/// If a mime in the mimes list ends with an asterisk "*",
+/// at the end like `images/*` it will become a catch all,
+/// making all mimes that start with `images` return true.
+/// 
+/// ## Arguments
+/// 
+/// - `mimes` - The array of mimes to check in.
+/// - `value` - The value to look for.
+/// 
+/// ## Returns
+/// 
+/// True if mime was found, otherwise False.
 fn contains_mime(mimes: &[&str], value: &str) -> bool {
     let match_all_mime =
         Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/\*$").expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
