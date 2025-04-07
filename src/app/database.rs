@@ -11,9 +11,11 @@ pub struct Database {
 }
 
 impl Database {
-    /// Creates a new database instance
+    /// New.
     ///
-    /// Note: The database is not connected by default
+    /// Creates a new database instance.
+    ///
+    /// Note: The database is not connected by default.
     pub const fn new() -> Self {
         Self {
             pool: None,
@@ -35,7 +37,11 @@ impl Database {
     ///
     /// ## Panics
     ///
-    /// If the database is not connected
+    /// If the database is not connected.
+    ///
+    /// ## Returns
+    ///
+    /// The [`PgPool`].
     pub const fn pool(&self) -> &PgPool {
         self.pool
             .as_ref()
@@ -46,27 +52,27 @@ impl Database {
     ///
     /// ## Returns
     ///
-    /// `true` if the database is connected, `false` otherwise
+    /// `true` if the database is connected, `false` otherwise.
     pub fn is_connected(&self) -> bool {
         self.pool.as_ref().is_some_and(|pool| !pool.is_closed())
     }
 
-    /// Connects to the database
+    /// Connects to the database.
     ///
     /// ## Arguments
     ///
-    /// * `url` - The postgres connection URL
+    /// - `url` - The postgres connection URL.
     ///
     /// ## Errors
     ///
-    /// * [`sqlx::Error`] - If the database connection fails
+    /// - [`sqlx::Error`] - If the database connection fails.
     pub async fn connect(&mut self, url: &str) -> Result<(), sqlx::Error> {
         self.pool = Some(PgPool::connect(url).await?);
         migrate!("./migrations").run(self.pool()).await?;
         Ok(())
     }
 
-    /// Closes the database connection
+    /// Closes the database connection.
     pub async fn close(&self) {
         self.pool().close().await;
     }

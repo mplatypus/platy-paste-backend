@@ -22,23 +22,44 @@ pub struct Paste {
 }
 
 impl Paste {
+    /// New.
+    /// 
+    /// Create a new [`Paste`] object.
     pub const fn new(id: Snowflake, edited: bool, expiry: Option<OffsetDateTime>) -> Self {
         Self { id, edited, expiry }
     }
 
+    /// Set Edited.
+    /// 
+    /// Update the paste so it shows as edited.
     pub fn set_edited(&mut self) {
         self.edited = true;
     }
 
+    /// Set Expiry.
+    /// 
+    /// Set or remove the expiry on the paste.
     pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
     }
 
     /// Fetch.
     ///
-    /// Fetch the pastes, via their ID.
+    /// Fetch a paste via its ID.
     ///
-    /// - [id]: The ID to look for.
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The ID of the paste.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// - [`Option::Some`] - The [`Paste`] object.
+    /// - [`Option::None`] - No paste was found.
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
@@ -55,6 +76,23 @@ impl Paste {
         Ok(None)
     }
 
+    /// Fetch Between.
+    ///
+    /// Fetch all pastes between two times.
+    ///
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `start` - The start [`OffsetDateTime`] (inclusive).
+    /// - `end` - The end [`OffsetDateTime`] (inclusive).
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// A [`Vec`] of [`Paste`]'s.
     pub async fn fetch_between(
         db: &Database,
         start: OffsetDateTime,
@@ -80,7 +118,15 @@ impl Paste {
 
     /// Update.
     ///
-    /// Update a existing paste.
+    /// Create (or update) a document.
+    ///
+    /// ## Arguments
+    /// 
+    /// - `transaction` The transaction to use.
+    /// 
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
     pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let paste_id: i64 = self.id.into();
 
@@ -96,9 +142,16 @@ impl Paste {
 
     /// Delete.
     ///
-    /// Delete an existing paste with the provided ID.
+    /// Delete a paste.
     ///
-    /// - [id]: The ID to delete from.
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The id of the paste.
+    /// 
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
     pub async fn delete_with_id(db: &Database, id: Snowflake) -> Result<(), AppError> {
         let paste_id: i64 = id.into();
         sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
@@ -115,6 +168,14 @@ pub enum ExpiryTaskMessage {
     Cancel,
 }
 
+/// Expiry Tasks.
+/// 
+/// A task that deletes pastes (and their documents) when required.
+/// 
+/// ## Arguments
+/// 
+/// - `app` - The application to use.
+/// - `rx` - The [`Receiver`] to listen for messages.
 pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
     const MINUTES: u64 = 50;
 
@@ -126,7 +187,6 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
         }
     };
 
-    // FIXME: Please tell me there is a cleaner way of doing this.
     for paste in pastes {
         let documents = match Document::fetch_all(&app.database, paste.id).await {
             Ok(documents) => documents,
@@ -214,6 +274,21 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
     }
 }
 
+/// Collect Nearby Expired Tasks.
+///
+/// Fetch all the pastes, from EPOCH 0, to the current time.
+///
+/// ## Arguments
+///
+/// - `db` - The database to make the request to.
+///
+/// ## Errors
+///
+/// - [`AppError`] - The database had an error.
+///
+/// ## Returns
+///
+/// A [`Vec`] of [`Paste`]'s.
 async fn collect_nearby_expired_tasks(db: &Database) -> Result<Vec<Paste>, AppError> {
     let start = OffsetDateTime::from_unix_timestamp(0)
         .expect("Failed to make a timestamp with the time of 0.");
