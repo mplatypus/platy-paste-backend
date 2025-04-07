@@ -18,26 +18,26 @@ pub struct Snowflake(u64);
 
 impl Snowflake {
     /// New.
-    /// 
+    ///
     /// Create a new [`Snowflake`] object.
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
     /// Generate.
-    /// 
+    ///
     /// Generate a new snowflake.
-    /// 
+    ///
     /// ## Panics
-    /// 
+    ///
     /// If time went backwards
-    /// 
+    ///
     /// ## Errors
-    /// 
+    ///
     /// - [`AppError`] - Failed to get a random value.
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// A [`Snowflake`].
     pub fn generate() -> Result<Self, AppError> {
         let timestamp = SystemTime::now()

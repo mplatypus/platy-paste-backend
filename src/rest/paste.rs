@@ -10,8 +10,8 @@ use axum::{
 use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use time::OffsetDateTime;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
 use crate::{
     app::{application::App, config::Config},
@@ -54,7 +54,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.global_paste_rate_limiter()) // FIXME: Make into a config value.
+                .burst_size(config.global_paste_rate_limiter())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -66,7 +66,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_pastes_rate_limiter()) // FIXME: Make into a config value.
+                .burst_size(config.get_pastes_rate_limiter())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -78,7 +78,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_paste_rate_limiter()) // FIXME: Make into a config value.
+                .burst_size(config.get_paste_rate_limiter())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -90,7 +90,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.post_paste_rate_limiter()) // FIXME: Make into a config value.
+                .burst_size(config.post_paste_rate_limiter())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -102,7 +102,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.patch_paste_rate_limiter()) // FIXME: Make into a config value.
+                .burst_size(config.patch_paste_rate_limiter())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -114,7 +114,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.delete_paste_rate_limiter()) // FIXME: Make into a config value.
+                .burst_size(config.delete_paste_rate_limiter())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -144,21 +144,21 @@ pub fn generate_router(config: &Config) -> Router<App> {
 }
 
 /// Get Paste.
-/// 
+///
 /// Get an existing paste.
-/// 
+///
 /// ## Path
-/// 
+///
 /// - `paste_id` - The pastes ID.
-/// 
+///
 /// ## Query
-/// 
+///
 /// References: [`GetPasteQuery`]
-/// 
+///
 /// - `content` - Whether to include the content or not.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `404` - The paste was not found.
 /// - `200` - The [`ResponsePaste`] object.
 async fn get_paste(
@@ -202,17 +202,17 @@ async fn get_paste(
 }
 
 /// Get Pastes.
-/// 
+///
 /// Get a list of existing pastes.
-/// 
+///
 /// ## Body
-/// 
+///
 /// References: [`GetPastesBody`]
-/// 
+///
 /// - `ids` - The pastes ID.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `200` - A list of [`ResponsePaste`] objects.
 async fn get_pastes(
     State(app): State<App>,
@@ -249,29 +249,28 @@ async fn get_pastes(
     Ok((StatusCode::OK, Json(response_pastes)).into_response())
 }
 
-
 /// Post Paste.
-/// 
+///
 /// Create a new paste.
-/// 
+///
 /// The first object in the multipart must be the body object.
-/// 
+///
 /// The following items will be the documents.
-/// 
+///
 /// ## Query
-/// 
+///
 /// References: [`PostPasteQuery`]
-/// 
+///
 /// - `content` - Whether to include the content or not.
-/// 
+///
 /// ## Body
-/// 
+///
 /// References: [`PostPasteBody`]
-/// 
+///
 /// - `expiry` - The expiry of the paste.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `400` - The body and/or documents are invalid.
 /// - `200` - The [`ResponsePaste`] object.
 #[allow(clippy::too_many_lines)]
@@ -389,14 +388,14 @@ async fn post_paste(
         })
         .collect();
 
-    if documents.len() > app.config.global_paste_documents() {
-        return Err(AppError::NotFound("Too many documents.".to_string()));
-    } // FIXME: This needs a custom error.
+    if documents.len() > app.config.global_paste_total_document_count() {
+        return Err(AppError::BadRequest(
+            "Too many documents provided.".to_string(),
+        ));
+    }
 
     if documents.is_empty() {
-        return Err(AppError::NotFound(
-            "Failed to parse provided documents.".to_string(),
-        )); // FIXME: This needs a custom error.
+        return Err(AppError::BadRequest("No documents provided.".to_string()));
     }
 
     for (document, content) in documents {
@@ -421,32 +420,32 @@ async fn post_paste(
 }
 
 /// Patch Paste.
-/// 
+///
 /// Edit an existing paste.
-/// 
+///
 /// **Requires authentication.**
 async fn patch_paste(State(_app): State<App>, _token: Token) -> Result<Response, AppError> {
     Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
 }
 
 /// Delete Paste.
-/// 
+///
 /// Delete an existing paste.
-/// 
+///
 /// **Requires authentication.**
-/// 
+///
 /// ## Path
-/// 
+///
 /// - `content` - Whether to include the content or not.
-/// 
+///
 /// ## Body
-/// 
+///
 /// References: [`PostPasteBody`]
-/// 
+///
 /// - `expiry` - The expiry of the paste.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// - `401` - Invalid token and/or paste ID.
 /// - `204` - Successful deletion of the paste.
 async fn delete_paste(
@@ -517,7 +516,7 @@ pub struct ResponsePaste {
 
 impl ResponsePaste {
     /// New.
-    /// 
+    ///
     /// Create a new [`ResponsePaste`] object.
     pub const fn new(
         id: Snowflake,
@@ -536,17 +535,17 @@ impl ResponsePaste {
     }
 
     /// From Paste.
-    /// 
+    ///
     /// Create a new [`ResponsePaste`] from a [`Paste`] and [`ResponseDocument`]'s
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// - `paste` - The paste to extract from.
     /// - `token` - The token to use (if provided).
     /// - `documents` - The documents to attach.
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// The [`ResponsePaste`].
     pub fn from_paste(
         paste: &Paste,
@@ -578,7 +577,7 @@ pub struct ResponseDocument {
 
 impl ResponseDocument {
     /// New.
-    /// 
+    ///
     /// Create a new [`ResponseDocument`] object.
     pub const fn new(
         id: Snowflake,
@@ -597,16 +596,16 @@ impl ResponseDocument {
     }
 
     /// From Document.
-    /// 
+    ///
     /// Create a new [`ResponseDocument`] from a [`Document`] and its content.
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// - `document` - The document to extract from.
     /// - `content` - The content to use (if provided).
-    /// 
+    ///
     /// ## Returns
-    /// 
+    ///
     /// The [`ResponseDocument`].
     pub fn from_document(document: Document, content: Option<String>) -> Self {
         Self::new(
@@ -623,20 +622,20 @@ impl ResponseDocument {
 // For example, the regex values. Can I have them as constants in any way? or are they super light when unwrapping?
 // Any way to shrink the `.capture` call so that its not being called each time?
 /// Contains Mime.
-/// 
+///
 /// Checks if the mime is in the list of mimes.
-/// 
+///
 /// If a mime in the mimes list ends with an asterisk "*",
 /// at the end like `images/*` it will become a catch all,
 /// making all mimes that start with `images` return true.
-/// 
+///
 /// ## Arguments
-/// 
+///
 /// - `mimes` - The array of mimes to check in.
 /// - `value` - The value to look for.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// True if mime was found, otherwise False.
 fn contains_mime(mimes: &[&str], value: &str) -> bool {
     let match_all_mime =

@@ -23,21 +23,21 @@ pub struct Paste {
 
 impl Paste {
     /// New.
-    /// 
+    ///
     /// Create a new [`Paste`] object.
     pub const fn new(id: Snowflake, edited: bool, expiry: Option<OffsetDateTime>) -> Self {
         Self { id, edited, expiry }
     }
 
     /// Set Edited.
-    /// 
+    ///
     /// Update the paste so it shows as edited.
     pub fn set_edited(&mut self) {
         self.edited = true;
     }
 
     /// Set Expiry.
-    /// 
+    ///
     /// Set or remove the expiry on the paste.
     pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
@@ -121,9 +121,9 @@ impl Paste {
     /// Create (or update) a document.
     ///
     /// ## Arguments
-    /// 
+    ///
     /// - `transaction` The transaction to use.
-    /// 
+    ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
@@ -148,7 +148,7 @@ impl Paste {
     ///
     /// - `db` - The database to make the request to.
     /// - `id` - The id of the paste.
-    /// 
+    ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
@@ -169,11 +169,11 @@ pub enum ExpiryTaskMessage {
 }
 
 /// Expiry Tasks.
-/// 
+///
 /// A task that deletes pastes (and their documents) when required.
-/// 
+///
 /// ## Arguments
-/// 
+///
 /// - `app` - The application to use.
 /// - `rx` - The [`Receiver`] to listen for messages.
 pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {

@@ -26,8 +26,8 @@ pub struct Config {
     maximum_expiry_hours: Option<usize>,
     /// The default expiry for pastes.
     default_expiry_hours: Option<usize>,
-    /// The maximum allowed documents.
-    global_paste_documents: usize,
+    /// The maximum allowed documents in a paste.
+    global_paste_total_document_count: usize,
     /// Maximum paste body size.
     global_paste_total_document_size_limit: usize,
     /// Individual paste document size.
@@ -53,6 +53,7 @@ impl Config {
         ConfigBuilder::default()
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         from_filename(".env").ok();
         let builder = Self::builder()
@@ -96,68 +97,51 @@ impl Config {
                 v.parse()
                     .expect("DEFAULT_EXPIRY_HOURS requires an integer.")
             }))
-            .global_paste_documents(
-                std::env::var("GLOBAL_PASTE_DOCUMENTS")
-                    .expect("GLOBAL_PASTE_DOCUMENTS environment variable must be set.")
-                    .parse()
-                    .expect("GLOBAL_PASTE_DOCUMENTS requires an integer."),
+            .global_paste_total_document_count(
+                std::env::var("GLOBAL_PASTE_TOTAL_DOCUMENT_COUNT").map_or(10, |v| {
+                    v.parse()
+                        .expect("GLOBAL_PASTE_TOTAL_DOCUMENT_COUNT requires an integer.")
+                }),
             )
             .global_paste_total_document_size_limit(
-                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT")
-                    .expect(
-                        "SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT environment variable must be set.",
-                    )
-                    .parse()
-                    .expect("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT requires an integer."),
+                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT").map_or(100, |v| {
+                    v.parse()
+                        .expect("SIZE_LIMIT_GLOBAL_PASTE_TOTAL_DOCUMENT requires an integer.")
+                }),
             )
             .global_paste_document_size_limit(
-                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT")
-                    .expect("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT environment variable must be set.")
-                    .parse()
-                    .expect("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT requires an integer."),
+                std::env::var("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT").map_or(15, |v| {
+                    v.parse()
+                        .expect("SIZE_LIMIT_GLOBAL_PASTE_DOCUMENT requires an integer.")
+                }),
             )
-            .global_rate_limiter(
-                std::env::var("RATE_LIMIT_GLOBAL")
-                    .expect("RATE_LIMIT_GLOBAL environment variable must be set.")
-                    .parse()
-                    .expect("RATE_LIMIT_GLOBAL requires an integer."),
-            )
-            .global_paste_rate_limiter(
-                std::env::var("RATE_LIMIT_GLOBAL_PASTE")
-                    .expect("RATE_LIMIT_GLOBAL_PASTE environment variable must be set.")
-                    .parse()
-                    .expect("RATE_LIMIT_GLOBAL_PASTE requires an integer."),
-            )
-            .get_pastes_rate_limiter(
-                std::env::var("RATE_LIMIT_GET_PASTES")
-                    .expect("RATE_LIMIT_GET_PASTES environment variable must be set.")
-                    .parse()
-                    .expect("RATE_LIMIT_GET_PASTES requires an integer."),
-            )
-            .get_paste_rate_limiter(
-                std::env::var("RATE_LIMIT_GET_PASTE")
-                    .expect("RATE_LIMIT_GET_PASTE environment variable must be set.")
-                    .parse()
-                    .expect("RATE_LIMIT_GET_PASTE requires an integer."),
-            )
-            .post_paste_rate_limiter(
-                std::env::var("RATE_LIMIT_POST_PASTE")
-                    .expect("RATE_LIMIT_POST_PASTE environment variable must be set.")
-                    .parse()
-                    .expect("RATE_LIMIT_POST_PASTE requires an integer."),
-            )
-            .patch_paste_rate_limiter(
-                std::env::var("RATE_LIMIT_PATCH_PASTE")
-                    .expect("RATE_LIMIT_PATCH_PASTE environment variable must be set.")
-                    .parse()
-                    .expect("RATE_LIMIT_PATCH_PASTE requires an integer."),
-            )
-            .delete_paste_rate_limiter(
-                std::env::var("RATE_LIMIT_DELETE_PASTE")
-                    .expect("RATE_LIMIT_DELETE_PASTE environment variable must be set.")
-                    .parse()
-                    .expect("RATE_LIMIT_DELETEs_PASTE requires an integer."),
-            )
+            .global_rate_limiter(std::env::var("RATE_LIMIT_GLOBAL").map_or(500, |v| {
+                v.parse().expect("RATE_LIMIT_GLOBAL requires an integer.")
+            }))
+            .global_paste_rate_limiter(std::env::var("RATE_LIMIT_GLOBAL_PASTE").map_or(500, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_GLOBAL_PASTE requires an integer.")
+            }))
+            .get_pastes_rate_limiter(std::env::var("RATE_LIMIT_GET_PASTES").map_or(40, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_GET_PASTES requires an integer.")
+            }))
+            .get_paste_rate_limiter(std::env::var("RATE_LIMIT_GET_PASTE").map_or(200, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_GET_PASTE requires an integer.")
+            }))
+            .post_paste_rate_limiter(std::env::var("RATE_LIMIT_POST_PASTE").map_or(100, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_POST_PASTE requires an integer.")
+            }))
+            .patch_paste_rate_limiter(std::env::var("RATE_LIMIT_PATCH_PASTE").map_or(120, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_PATCH_PASTE requires an integer.")
+            }))
+            .delete_paste_rate_limiter(std::env::var("RATE_LIMIT_DELETE_PASTE").map_or(200, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_DELETE_PASTE requires an integer.")
+            }))
             .build()
             .expect("Failed to create application configuration.");
 
@@ -217,8 +201,8 @@ impl Config {
         self.default_expiry_hours
     }
 
-    pub const fn global_paste_documents(&self) -> usize {
-        self.global_paste_documents
+    pub const fn global_paste_total_document_count(&self) -> usize {
+        self.global_paste_total_document_count
     }
 
     pub const fn global_paste_total_document_size_limit(&self) -> usize {
