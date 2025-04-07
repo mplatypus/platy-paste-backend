@@ -2,7 +2,9 @@ CREATE TABLE IF NOT EXISTS pastes (
     -- The unique ID for the paste.
     "id" BIGINT NOT NULL PRIMARY KEY,
     -- Whether the paste has been modified.
-    "edited" BOOLEAN NOT NULL
+    "edited" BOOLEAN NOT NULL,
+    -- The expiry of the paste.
+    "expiry" TIMESTAMP WITH TIME ZONE
 );
 
 CREATE TABLE IF NOT EXISTS paste_tokens (

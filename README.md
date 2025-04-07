@@ -34,6 +34,10 @@ Below is a list of features. The checked boxes mean they have been implemented.
 - [ ] Authentication
     - [ ] Paste
         - [ ] Authentication
+- [x] Expiry
+    - [x] Set expiry
+    - [x] Default expiry
+    - [x] Expiry task
 
 
 ## Setup

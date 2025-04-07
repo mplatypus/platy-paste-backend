@@ -8,6 +8,7 @@ use axum::{
 use regex::Regex;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime};
 
 use crate::{
     app::application::App,
@@ -64,8 +65,15 @@ async fn get_paste(
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
+    if let Some(expiry) = paste.expiry {
+        if expiry < OffsetDateTime::now_utc() {
+            Paste::delete_with_id(&app.database, paste.id).await?;
+            return Err(AppError::NotFound("Paste not found.".to_string()));
+        }
+    }
+
     let documents = Document::fetch_all(&app.database, paste.id).await?;
-    
+
     let mut response_documents = Vec::new();
     for document in documents {
         let content = {
@@ -98,6 +106,13 @@ async fn get_pastes(
         let paste = Paste::fetch(&app.database, paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
+        
+        if let Some(expiry) = paste.expiry {
+            if expiry < OffsetDateTime::now_utc() {
+                Paste::delete_with_id(&app.database, paste.id).await?;
+                return Err(AppError::NotFound("Paste not found.".to_string()));
+            }
+        }
 
         let documents = Document::fetch_all(&app.database, paste.id).await?;
 
@@ -123,12 +138,62 @@ async fn post_paste(
 ) -> Result<Response, AppError> {
     let mut transaction = app.database.pool().begin().await?;
 
+    let body: PostPasteBody = {
+        if let Some(field) = multipart.next_field().await? {
+            if field.content_type().is_none_or(|content_type| content_type != "application/json") {
+                return Err(AppError::BadRequest("Payload must be of the type application/json.".to_string()));
+            }
+
+            let bytes = field.bytes().await?;
+
+            serde_json::from_slice(&bytes)?
+        } else {
+            return Err(AppError::BadRequest("Payload missing.".to_string()));
+        }
+    };
+
     let paste_id = Snowflake::generate()?;
 
-    let paste = Paste::new(
-        paste_id,
-        false,
-    );
+    let expiry = {
+        if body.expiry.is_none()
+            && app.config.default_expiry_hours().is_none()
+            && app.config.maximum_expiry_hours().is_some()
+        {
+            return Err(AppError::BadRequest(
+                "A expiry time is required.".to_string(),
+            ));
+        } else if let Some(expiry) = body.expiry {
+            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
+                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
+            let now = OffsetDateTime::now_utc();
+            let difference = (time - now).whole_seconds();
+
+            if difference.is_negative() {
+                return Err(AppError::BadRequest(
+                    "The timestamp provided is invalid.".to_string(),
+                ));
+            }
+
+            if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
+                if difference as usize > maximum_expiry_hours * 3600 {
+                    return Err(AppError::BadRequest(
+                        "The timestamp provided is above the maximum.".to_string(),
+                    ));
+                }
+            }
+
+            Some(time)
+        } else {
+            app.config
+                .default_expiry_hours()
+                .map(|default_expiry_time| {
+                    OffsetDateTime::now_utc()
+                        .saturating_add(Duration::hours(default_expiry_time as i64))
+                })
+        }
+    };
+
+    let paste = Paste::new(paste_id, false, expiry);
 
     paste.update(&mut transaction).await?;
 
@@ -235,6 +300,13 @@ pub struct PostPasteQuery {
 }
 
 #[derive(Deserialize, Serialize)]
+pub struct PostPasteBody {
+    /// The expiry time for the paste.
+    #[serde(default)]
+    pub expiry: Option<usize>,
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct DeletePastesBody {
     /// The ID's to get.
     pub ids: Vec<Snowflake>,
@@ -249,6 +321,8 @@ pub struct ResponsePaste {
     pub token: Option<String>,
     /// Whether the paste has been edited.
     pub edited: bool,
+    /// The expiry time of the paste.
+    pub expiry: Option<usize>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
@@ -258,12 +332,14 @@ impl ResponsePaste {
         id: Snowflake,
         token: Option<String>,
         edited: bool,
+        expiry: Option<usize>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
             token,
             edited,
+            expiry,
             documents,
         }
     }
@@ -275,7 +351,9 @@ impl ResponsePaste {
     ) -> Self {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
-        Self::new(paste.id, token_value, paste.edited, documents)
+        let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
+
+        Self::new(paste.id, token_value, paste.edited, expiry, documents)
     }
 }
 

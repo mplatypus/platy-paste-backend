@@ -1,3 +1,4 @@
+use crate::app::{application::App, database::Database};
 use axum::{RequestPartsExt, extract::FromRequestParts, http::request::Parts};
 use axum_extra::{
     TypedHeader,
@@ -6,7 +7,6 @@ use axum_extra::{
 use base64::{Engine, prelude::BASE64_URL_SAFE};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgTransaction;
-use crate::app::{application::App, database::Database};
 
 use super::{
     error::{AppError, AuthError},
