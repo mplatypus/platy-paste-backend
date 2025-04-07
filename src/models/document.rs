@@ -18,6 +18,9 @@ pub struct Document {
 }
 
 impl Document {
+    /// New.
+    /// 
+    /// Create a new [`Document`] object.
     pub const fn new(
         id: Snowflake,
         paste_id: Snowflake,
@@ -36,7 +39,13 @@ impl Document {
     ///
     /// Generate a URL to fetch the location of the document.
     ///
-    /// - [`base_url`]: The base url to append.
+    /// ## Arguments
+    /// 
+    /// - `base_url` - The base url to append.
+    /// 
+    /// ## Returns
+    /// 
+    /// The URL generated.
     pub fn generate_url(&self, base_url: &str) -> String {
         format!("{}/documents/{}", base_url, self.generate_path())
     }
@@ -44,15 +53,31 @@ impl Document {
     /// Generate Path.
     ///
     /// Generate the path to the resource.
+    /// 
+    /// ## Returns
+    /// 
+    /// The path generated.
     pub fn generate_path(&self) -> String {
         format!("{}/{}-{}", self.paste_id, self.id, self.name)
     }
 
     /// Fetch.
     ///
-    /// Fetch the documents, via their ID.
+    /// Fetch a document via its ID.
     ///
-    /// - [id]: The ID to look for.
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The ID of the document.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// - [`Option::Some`] - The [`Document`] object.
+    /// - [`Option::None`] - No document was found.
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
@@ -74,11 +99,22 @@ impl Document {
         Ok(None)
     }
 
-    /// Fetch All Documents.
+    /// Fetch All.
     ///
-    /// Fetch all documents owned by a paste.
+    /// Fetch all documents attached to a paste.
     ///
-    /// - [id]: The paste ID to look for.
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The ID of the paste.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// A [`Vec`] of [`Document`]'s.
     pub async fn fetch_all(db: &Database, id: Snowflake) -> Result<Vec<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
@@ -102,7 +138,15 @@ impl Document {
 
     /// Update.
     ///
-    /// Update a existing paste.
+    /// Create (or update) a document.
+    ///
+    /// ## Arguments
+    /// 
+    /// - `transaction` The transaction to use.
+    /// 
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
     pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let document_id: i64 = self.id.into();
         let paste_id: i64 = self.paste_id.into();
@@ -120,9 +164,16 @@ impl Document {
 
     /// Delete.
     ///
-    /// Delete an existing paste.
+    /// Delete a document.
     ///
-    /// - [id]: The ID to delete from.
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The id of the document.
+    /// 
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
     pub async fn delete(db: &Database, id: Snowflake) -> Result<(), AppError> {
         let paste_id: i64 = id.into();
         sqlx::query!("DELETE FROM documents WHERE id = $1", paste_id,)
