@@ -22,6 +22,10 @@ pub struct Config {
     minio_root_password: SecretString,
     /// The domain to use for cors.
     domain: String,
+    /// The maximum expiry for pastes.
+    maximum_expiry_hours: Option<usize>,
+    /// The default expiry for pastes.
+    default_expiry_hours: Option<usize>,
 }
 
 impl Config {
@@ -31,7 +35,7 @@ impl Config {
 
     pub fn from_env() -> Self {
         from_filename(".env").ok();
-        Self::builder()
+        let builder = Self::builder()
             .host(std::env::var("HOST").expect("HOST environment variable must be set."))
             .port(
                 std::env::var("PORT")
@@ -64,8 +68,27 @@ impl Config {
                     .into(),
             )
             .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
+            .maximum_expiry_hours(std::env::var("MAXIMUM_EXPIRY_HOURS").ok().map(|v| {
+                v.parse()
+                    .expect("MAXIMUM_EXPIRY_HOURS requires an integer.")
+            }))
+            .default_expiry_hours(std::env::var("DEFAULT_EXPIRY_HOURS").ok().map(|v| {
+                v.parse()
+                    .expect("DEFAULT_EXPIRY_HOURS requires an integer.")
+            }))
             .build()
-            .expect("Failed to create application configuration.")
+            .expect("Failed to create application configuration.");
+
+        if let (Some(maximum_expiry_hours), Some(default_expiry_hours)) =
+            (builder.maximum_expiry_hours, builder.default_expiry_hours)
+        {
+            assert!(
+                (maximum_expiry_hours >= default_expiry_hours),
+                "The DEFAULT_EXPIRY_HOURS must be equal to or less than MAXIMUM_EXPIRY_HOURS"
+            );
+        }
+
+        builder
     }
 
     pub fn host(&self) -> String {
@@ -102,5 +125,13 @@ impl Config {
 
     pub fn domain(&self) -> String {
         self.domain.clone()
+    }
+
+    pub const fn maximum_expiry_hours(&self) -> Option<usize> {
+        self.maximum_expiry_hours
+    }
+
+    pub const fn default_expiry_hours(&self) -> Option<usize> {
+        self.default_expiry_hours
     }
 }
