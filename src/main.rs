@@ -4,8 +4,10 @@ pub mod rest;
 
 use axum::{Router, http::HeaderValue};
 use http::{Method, header};
+use models::paste::{ExpiryTaskMessage, expiry_tasks};
 use time::{UtcOffset, format_description};
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
+use tokio::sync::mpsc;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
@@ -106,6 +108,10 @@ async fn main() {
         port
     );
 
+    let (expire_sender, expire_receiver) = mpsc::channel::<ExpiryTaskMessage>(10);
+
+    let expiry_task = tokio::task::spawn(expiry_tasks(state, expire_receiver));
+
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}"))
         .await
         .expect("Failed to bind to address");
@@ -116,4 +122,15 @@ async fn main() {
     )
     .await
     .expect("Failed creating server");
+
+    match expire_sender.blocking_send(ExpiryTaskMessage::Cancel) {
+        Ok(()) => {
+            expiry_task
+                .await
+                .expect("Failed to cleanly shut down expiry task.");
+        }
+        Err(e) => {
+            tracing::error!("Failed to cleanly shutdown message task! Reason: {e}");
+        }
+    };
 }

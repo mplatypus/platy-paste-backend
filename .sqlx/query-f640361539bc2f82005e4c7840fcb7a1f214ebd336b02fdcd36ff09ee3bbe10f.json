@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, edited, document_ids FROM pastes WHERE id = $1",
+  "query": "SELECT id, edited, expiry FROM pastes WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -15,8 +15,8 @@
       },
       {
         "ordinal": 2,
-        "name": "document_ids",
-        "type_info": "Text"
+        "name": "expiry",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -27,8 +27,8 @@
     "nullable": [
       false,
       false,
-      false
+      true
     ]
   },
-  "hash": "57a59fd1363c26b9f0fc3afd3008e2a86d425a8aafe95f674ceb83cbf7d4e506"
+  "hash": "f640361539bc2f82005e4c7840fcb7a1f214ebd336b02fdcd36ff09ee3bbe10f"
 }

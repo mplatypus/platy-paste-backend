@@ -17,33 +17,53 @@ use super::error::AppError;
 pub struct Snowflake(u64);
 
 impl Snowflake {
+    /// New.
+    /// 
+    /// Create a new [`Snowflake`] object.
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
+    /// Generate.
+    /// 
+    /// Generate a new snowflake.
+    /// 
+    /// ## Panics
+    /// 
+    /// If time went backwards
+    /// 
+    /// ## Errors
+    /// 
+    /// - [`AppError`] - Failed to get a random value.
+    /// 
+    /// ## Returns
+    /// 
+    /// A [`Snowflake`].
     pub fn generate() -> Result<Self, AppError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_millis() as u64;
 
-        let id = getrandom::u64().map_err(|e| AppError::NotFound(e.to_string()))?;
+        let id = getrandom::u64().map_err(|e| {
+            AppError::InternalServer(format!("Failed to obtain a random integer: {e}"))
+        })?;
 
         let new_snowflake = Self::new((timestamp << 22) | (id as u64 & 0x003F_FFFF));
 
         Ok(new_snowflake)
     }
 
-    /// Id
+    /// Id.
     ///
-    /// Get the ID for the snowflake.
+    /// Get the raw ID for the snowflake.
     pub const fn id(&self) -> u64 {
         self.0
     }
 
-    /// Created At
+    /// Created At.
     ///
-    /// The time since epoch, that this ID was created at.
+    /// The time (since epoch) that this ID was created at.
     pub const fn created_at(&self) -> u64 {
         self.id() >> 22
     }
