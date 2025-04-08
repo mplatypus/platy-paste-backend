@@ -23,8 +23,6 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 # Sadly sqlx macros do not play nicely with clippy
 missing_panics_doc = "allow"
-# Platy doesn't document her code
-missing_errors_doc = "allow"
 # When impl Trait can be used in type aliases, remove this
 future_not_send = "allow"
 # Doesn't play nicely with tokio::select!
