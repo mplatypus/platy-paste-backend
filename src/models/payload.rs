@@ -16,12 +16,18 @@ pub type GetPasteQuery = IncludeContentQuery;
 
 pub type PostPasteQuery = IncludeContentQuery;
 
+pub type PatchPasteQuery = IncludeContentQuery;
+
 #[derive(Deserialize)]
-pub struct PostPasteBody {
+pub struct PasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
     pub expiry: Option<usize>,
 }
+
+pub type PostPasteBody = PasteBody;
+
+pub type PatchPasteBody = PasteBody;
 
 #[derive(Serialize)]
 pub struct ResponsePaste {
