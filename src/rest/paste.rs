@@ -19,8 +19,8 @@ use crate::{
         error::{AppError, AuthError},
         paste::Paste,
         payload::{
-            GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument,
-            ResponsePaste,
+            GetPasteQuery, PatchPasteBody, PatchPasteQuery, PostPasteBody, PostPasteQuery,
+            ResponseDocument, ResponsePaste,
         },
         snowflake::Snowflake,
     },
@@ -208,7 +208,7 @@ async fn get_paste(
 /// Get a list of existing pastes.
 ///
 /// ## Body
-/// 
+///
 /// An array of [`Snowflake`]'s.
 ///
 /// ## Returns
@@ -273,7 +273,6 @@ async fn get_pastes(
 ///
 /// - `400` - The body and/or documents are invalid.
 /// - `200` - The [`ResponsePaste`] object.
-#[allow(clippy::too_many_lines)]
 async fn post_paste(
     State(app): State<App>,
     Query(query): Query<PostPasteQuery>,
@@ -298,44 +297,7 @@ async fn post_paste(
         }
     };
 
-    let expiry = {
-        if body.expiry.is_none()
-            && app.config.default_expiry_hours().is_none()
-            && app.config.maximum_expiry_hours().is_some()
-        {
-            return Err(AppError::BadRequest(
-                "A expiry time is required.".to_string(),
-            ));
-        } else if let Some(expiry) = body.expiry {
-            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
-                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
-            let now = OffsetDateTime::now_utc();
-            let difference = (time - now).whole_seconds();
-
-            if difference.is_negative() {
-                return Err(AppError::BadRequest(
-                    "The timestamp provided is invalid.".to_string(),
-                ));
-            }
-
-            if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
-                if difference as usize > maximum_expiry_hours * 3600 {
-                    return Err(AppError::BadRequest(
-                        "The timestamp provided is above the maximum.".to_string(),
-                    ));
-                }
-            }
-
-            Some(time)
-        } else {
-            app.config
-                .default_expiry_hours()
-                .map(|default_expiry_time| {
-                    OffsetDateTime::now_utc()
-                        .saturating_add(time::Duration::hours(default_expiry_time as i64))
-                })
-        }
-    };
+    let expiry = validate_expiry(&app.config, body.expiry)?;
 
     let mut transaction = app.database.pool().begin().await?;
 
@@ -418,8 +380,60 @@ async fn post_paste(
 /// Edit an existing paste.
 ///
 /// **Requires authentication.**
-async fn patch_paste(State(_app): State<App>, _token: Token) -> Result<Response, AppError> {
-    Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
+async fn patch_paste(
+    State(app): State<App>,
+    Path(paste_id): Path<Snowflake>,
+    Query(query): Query<PatchPasteQuery>,
+    token: Token,
+    Json(body): Json<PatchPasteBody>,
+) -> Result<Response, AppError> {
+    if token.paste_id() != paste_id {
+        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
+    }
+
+    let mut paste = Paste::fetch(&app.database, paste_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
+
+    if let Some(expiry) = paste.expiry {
+        if expiry < OffsetDateTime::now_utc() {
+            Paste::delete_with_id(&app.database, paste.id).await?;
+            return Err(AppError::NotFound("Paste not found.".to_string()));
+        }
+    }
+
+    let new_expiry = validate_expiry(&app.config, body.expiry)?;
+
+    paste.set_expiry(new_expiry);
+
+    let mut transaction = app.database.pool().begin().await?;
+
+    paste.update(&mut transaction).await?;
+
+    transaction.commit().await?;
+
+    let documents = Document::fetch_all(&app.database, paste.id).await?;
+
+    let mut response_documents = Vec::new();
+    for document in documents {
+        let content = {
+            if query.include_content {
+                let data = app.s3.fetch_document(document.generate_path()).await?;
+                let d: &str = &String::from_utf8_lossy(&data);
+                Some(d.to_string())
+            } else {
+                None
+            }
+        };
+
+        let response_document = ResponseDocument::from_document(document, content);
+
+        response_documents.push(response_document);
+    }
+
+    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
+
+    Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
 
 /// Delete Paste.
@@ -498,4 +512,62 @@ fn contains_mime(mimes: &[&str], value: &str) -> bool {
     }
 
     false
+}
+
+/// Validate Expiry.
+///
+/// Checks if the expiry time is valid (if provided)
+/// Otherwise, if not provided, returns the default, or None.
+///
+/// ## Arguments
+///
+/// - `config` - The config values to use.
+/// - `expiry` - The expiry to validate (if provided).
+///
+/// ## Errors
+///
+/// - [`AppError`] - The app error returned, if the provided expiry is invalid.
+///
+/// ## Returns
+///
+/// - [`Option::Some`] - The [`OffsetDateTime`] that was extracted, or defaulted to.
+/// - [`Option::None`] - No datetime was provided, and no default was set.
+fn validate_expiry(
+    config: &Config,
+    expiry: Option<usize>,
+) -> Result<Option<OffsetDateTime>, AppError> {
+    if expiry.is_none()
+        && config.default_expiry_hours().is_none()
+        && config.maximum_expiry_hours().is_some()
+    {
+        Err(AppError::BadRequest(
+            "A expiry time is required.".to_string(),
+        ))
+    } else if let Some(expiry) = expiry {
+        let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
+            .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
+        let now = OffsetDateTime::now_utc();
+        let difference = (time - now).whole_seconds();
+
+        if difference.is_negative() {
+            return Err(AppError::BadRequest(
+                "The timestamp provided is invalid.".to_string(),
+            ));
+        }
+
+        if let Some(maximum_expiry_hours) = config.maximum_expiry_hours() {
+            if difference as usize > maximum_expiry_hours * 3600 {
+                return Err(AppError::BadRequest(
+                    "The timestamp provided is above the maximum.".to_string(),
+                ));
+            }
+        }
+
+        Ok(Some(time))
+    } else {
+        Ok(config.default_expiry_hours().map(|default_expiry_time| {
+            OffsetDateTime::now_utc()
+                .saturating_add(time::Duration::hours(default_expiry_time as i64))
+        }))
+    }
 }
