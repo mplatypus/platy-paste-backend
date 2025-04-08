@@ -127,9 +127,7 @@ impl Paste {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error, or the snowflake exists already.
-    pub async fn insert(
-        &self, transaction: &mut PgTransaction<'_>
-    ) -> Result<(), AppError> {
+    pub async fn insert(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
@@ -137,7 +135,9 @@ impl Paste {
             paste_id,
             self.edited,
             self.expiry
-        ).execute(transaction.as_mut()).await?;
+        )
+        .execute(transaction.as_mut())
+        .await?;
 
         Ok(())
     }
