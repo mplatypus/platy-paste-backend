@@ -399,9 +399,7 @@ async fn post_paste(
     }
 
     for (document, content) in documents {
-        app.s3
-            .create_document(document.generate_path(), content.into())
-            .await?;
+        app.s3.create_document(&document, content.into()).await?;
 
         document.update(&mut transaction).await?;
     }
