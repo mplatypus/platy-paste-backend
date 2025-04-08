@@ -136,6 +136,34 @@ impl Document {
         Ok(documents)
     }
 
+    /// Insert.
+    ///
+    /// Insert (create) a document.
+    ///
+    /// ## Arguments
+    ///
+    /// - `transaction` The transaction to use.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error, or the snowflake exists already.
+    pub async fn insert(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
+        let document_id: i64 = self.id.into();
+        let paste_id: i64 = self.paste_id.into();
+
+        sqlx::query!(
+            "INSERT INTO documents(id, paste_id, type, name) VALUES ($1, $2, $3, $4)",
+            document_id,
+            paste_id,
+            self.document_type,
+            self.name
+        )
+        .execute(transaction.as_mut())
+        .await?;
+
+        Ok(())
+    }
+
     /// Update.
     ///
     /// Create (or update) a document.

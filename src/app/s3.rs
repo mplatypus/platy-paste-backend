@@ -1,7 +1,7 @@
 use aws_sdk_s3::{error::SdkError, operation::head_bucket::HeadBucketError};
 use bytes::{Bytes, BytesMut};
 
-use crate::models::error::AppError;
+use crate::models::{document::Document, error::AppError};
 
 use super::application::{ApplicationState, S3Client};
 
@@ -129,23 +129,23 @@ impl S3Service {
     ///
     /// ## Arguments
     ///
-    /// - `document_path`: The built path of the document.
-    /// - `data`: The data of the document.
+    /// - `document`: The [`Document`].
+    /// - `content`: The content of the document.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - When the document could not be created.
     pub async fn create_document(
         &self,
-        document_path: String,
-        data: Bytes,
+        document: &Document,
+        content: Bytes,
     ) -> Result<(), AppError> {
         self.client
             .put_object()
             .bucket(self.document_bucket_name())
-            .content_type("text/plain")
-            .key(document_path)
-            .body(data.into())
+            .content_type(document.document_type.clone())
+            .key(document.generate_path())
+            .body(content.into())
             .send()
             .await?;
 

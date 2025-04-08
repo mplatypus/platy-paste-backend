@@ -65,9 +65,9 @@ impl Token {
         .await?)
     }
 
-    /// Update.
+    /// Insert.
     ///
-    /// Create a paste token.
+    /// Insert (create) a paste token.
     ///
     /// ## Arguments
     ///
@@ -75,8 +75,8 @@ impl Token {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
-    pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
+    /// - [`AppError`] - The database had an error, or the snowflake exists already.
+    pub async fn insert(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let paste_id: i64 = self.paste_id.into();
         sqlx::query!(
             "INSERT INTO paste_tokens(paste_id, token) VALUES ($1, $2)",

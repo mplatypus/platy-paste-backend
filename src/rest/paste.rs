@@ -8,8 +8,6 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use regex::Regex;
-use secrecy::ExposeSecret;
-use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
@@ -20,6 +18,10 @@ use crate::{
         document::Document,
         error::{AppError, AuthError},
         paste::Paste,
+        payload::{
+            GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument,
+            ResponsePaste,
+        },
         snowflake::Snowflake,
     },
 };
@@ -216,11 +218,11 @@ async fn get_paste(
 /// - `200` - A list of [`ResponsePaste`] objects.
 async fn get_pastes(
     State(app): State<App>,
-    Json(body): Json<GetPastesBody>,
+    Json(body): Json<Vec<Snowflake>>,
 ) -> Result<Response, AppError> {
     let mut response_pastes: Vec<ResponsePaste> = Vec::new();
 
-    for paste_id in body.paste_ids {
+    for paste_id in body {
         let paste = Paste::fetch(&app.database, paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
@@ -279,8 +281,6 @@ async fn post_paste(
     Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let mut transaction = app.database.pool().begin().await?;
-
     let body: PostPasteBody = {
         if let Some(field) = multipart.next_field().await? {
             if field
@@ -299,8 +299,6 @@ async fn post_paste(
             return Err(AppError::BadRequest("Payload missing.".to_string()));
         }
     };
-
-    let paste_id = Snowflake::generate()?;
 
     let expiry = {
         if body.expiry.is_none()
@@ -341,9 +339,11 @@ async fn post_paste(
         }
     };
 
-    let paste = Paste::new(paste_id, false, expiry);
+    let mut transaction = app.database.pool().begin().await?;
 
-    paste.update(&mut transaction).await?;
+    let paste = Paste::new(Snowflake::generate()?, false, expiry);
+
+    paste.insert(&mut transaction).await?;
 
     let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -368,7 +368,7 @@ async fn post_paste(
             return Err(AppError::NotFound("Document too large.".to_string()));
         }
 
-        let document = Document::new(Snowflake::generate()?, paste_id, document_type, name);
+        let document = Document::new(Snowflake::generate()?, paste.id, document_type, name);
 
         documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
@@ -399,18 +399,14 @@ async fn post_paste(
     }
 
     for (document, content) in documents {
-        app.s3
-            .create_document(document.generate_path(), content.into())
-            .await?;
+        app.s3.create_document(&document, content.into()).await?;
 
-        document.update(&mut transaction).await?;
+        document.insert(&mut transaction).await?;
     }
 
-    paste.update(&mut transaction).await?;
+    let paste_token = Token::new(paste.id, generate_token(paste.id)?);
 
-    let paste_token = Token::new(paste_id, generate_token(paste_id)?);
-
-    paste_token.update(&mut transaction).await?;
+    paste_token.insert(&mut transaction).await?;
 
     transaction.commit().await?;
 
@@ -460,162 +456,6 @@ async fn delete_paste(
     Paste::delete_with_id(&app.database, paste_id).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct GetPasteQuery {
-    /// Whether to return the content(s) of the documents.
-    ///
-    /// Defaults to False.
-    #[serde(default, rename = "content")]
-    pub include_content: bool,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct GetPastesBody {
-    /// The ID's to get.
-    pub paste_ids: Vec<Snowflake>,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct PostPasteQuery {
-    /// Whether to return the content(s) of the documents.
-    ///
-    /// Defaults to false.
-    #[serde(default, rename = "content")]
-    pub include_content: bool,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct PostPasteBody {
-    /// The expiry time for the paste.
-    #[serde(default)]
-    pub expiry: Option<usize>,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct DeletePastesBody {
-    /// The ID's to get.
-    pub ids: Vec<Snowflake>,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct ResponsePaste {
-    /// The ID for the paste.
-    pub id: Snowflake,
-    /// The token attached to the paste.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
-    /// Whether the paste has been edited.
-    pub edited: bool,
-    /// The expiry time of the paste.
-    pub expiry: Option<usize>,
-    /// The documents attached to the paste.
-    pub documents: Vec<ResponseDocument>,
-}
-
-impl ResponsePaste {
-    /// New.
-    ///
-    /// Create a new [`ResponsePaste`] object.
-    pub const fn new(
-        id: Snowflake,
-        token: Option<String>,
-        edited: bool,
-        expiry: Option<usize>,
-        documents: Vec<ResponseDocument>,
-    ) -> Self {
-        Self {
-            id,
-            token,
-            edited,
-            expiry,
-            documents,
-        }
-    }
-
-    /// From Paste.
-    ///
-    /// Create a new [`ResponsePaste`] from a [`Paste`] and [`ResponseDocument`]'s
-    ///
-    /// ## Arguments
-    ///
-    /// - `paste` - The paste to extract from.
-    /// - `token` - The token to use (if provided).
-    /// - `documents` - The documents to attach.
-    ///
-    /// ## Returns
-    ///
-    /// The [`ResponsePaste`].
-    pub fn from_paste(
-        paste: &Paste,
-        token: Option<Token>,
-        documents: Vec<ResponseDocument>,
-    ) -> Self {
-        let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
-
-        let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
-
-        Self::new(paste.id, token_value, paste.edited, expiry, documents)
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct ResponseDocument {
-    /// The ID for the document.
-    pub id: Snowflake,
-    /// The paste ID the document is attached too.
-    pub paste_id: Snowflake,
-    /// The type of document.
-    #[serde(rename = "type")]
-    pub document_type: String,
-    /// The name of the document.
-    pub name: String,
-    /// The content of the document.
-    pub content: Option<String>,
-}
-
-impl ResponseDocument {
-    /// New.
-    ///
-    /// Create a new [`ResponseDocument`] object.
-    pub const fn new(
-        id: Snowflake,
-        paste_id: Snowflake,
-        document_type: String,
-        name: String,
-        content: Option<String>,
-    ) -> Self {
-        Self {
-            id,
-            paste_id,
-            document_type,
-            name,
-            content,
-        }
-    }
-
-    /// From Document.
-    ///
-    /// Create a new [`ResponseDocument`] from a [`Document`] and its content.
-    ///
-    /// ## Arguments
-    ///
-    /// - `document` - The document to extract from.
-    /// - `content` - The content to use (if provided).
-    ///
-    /// ## Returns
-    ///
-    /// The [`ResponseDocument`].
-    pub fn from_document(document: Document, content: Option<String>) -> Self {
-        Self::new(
-            document.id,
-            document.paste_id,
-            document.document_type,
-            document.name,
-            content,
-        )
-    }
 }
 
 // FIXME: This whole function needs rebuilding. I do not like the way its made.
