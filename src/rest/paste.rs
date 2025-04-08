@@ -18,10 +18,7 @@ use crate::{
         document::Document,
         error::{AppError, AuthError},
         paste::Paste,
-        payload::{
-            GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument,
-            ResponsePaste,
-        },
+        payload::{GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument, ResponsePaste},
         snowflake::Snowflake,
     },
 };
@@ -208,7 +205,7 @@ async fn get_paste(
 /// Get a list of existing pastes.
 ///
 /// ## Body
-/// 
+///
 /// An array of [`Snowflake`]'s.
 ///
 /// ## Returns
