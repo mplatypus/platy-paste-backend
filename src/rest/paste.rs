@@ -208,10 +208,8 @@ async fn get_paste(
 /// Get a list of existing pastes.
 ///
 /// ## Body
-///
-/// References: [`GetPastesBody`]
-///
-/// - `ids` - The pastes ID.
+/// 
+/// An array of [`Snowflake`]'s.
 ///
 /// ## Returns
 ///
