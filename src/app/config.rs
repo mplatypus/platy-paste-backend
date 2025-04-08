@@ -46,6 +46,16 @@ pub struct Config {
     patch_paste_rate_limiter: u32,
     /// Delete paste rate limiter.
     delete_paste_rate_limiter: u32,
+    /// Global document rate limiter.
+    global_document_rate_limiter: u32,
+    /// Get document rate limiter.
+    get_document_rate_limiter: u32,
+    /// Post document rate limiter.
+    post_document_rate_limiter: u32,
+    /// Patch document rate limiter.
+    patch_document_rate_limiter: u32,
+    /// Delete document rate limiter.
+    delete_document_rate_limiter: u32,
 }
 
 impl Config {
@@ -142,6 +152,38 @@ impl Config {
                 v.parse()
                     .expect("RATE_LIMIT_DELETE_PASTE requires an integer.")
             }))
+            .global_document_rate_limiter(std::env::var("RATE_LIMIT_GLOBAL_DOCUMENT").map_or(
+                500,
+                |v| {
+                    v.parse()
+                        .expect("RATE_LIMIT_GLOBAL_DOCUMENT requires an integer.")
+                },
+            ))
+            .get_document_rate_limiter(std::env::var("RATE_LIMIT_GET_DOCUMENT").map_or(200, |v| {
+                v.parse()
+                    .expect("RATE_LIMIT_GET_DOCUMENT requires an integer.")
+            }))
+            .post_document_rate_limiter(std::env::var("RATE_LIMIT_POST_DOCUMENT").map_or(
+                100,
+                |v| {
+                    v.parse()
+                        .expect("RATE_LIMIT_POST_DOCUMENT requires an integer.")
+                },
+            ))
+            .patch_document_rate_limiter(std::env::var("RATE_LIMIT_PATCH_DOCUMENT").map_or(
+                120,
+                |v| {
+                    v.parse()
+                        .expect("RATE_LIMIT_PATCH_DOCUMENT requires an integer.")
+                },
+            ))
+            .delete_document_rate_limiter(std::env::var("RATE_LIMIT_DELETE_DOCUMENT").map_or(
+                200,
+                |v| {
+                    v.parse()
+                        .expect("RATE_LIMIT_DELETE_DOCUMENT requires an integer.")
+                },
+            ))
             .build()
             .expect("Failed to create application configuration.");
 
@@ -239,5 +281,25 @@ impl Config {
 
     pub const fn delete_paste_rate_limiter(&self) -> u32 {
         self.delete_paste_rate_limiter
+    }
+
+    pub const fn global_document_rate_limiter(&self) -> u32 {
+        self.global_document_rate_limiter
+    }
+
+    pub const fn get_document_rate_limiter(&self) -> u32 {
+        self.get_document_rate_limiter
+    }
+
+    pub const fn post_document_rate_limiter(&self) -> u32 {
+        self.post_document_rate_limiter
+    }
+
+    pub const fn patch_document_rate_limiter(&self) -> u32 {
+        self.patch_document_rate_limiter
+    }
+
+    pub const fn delete_document_rate_limiter(&self) -> u32 {
+        self.delete_document_rate_limiter
     }
 }

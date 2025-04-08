@@ -123,6 +123,33 @@ impl S3Service {
         Ok(bytes.freeze())
     }
 
+    /// Fetch a documents size.
+    ///
+    /// Fetch an existing document, but only its size.
+    ///
+    /// ## Arguments
+    ///
+    /// - `document` - The document to fetch the content size for.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - When the document cannot be found, or a read failure happens.
+    ///
+    /// ## Returns
+    ///
+    /// The [`i64`] size of the document.
+    pub async fn fetch_document_size(&self, document_path: String) -> Result<i64, AppError> {
+        let data = self
+            .client
+            .head_object()
+            .bucket(self.document_bucket_name())
+            .key(document_path)
+            .send()
+            .await?;
+
+        Ok(data.content_length().unwrap_or(0))
+    }
+
     /// Create a document
     ///
     /// Create a new document.

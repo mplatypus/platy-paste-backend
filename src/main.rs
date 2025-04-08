@@ -88,8 +88,8 @@ async fn main() {
     };
 
     let app = Router::new()
-        //.nest("/admin", rest::admin::generate_router())
         .nest("/v1", rest::paste::generate_router(&state.config))
+        .nest("/v1", rest::document::generate_router(&state.config))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)

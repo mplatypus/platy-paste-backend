@@ -7,7 +7,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
-use regex::Regex;
 use time::OffsetDateTime;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
@@ -15,7 +14,7 @@ use crate::{
     app::{application::App, config::Config},
     models::{
         authentication::{Token, generate_token},
-        document::Document,
+        document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
         paste::Paste,
         payload::{
@@ -25,31 +24,6 @@ use crate::{
         snowflake::Snowflake,
     },
 };
-
-/* FIXME: Unsure if this is actually needed.
-/// Supported mimes are the ones that will be supported by the website.
-const SUPPORTED_MIMES: &[&str] = &[
-    // Text mimes
-    "text/x-asm",
-    "text/x-c",
-    "text/plain",
-    "text/markdown",
-    "text/css",
-    "text/csv",
-    "text/html",
-    "text/x-java-source",
-    "text/javascript",
-    "text/x-pascal",
-    "text/x-python",
-    // Application mimes
-    "application/json"
-];
-*/
-
-/// Unsupported mimes, are ones that will be declined.
-const UNSUPPORTED_MIMES: &[&str] = &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
-
-const DEFAULT_MIME: &str = "text/plain";
 
 pub fn generate_router(config: &Config) -> Router<App> {
     let global_limiter = GovernorLayer {
@@ -328,7 +302,13 @@ async fn post_paste(
             return Err(AppError::NotFound("Document too large.".to_string()));
         }
 
-        let document = Document::new(Snowflake::generate()?, paste.id, document_type, name);
+        let document = Document::new(
+            Snowflake::generate()?,
+            paste.id,
+            document_type,
+            name,
+            data.len(),
+        );
 
         documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
@@ -380,6 +360,28 @@ async fn post_paste(
 /// Edit an existing paste.
 ///
 /// **Requires authentication.**
+///
+/// ## Path
+///
+/// - `paste_id` - The paste ID to edit.
+///
+/// ## Query
+///
+/// References: [`PatchPasteQuery`]
+///
+/// - `content` - Whether to include the content or not.
+///
+/// ## Body
+///
+/// References: [`PatchPasteBody`]
+///
+/// - `expiry` - The expiry of the paste.
+///
+/// ## Returns
+///
+/// - `401` - Invalid token and/or paste ID.
+/// - `400` - The body is invalid.
+/// - `200` - The [`ResponsePaste`] object.
 async fn patch_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
@@ -444,13 +446,7 @@ async fn patch_paste(
 ///
 /// ## Path
 ///
-/// - `content` - Whether to include the content or not.
-///
-/// ## Body
-///
-/// References: [`PostPasteBody`]
-///
-/// - `expiry` - The expiry of the paste.
+/// - `paste_id` - The paste ID to delete.
 ///
 /// ## Returns
 ///
@@ -468,50 +464,6 @@ async fn delete_paste(
     Paste::delete_with_id(&app.database, paste_id).await?;
 
     Ok(StatusCode::NO_CONTENT.into_response())
-}
-
-// FIXME: This whole function needs rebuilding. I do not like the way its made.
-// For example, the regex values. Can I have them as constants in any way? or are they super light when unwrapping?
-// Any way to shrink the `.capture` call so that its not being called each time?
-/// Contains Mime.
-///
-/// Checks if the mime is in the list of mimes.
-///
-/// If a mime in the mimes list ends with an asterisk "*",
-/// at the end like `images/*` it will become a catch all,
-/// making all mimes that start with `images` return true.
-///
-/// ## Arguments
-///
-/// - `mimes` - The array of mimes to check in.
-/// - `value` - The value to look for.
-///
-/// ## Returns
-///
-/// True if mime was found, otherwise False.
-fn contains_mime(mimes: &[&str], value: &str) -> bool {
-    let match_all_mime =
-        Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/\*$").expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
-    let split_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/(?P<right>[a-zA-Z0-9\*]+)$")
-        .expect("Failed to build split mime regex."); // extracts the left and right parts of the mime.
-
-    if let Some(split_mime_value) = split_mime.captures(value) {
-        for mime in mimes {
-            if mime == &value {
-                return true;
-            } else if let Some(capture) = match_all_mime.captures(mime) {
-                if let (Some(mime_value_left), Some(capture_value_left)) =
-                    (split_mime_value.name("left"), capture.name("left"))
-                {
-                    if mime_value_left.as_str() == capture_value_left.as_str() {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    false
 }
 
 /// Validate Expiry.
