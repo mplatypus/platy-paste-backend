@@ -279,8 +279,6 @@ async fn post_paste(
     Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
-    let mut transaction = app.database.pool().begin().await?;
-
     let body: PostPasteBody = {
         if let Some(field) = multipart.next_field().await? {
             if field
@@ -299,8 +297,6 @@ async fn post_paste(
             return Err(AppError::BadRequest("Payload missing.".to_string()));
         }
     };
-
-    let paste_id = Snowflake::generate()?;
 
     let expiry = {
         if body.expiry.is_none()
@@ -341,7 +337,9 @@ async fn post_paste(
         }
     };
 
-    let paste = Paste::new(paste_id, false, expiry);
+    let mut transaction = app.database.pool().begin().await?;
+
+    let paste = Paste::new(Snowflake::generate()?, false, expiry);
 
     paste.insert(&mut transaction).await?;
 
@@ -368,7 +366,7 @@ async fn post_paste(
             return Err(AppError::NotFound("Document too large.".to_string()));
         }
 
-        let document = Document::new(Snowflake::generate()?, paste_id, document_type, name);
+        let document = Document::new(Snowflake::generate()?, paste.id, document_type, name);
 
         documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
@@ -404,7 +402,7 @@ async fn post_paste(
         document.insert(&mut transaction).await?;
     }
 
-    let paste_token = Token::new(paste_id, generate_token(paste_id)?);
+    let paste_token = Token::new(paste.id, generate_token(paste.id)?);
 
     paste_token.insert(&mut transaction).await?;
 
