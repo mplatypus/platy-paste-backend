@@ -147,9 +147,7 @@ impl Document {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error, or the snowflake exists already.
-    pub async fn insert(
-        &self, transaction: &mut PgTransaction<'_>
-    ) -> Result<(), AppError> {
+    pub async fn insert(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
         let document_id: i64 = self.id.into();
         let paste_id: i64 = self.paste_id.into();
 
@@ -159,7 +157,9 @@ impl Document {
             paste_id,
             self.document_type,
             self.name
-        ).execute(transaction.as_mut()).await?;
+        )
+        .execute(transaction.as_mut())
+        .await?;
 
         Ok(())
     }
