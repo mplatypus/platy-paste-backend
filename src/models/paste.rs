@@ -116,6 +116,32 @@ impl Paste {
         Ok(pastes)
     }
 
+    /// Insert.
+    ///
+    /// Insert (create) a paste.
+    ///
+    /// ## Arguments
+    ///
+    /// - `transaction` The transaction to use.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error, or the snowflake exists already.
+    pub async fn insert(
+        &self, transaction: &mut PgTransaction<'_>
+    ) -> Result<(), AppError> {
+        let paste_id: i64 = self.id.into();
+
+        sqlx::query!(
+            "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3)",
+            paste_id,
+            self.edited,
+            self.expiry
+        ).execute(transaction.as_mut()).await?;
+
+        Ok(())
+    }
+
     /// Update.
     ///
     /// Create (or update) a document.

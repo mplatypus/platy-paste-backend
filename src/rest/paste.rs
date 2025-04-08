@@ -343,7 +343,7 @@ async fn post_paste(
 
     let paste = Paste::new(paste_id, false, expiry);
 
-    paste.update(&mut transaction).await?;
+    paste.insert(&mut transaction).await?;
 
     let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -401,14 +401,12 @@ async fn post_paste(
     for (document, content) in documents {
         app.s3.create_document(&document, content.into()).await?;
 
-        document.update(&mut transaction).await?;
+        document.insert(&mut transaction).await?;
     }
-
-    paste.update(&mut transaction).await?;
 
     let paste_token = Token::new(paste_id, generate_token(paste_id)?);
 
-    paste_token.update(&mut transaction).await?;
+    paste_token.insert(&mut transaction).await?;
 
     transaction.commit().await?;
 
