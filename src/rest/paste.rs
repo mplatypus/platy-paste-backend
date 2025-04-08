@@ -19,7 +19,7 @@ use crate::{
         error::{AppError, AuthError},
         paste::Paste,
         payload::{
-            GetPasteQuery, GetPastesBody, PostPasteBody, PostPasteQuery, ResponseDocument,
+            GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument,
             ResponsePaste,
         },
         snowflake::Snowflake,
@@ -218,11 +218,11 @@ async fn get_paste(
 /// - `200` - A list of [`ResponsePaste`] objects.
 async fn get_pastes(
     State(app): State<App>,
-    Json(body): Json<GetPastesBody>,
+    Json(body): Json<Vec<Snowflake>>,
 ) -> Result<Response, AppError> {
     let mut response_pastes: Vec<ResponsePaste> = Vec::new();
 
-    for paste_id in body.ids {
+    for paste_id in body {
         let paste = Paste::fetch(&app.database, paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;

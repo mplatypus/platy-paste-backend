@@ -17,16 +17,6 @@ pub type GetPasteQuery = IncludeContentQuery;
 pub type PostPasteQuery = IncludeContentQuery;
 
 #[derive(Deserialize)]
-pub struct MultiplePastesBody {
-    /// The ID's to use.
-    pub ids: Vec<Snowflake>,
-}
-
-pub type GetPastesBody = MultiplePastesBody;
-
-pub type DeletePastesBody = MultiplePastesBody;
-
-#[derive(Deserialize)]
 pub struct PostPasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
