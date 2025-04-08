@@ -129,17 +129,17 @@ impl FromRequestParts<App> for Token {
 }
 
 /// Generate Token.
-///
+/// 
 /// ## Parameters
-///
+/// 
 /// - `paste_id` - The paste attached to the token.
-///
+/// 
 /// ## Errors
-///
+/// 
 /// - [`AppError`] - Raise when it fails to fill random integers.
-///
+/// 
 /// ## Returns
-///
+/// 
 /// The [`SecretString`] (token) generated.
 pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, AppError> {
     const TOKEN_LENGTH: usize = 25;

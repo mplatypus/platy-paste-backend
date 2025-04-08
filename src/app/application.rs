@@ -22,13 +22,13 @@ impl ApplicationState {
     /// New.
     ///
     /// Create a new [`ApplicationState`] object.
-    ///
+    /// 
     /// ## Errors
-    ///
+    /// 
     /// - [`AppError`] - When it fails to create a client.
-    ///
+    /// 
     /// ## Returns
-    ///
+    /// 
     /// The created [`ApplicationState`] wrapped in [`Arc`].
     pub async fn new() -> Result<Arc<Self>, AppError> {
         let config = Config::from_env();
