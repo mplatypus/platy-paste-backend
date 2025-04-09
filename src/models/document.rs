@@ -61,6 +61,24 @@ impl Document {
         format!("{}/{}-{}", self.paste_id, self.id, self.name)
     }
 
+    /// Set Type.
+    ///
+    /// Set the type of the document.
+    ///
+    /// - `document_type` - The document type.
+    pub fn set_document_type(&mut self, document_type: String) {
+        self.document_type = document_type;
+    }
+
+    /// Set Name.
+    ///
+    /// Set the name of the document.
+    ///
+    /// - `name` - The document type.
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
     /// Fetch.
     ///
     /// Fetch a document via its ID.
