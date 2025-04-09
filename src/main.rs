@@ -1,10 +1,10 @@
-pub mod app;
-pub mod models;
-pub mod rest;
-
 use axum::{Router, http::HeaderValue};
 use http::{Method, header};
-use models::paste::{ExpiryTaskMessage, expiry_tasks};
+use platy_paste::{
+    app::application::ApplicationState,
+    models::paste::{ExpiryTaskMessage, expiry_tasks},
+    rest,
+};
 use time::{UtcOffset, format_description};
 use tokio::sync::mpsc;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
@@ -51,11 +51,10 @@ async fn main() {
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
-    let state: Arc<app::application::ApplicationState> =
-        match app::application::ApplicationState::new().await {
-            Ok(s) => s,
-            Err(err) => panic!("Failed to build state: {err}"),
-        };
+    let state: Arc<ApplicationState> = match ApplicationState::new().await {
+        Ok(s) => s,
+        Err(err) => panic!("Failed to build state: {err}"),
+    };
 
     let cors = CorsLayer::new()
         .allow_origin(

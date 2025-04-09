@@ -18,10 +18,7 @@ use crate::{
         document::Document,
         error::{AppError, AuthError},
         paste::Paste,
-        payload::{
-            GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument,
-            ResponsePaste,
-        },
+        payload::{GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument, ResponsePaste},
         snowflake::Snowflake,
     },
 };
@@ -208,7 +205,7 @@ async fn get_paste(
 /// Get a list of existing pastes.
 ///
 /// ## Body
-/// 
+///
 /// An array of [`Snowflake`]'s.
 ///
 /// ## Returns
@@ -476,18 +473,19 @@ async fn delete_paste(
 ///
 /// True if mime was found, otherwise False.
 fn contains_mime(mimes: &[&str], value: &str) -> bool {
-    let match_all_mime =
-        Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/\*$").expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
-    let split_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9]+)/(?P<right>[a-zA-Z0-9\*]+)$")
+    let match_all_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9\-]+)/\*$")
+        .expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
+    let split_mime = Regex::new(r"^(?P<type>[A-Za-z0-9!#$%&'*+.^_`|~-]+)/(?P<subtype>[A-Za-z0-9!#$%&'*+.^_`|~-]+)(?:\s*;.*)?$")
         .expect("Failed to build split mime regex."); // extracts the left and right parts of the mime.
 
     if let Some(split_mime_value) = split_mime.captures(value) {
         for mime in mimes {
+            println!("{}: {:?}", mime, match_all_mime.captures(mime));
             if mime == &value {
                 return true;
             } else if let Some(capture) = match_all_mime.captures(mime) {
                 if let (Some(mime_value_left), Some(capture_value_left)) =
-                    (split_mime_value.name("left"), capture.name("left"))
+                    (split_mime_value.name("type"), capture.name("left"))
                 {
                     if mime_value_left.as_str() == capture_value_left.as_str() {
                         return true;
@@ -498,4 +496,34 @@ fn contains_mime(mimes: &[&str], value: &str) -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_MIMES: &[&str] = &["test/beanos", "test-all/*"];
+
+    #[test]
+    fn test_contains_mime() {
+        assert!(
+            contains_mime(TEST_MIMES, "test/beanos"),
+            "Catch exact failed."
+        );
+
+        assert!(
+            contains_mime(TEST_MIMES, "test-all/apples"),
+            "Catch all failed."
+        );
+
+        assert!(
+            contains_mime(TEST_MIMES, "test-all/apples; beanos=12;"),
+            "Extra parameters failed."
+        );
+
+        assert!(
+            !contains_mime(TEST_MIMES, "application/json"),
+            "Catch missing failed."
+        );
+    }
 }

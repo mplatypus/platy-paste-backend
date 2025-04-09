@@ -39,6 +39,8 @@ impl Paste {
     /// Set Expiry.
     ///
     /// Set or remove the expiry on the paste.
+    ///
+    /// - `expiry` - The expiry.
     pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
     }
