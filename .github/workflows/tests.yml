@@ -1,0 +1,35 @@
+# .github/workflows/pr-test.yml
+name: Test Rust Code on Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main  # change this to match your default branch if needed
+
+jobs:
+  test:
+    name: Run Cargo Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run Tests
+        run: cargo test --all
