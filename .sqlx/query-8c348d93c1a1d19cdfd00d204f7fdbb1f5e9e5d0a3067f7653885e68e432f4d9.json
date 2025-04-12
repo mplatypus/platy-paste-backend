@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pastes VALUES (789, false, $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c348d93c1a1d19cdfd00d204f7fdbb1f5e9e5d0a3067f7653885e68e432f4d9"
+}
