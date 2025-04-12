@@ -421,9 +421,3 @@ fn test_delete(pool: PgPool) {
         "Found paste in db."
     );
 }
-
-#[ignore]
-#[sqlx::test]
-fn test_expiry_tasks(_pool: PgPool) {
-    // FIXME: Implement me.
-}
