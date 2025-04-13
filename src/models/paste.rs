@@ -178,13 +178,13 @@ impl Paste {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn delete_with_id(db: &Database, id: Snowflake) -> Result<(), AppError> {
+    pub async fn delete(db: &Database, id: Snowflake) -> Result<bool, AppError> {
         let paste_id: i64 = id.into();
-        sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
+        let result = sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
             .execute(db.pool())
             .await?;
 
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 }
 
@@ -240,8 +240,8 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
             }
         }
 
-        match Paste::delete_with_id(&app.database, paste.id).await {
-            Ok(()) => tracing::trace!("Successfully deleted paste: {}", paste.id),
+        match Paste::delete(&app.database, paste.id).await {
+            Ok(_) => tracing::trace!("Successfully deleted paste: {}", paste.id),
             Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e),
         }
     }
@@ -290,8 +290,8 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
                         }
                     }
 
-                    match Paste::delete_with_id(&app.database, paste.id).await {
-                        Ok(()) => tracing::trace!("Successfully deleted paste: {}", paste.id),
+                    match Paste::delete(&app.database, paste.id).await {
+                        Ok(_) => tracing::trace!("Successfully deleted paste: {}", paste.id),
                         Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e)
                     }
                 }
