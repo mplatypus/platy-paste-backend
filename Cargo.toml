@@ -50,8 +50,8 @@ tracing-subscriber = { version = "0.3", features = [
 tracing-appender = "0.2"
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "tls-rustls", "time"] }
-aws-config = "1.5"
-aws-sdk-s3 = "1.76"
+aws-config = "1.6"
+aws-sdk-s3 = "1.82"
 # Payload
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -64,7 +64,7 @@ color-eyre = "0.6"
 derive_builder = "0.20"
 base64 = "0.22"
 time = { version = "0.3", features = ["serde"] }
-bitflags = { version = "2.8", features = ["serde"] }
+bitflags = { version = "2.9", features = ["serde"] }
 getrandom = "0.3"
 http = "1.3"
 regex = "1.11"
