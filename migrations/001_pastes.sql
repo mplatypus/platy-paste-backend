@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS documents (
     "type" TEXT NOT NULL,
     -- The name of the document.
     "name" TEXT NOT NULL,
+    -- The size of the document.
+    "size" BIGINT NOT NULL,
     -- Foreign key that deletes the paste token when the paste ID (owner) gets deleted.
     FOREIGN KEY ("paste_id") REFERENCES pastes("id") ON DELETE CASCADE
 );
