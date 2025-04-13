@@ -314,13 +314,13 @@ impl Document {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn delete(db: &Database, id: Snowflake) -> Result<(), AppError> {
+    pub async fn delete(db: &Database, id: Snowflake) -> Result<bool, AppError> {
         let paste_id: i64 = id.into();
-        sqlx::query!("DELETE FROM documents WHERE id = $1", paste_id,)
+        let result= sqlx::query!("DELETE FROM documents WHERE id = $1", paste_id,)
             .execute(db.pool())
             .await?;
 
-        Ok(())
+        Ok(result.rows_affected() > 0)
     }
 }
 

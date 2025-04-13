@@ -148,7 +148,7 @@ async fn get_paste(
 
     if let Some(expiry) = paste.expiry {
         if expiry < OffsetDateTime::now_utc() {
-            Paste::delete_with_id(&app.database, paste.id).await?;
+            Paste::delete(&app.database, paste.id).await?;
             return Err(AppError::NotFound("Paste not found.".to_string()));
         }
     }
@@ -201,7 +201,7 @@ async fn get_pastes(
 
         if let Some(expiry) = paste.expiry {
             if expiry < OffsetDateTime::now_utc() {
-                Paste::delete_with_id(&app.database, paste.id).await?;
+                Paste::delete(&app.database, paste.id).await?;
                 return Err(AppError::NotFound("Paste not found.".to_string()));
             }
         }
@@ -393,7 +393,7 @@ async fn patch_paste(
 
     if let Some(expiry) = paste.expiry {
         if expiry < OffsetDateTime::now_utc() {
-            Paste::delete_with_id(&app.database, paste.id).await?;
+            Paste::delete(&app.database, paste.id).await?;
             return Err(AppError::NotFound("Paste not found.".to_string()));
         }
     }
@@ -461,7 +461,9 @@ async fn delete_paste(
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    Paste::delete_with_id(&app.database, paste_id).await?;
+    if !Paste::delete(&app.database, paste_id).await? {
+        return Err(AppError::NotFound("The paste was not found.".to_string()))
+    }
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }

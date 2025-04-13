@@ -379,13 +379,15 @@ async fn delete_document(
     let total_document_count =
         Document::fetch_total_document_count(&app.database, paste_id).await?;
 
-    if total_document_count >= 1 {
+    if total_document_count <= 1 {
         return Err(AppError::BadRequest(
             "A paste must have at least one document".to_string(),
         ));
     }
 
-    Document::delete(&app.database, document_id).await?;
+    if !Document::delete(&app.database, document_id).await? {
+        return Err(AppError::NotFound("The document was not found.".to_string()))
+    }
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
