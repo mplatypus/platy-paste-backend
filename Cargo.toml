@@ -33,7 +33,7 @@ redundant_pub_crate = "allow"
 tokio = { version = "1", features = ["full"] }
 # Network
 axum = { version = "0.8", features = ["multipart", "json", "ws"] }
-axum-extra = { version = "0.10", features = ["typed-header"] }
+axum-extra = { version = "0.10", features = ["typed-header", "multipart"] }
 tower-http = { version = "0.6", features = [
     "limit",
     "cors",

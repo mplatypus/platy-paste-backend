@@ -39,10 +39,12 @@ pub struct Document {
     /// The paste that owns the document.
     pub paste_id: Snowflake,
     /// The type of document.
+    #[serde(rename = "type")]
     pub document_type: String,
     /// The name of the document.
     pub name: String,
     /// The size of the document.
+    #[serde(skip_serializing)]
     pub size: usize,
 }
 

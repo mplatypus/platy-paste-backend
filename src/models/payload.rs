@@ -45,7 +45,7 @@ pub struct ResponsePaste {
     /// The expiry time of the paste.
     pub expiry: Option<usize>,
     /// The documents attached to the paste.
-    pub documents: Vec<ResponseDocument>,
+    pub documents: Vec<Document>,
 }
 
 impl ResponsePaste {
@@ -57,7 +57,7 @@ impl ResponsePaste {
         token: Option<String>,
         edited: bool,
         expiry: Option<usize>,
-        documents: Vec<ResponseDocument>,
+        documents: Vec<Document>,
     ) -> Self {
         Self {
             id,
@@ -70,7 +70,7 @@ impl ResponsePaste {
 
     /// From Paste.
     ///
-    /// Create a new [`ResponsePaste`] from a [`Paste`] and [`ResponseDocument`]'s
+    /// Create a new [`ResponsePaste`] from a [`Paste`] and [`Document`]'s
     ///
     /// ## Arguments
     ///
@@ -81,73 +81,17 @@ impl ResponsePaste {
     /// ## Returns
     ///
     /// The [`ResponsePaste`].
-    pub fn from_paste(
-        paste: &Paste,
-        token: Option<Token>,
-        documents: Vec<ResponseDocument>,
-    ) -> Self {
+    pub fn from_paste(paste: &Paste, token: Option<Token>, documents: &Vec<Document>) -> Self {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
         let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
 
-        Self::new(paste.id, token_value, paste.edited, expiry, documents)
-    }
-}
-
-#[derive(Serialize)]
-pub struct ResponseDocument {
-    /// The ID for the document.
-    pub id: Snowflake,
-    /// The paste ID the document is attached too.
-    pub paste_id: Snowflake,
-    /// The type of document.
-    #[serde(rename = "type")]
-    pub document_type: String,
-    /// The name of the document.
-    pub name: String,
-    /// The content of the document.
-    pub content: Option<String>,
-}
-
-impl ResponseDocument {
-    /// New.
-    ///
-    /// Create a new [`ResponseDocument`] object.
-    pub const fn new(
-        id: Snowflake,
-        paste_id: Snowflake,
-        document_type: String,
-        name: String,
-        content: Option<String>,
-    ) -> Self {
-        Self {
-            id,
-            paste_id,
-            document_type,
-            name,
-            content,
-        }
-    }
-
-    /// From Document.
-    ///
-    /// Create a new [`ResponseDocument`] from a [`Document`] and its content.
-    ///
-    /// ## Arguments
-    ///
-    /// - `document` - The document to extract from.
-    /// - `content` - The content to use (if provided).
-    ///
-    /// ## Returns
-    ///
-    /// The [`ResponseDocument`].
-    pub fn from_document(document: Document, content: Option<String>) -> Self {
         Self::new(
-            document.id,
-            document.paste_id,
-            document.document_type,
-            document.name,
-            content,
+            paste.id,
+            token_value,
+            paste.edited,
+            expiry,
+            documents.to_owned(),
         )
     }
 }

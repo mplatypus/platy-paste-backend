@@ -9,6 +9,7 @@ use axum::{
 use axum_extra::{
     TypedHeader,
     headers::{self, ContentType, Header},
+    response::multiple::{MultipartForm, Part},
 };
 use bytes::Bytes;
 use http::{HeaderName, HeaderValue, StatusCode};
@@ -21,7 +22,7 @@ use crate::{
         document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
         paste::Paste,
-        payload::{PatchDocumentQuery, PostDocumentQuery, ResponseDocument},
+        payload::{PatchDocumentQuery, PostDocumentQuery},
         snowflake::Snowflake,
     },
 };
@@ -138,11 +139,28 @@ async fn get_document(
     }
 
     let data = app.s3.fetch_document(document.generate_path()).await?;
-    let d: &str = &String::from_utf8_lossy(&data);
 
-    let response_document = ResponseDocument::from_document(document, Some(d.to_string()));
+    let mut parts: Vec<Part> = Vec::new();
 
-    Ok((StatusCode::OK, Json(response_document)).into_response())
+    let payload = serde_json::to_string(&document)?;
+
+    parts.push(
+        Part::raw_part("payload", "application/json", payload.as_str().into(), None).map_err(
+            |e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")),
+        )?,
+    );
+
+    let document_content = Part::raw_part(
+        "content",
+        &document.document_type,
+        data.to_vec(),
+        Some(&document.name),
+    )
+    .map_err(|e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")))?;
+
+    parts.push(document_content);
+
+    Ok((StatusCode::OK, MultipartForm::from_iter(parts)).into_response())
 }
 
 /// Post Document.
@@ -233,24 +251,35 @@ async fn post_document(
 
     document.update(&mut transaction).await?;
 
-    app.s3.delete_document(document.generate_path()).await?;
-
     app.s3.create_document(&document, body.clone()).await?;
 
     transaction.commit().await?;
 
-    let content = {
-        if query.include_content {
-            let d: &str = &String::from_utf8_lossy(&body);
-            Some(d.to_string())
-        } else {
-            None
-        }
-    };
+    if !query.include_content {
+        return Ok((StatusCode::OK, Json(document)).into_response());
+    }
 
-    let document_response = ResponseDocument::from_document(document, content);
+    let mut parts: Vec<Part> = Vec::new();
 
-    Ok((StatusCode::OK, Json(document_response)).into_response())
+    let payload = serde_json::to_string(&document)?;
+
+    parts.push(
+        Part::raw_part("payload", "application/json", payload.as_str().into(), None).map_err(
+            |e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")),
+        )?,
+    );
+
+    let document_content = Part::raw_part(
+        "content",
+        &document.document_type,
+        body.to_vec(),
+        Some(&document.name),
+    )
+    .map_err(|e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")))?;
+
+    parts.push(document_content);
+
+    Ok((StatusCode::OK, MultipartForm::from_iter(parts)).into_response())
 }
 
 /// Patch Document.
@@ -312,7 +341,7 @@ async fn patch_document(
     let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
 
     if (app.config.global_paste_total_document_size_limit() * 1024 * 1024)
-        >= (total_document_size + body.len())
+        < (total_document_size + body.len())
     {
         return Err(AppError::BadRequest(
             "The new content exceeds the total document limit.".to_string(),
@@ -345,18 +374,31 @@ async fn patch_document(
 
     transaction.commit().await?;
 
-    let content = {
-        if query.include_content {
-            let d: &str = &String::from_utf8_lossy(&body);
-            Some(d.to_string())
-        } else {
-            None
-        }
-    };
+    if !query.include_content {
+        return Ok((StatusCode::OK, Json(document)).into_response());
+    }
 
-    let paste_response = ResponseDocument::from_document(document, content);
+    let mut parts: Vec<Part> = Vec::new();
 
-    Ok((StatusCode::OK, Json(paste_response)).into_response())
+    let payload = serde_json::to_string(&document)?;
+
+    parts.push(
+        Part::raw_part("payload", "application/json", payload.as_str().into(), None).map_err(
+            |e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")),
+        )?,
+    );
+
+    let document_content = Part::raw_part(
+        "content",
+        &document.document_type,
+        body.to_vec(),
+        Some(&document.name),
+    )
+    .map_err(|e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")))?;
+
+    parts.push(document_content);
+
+    Ok((StatusCode::OK, MultipartForm::from_iter(parts)).into_response())
 }
 
 /// Patch Document.

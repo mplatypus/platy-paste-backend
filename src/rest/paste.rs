@@ -7,6 +7,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
+use axum_extra::response::multiple::{MultipartForm, Part};
 use time::OffsetDateTime;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
@@ -19,7 +20,7 @@ use crate::{
         paste::Paste,
         payload::{
             GetPasteQuery, PatchPasteBody, PatchPasteQuery, PostPasteBody, PostPasteQuery,
-            ResponseDocument, ResponsePaste,
+            ResponsePaste,
         },
         snowflake::Snowflake,
     },
@@ -155,26 +156,37 @@ async fn get_paste(
 
     let documents = Document::fetch_all(&app.database, paste.id).await?;
 
-    let mut response_documents = Vec::new();
-    for document in documents {
-        let content = {
-            if query.include_content {
-                let data = app.s3.fetch_document(document.generate_path()).await?;
-                let d: &str = &String::from_utf8_lossy(&data);
-                Some(d.to_string())
-            } else {
-                None
-            }
-        };
+    let paste_response = ResponsePaste::from_paste(&paste, None, &documents);
 
-        let response_document = ResponseDocument::from_document(document, content);
-
-        response_documents.push(response_document);
+    if !query.include_content {
+        return Ok((StatusCode::OK, Json(paste_response)).into_response());
     }
 
-    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
+    let mut parts: Vec<Part> = Vec::new();
 
-    Ok((StatusCode::OK, Json(paste_response)).into_response())
+    let payload = serde_json::to_string(&paste_response)?;
+
+    parts.push(
+        Part::raw_part("payload", "application/json", payload.as_str().into(), None).map_err(
+            |e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")),
+        )?,
+    );
+
+    for document in documents {
+        let data = app.s3.fetch_document(document.generate_path()).await?;
+
+        let document_content = Part::raw_part(
+            &document.id.to_string(),
+            &document.document_type,
+            data.to_vec(),
+            Some(&document.name),
+        )
+        .map_err(|e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")))?;
+
+        parts.push(document_content);
+    }
+
+    Ok((StatusCode::OK, MultipartForm::from_iter(parts)).into_response())
 }
 
 /// Get Pastes.
@@ -208,14 +220,7 @@ async fn get_pastes(
 
         let documents = Document::fetch_all(&app.database, paste.id).await?;
 
-        let mut response_documents = Vec::new();
-        for document in documents {
-            let response_document = ResponseDocument::from_document(document, None);
-
-            response_documents.push(response_document);
-        }
-
-        let response_paste = ResponsePaste::from_paste(&paste, None, response_documents);
+        let response_paste = ResponsePaste::from_paste(&paste, None, &documents);
 
         response_pastes.push(response_paste);
     }
@@ -313,21 +318,6 @@ async fn post_paste(
         documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
 
-    let final_documents: Vec<ResponseDocument> = documents
-        .iter()
-        .map(|(d, c)| {
-            let content = {
-                if query.include_content {
-                    Some(c.clone())
-                } else {
-                    None
-                }
-            };
-
-            ResponseDocument::from_document(d.clone(), content)
-        })
-        .collect();
-
     if documents.len() > app.config.global_paste_total_document_count() {
         return Err(AppError::BadRequest(
             "Too many documents provided.".to_string(),
@@ -338,21 +328,51 @@ async fn post_paste(
         return Err(AppError::BadRequest("No documents provided.".to_string()));
     }
 
-    for (document, content) in documents {
-        app.s3.create_document(&document, content.into()).await?;
-
-        document.insert(&mut transaction).await?;
-    }
-
     let paste_token = Token::new(paste.id, generate_token(paste.id)?);
 
     paste_token.insert(&mut transaction).await?;
 
+    let paste_response = ResponsePaste::from_paste(
+        &paste,
+        Some(paste_token),
+        &documents.iter().map(|(d, _)| d.clone()).collect(),
+    );
+
+    let mut parts: Vec<Part> = Vec::new();
+
+    let payload = serde_json::to_string(&paste_response)?;
+
+    parts.push(
+        Part::raw_part("payload", "application/json", payload.as_str().into(), None).map_err(
+            |e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")),
+        )?,
+    );
+
+    for (document, content) in documents {
+        app.s3
+            .create_document(&document, content.clone().into())
+            .await?;
+
+        document.insert(&mut transaction).await?;
+
+        let document_content = Part::raw_part(
+            &document.id.to_string(),
+            &document.document_type,
+            content.into(),
+            Some(&document.name),
+        )
+        .map_err(|e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")))?;
+
+        parts.push(document_content);
+    }
+
     transaction.commit().await?;
 
-    let response = ResponsePaste::from_paste(&paste, Some(paste_token), final_documents);
+    if !query.include_content {
+        return Ok((StatusCode::OK, Json(paste_response)).into_response());
+    }
 
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, MultipartForm::from_iter(parts)).into_response())
 }
 
 /// Patch Paste.
@@ -416,26 +436,37 @@ async fn patch_paste(
 
     let documents = Document::fetch_all(&app.database, paste.id).await?;
 
-    let mut response_documents = Vec::new();
+    let paste_response = ResponsePaste::from_paste(&paste, None, &documents);
+
+    let mut parts: Vec<Part> = Vec::new();
+
+    let payload = serde_json::to_string(&paste_response)?;
+
+    parts.push(
+        Part::raw_part("payload", "application/json", payload.as_str().into(), None).map_err(
+            |e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")),
+        )?,
+    );
+
     for document in documents {
-        let content = {
-            if query.include_content {
-                let data = app.s3.fetch_document(document.generate_path()).await?;
-                let d: &str = &String::from_utf8_lossy(&data);
-                Some(d.to_string())
-            } else {
-                None
-            }
-        };
+        let data = app.s3.fetch_document(document.generate_path()).await?;
 
-        let response_document = ResponseDocument::from_document(document, content);
+        let document_content = Part::raw_part(
+            &document.id.to_string(),
+            &document.document_type,
+            data.to_vec(),
+            Some(&document.name),
+        )
+        .map_err(|e| AppError::InternalServer(format!("Failed to build payload. Reason: {e}")))?;
 
-        response_documents.push(response_document);
+        parts.push(document_content);
     }
 
-    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
+    if !query.include_content {
+        return Ok((StatusCode::OK, Json(paste_response)).into_response());
+    }
 
-    Ok((StatusCode::OK, Json(paste_response)).into_response())
+    Ok((StatusCode::OK, MultipartForm::from_iter(parts)).into_response())
 }
 
 /// Delete Paste.
