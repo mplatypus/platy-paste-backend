@@ -2,9 +2,16 @@ pub mod app;
 pub mod models;
 pub mod rest;
 
-use axum::{Router, http::HeaderValue};
+use axum::{
+    Router,
+    http::HeaderValue,
+    response::{IntoResponse, Response},
+};
 use http::{Method, header};
-use models::paste::{ExpiryTaskMessage, expiry_tasks};
+use models::{
+    error::AppError,
+    paste::{ExpiryTaskMessage, expiry_tasks},
+};
 use time::{UtcOffset, format_description};
 use tokio::sync::mpsc;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
@@ -94,6 +101,7 @@ async fn main() {
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)
         .layer(limiter)
+        .fallback(fallback)
         .with_state(state.clone());
 
     let host = state.config.host();
@@ -133,4 +141,8 @@ async fn main() {
             tracing::error!("Failed to cleanly shutdown message task! Reason: {e}");
         }
     };
+}
+
+async fn fallback() -> Response {
+    AppError::NotFound("This endpoint does not exist.".to_string()).into_response()
 }
