@@ -5,7 +5,6 @@ use crate::models::error::AppError;
 use super::{config::Config, database::Database, s3::S3Service};
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::{Client, Config as S3Config, config::Credentials};
-use reqwest::Client as ReqwestClient;
 use secrecy::ExposeSecret;
 
 pub type App = Arc<ApplicationState>;
@@ -15,7 +14,6 @@ pub struct ApplicationState {
     pub config: Config,
     pub database: Database,
     pub s3: S3Service,
-    pub reqwest_client: ReqwestClient,
 }
 
 impl ApplicationState {
@@ -32,8 +30,6 @@ impl ApplicationState {
     /// The created [`ApplicationState`] wrapped in [`Arc`].
     pub async fn new() -> Result<Arc<Self>, AppError> {
         let config = Config::from_env();
-
-        let reqwest_client = ReqwestClient::new();
 
         let s3creds = Credentials::new(
             config.s3_access_key().expose_secret(),
@@ -58,7 +54,6 @@ impl ApplicationState {
             config,
             database: Database::new(),
             s3,
-            reqwest_client,
         };
 
         state.init().await?;
