@@ -18,20 +18,23 @@ pub type PostPasteQuery = IncludeContentQuery;
 
 pub type PatchPasteQuery = IncludeContentQuery;
 
+pub type PostDocumentQuery = IncludeContentQuery;
+
+pub type PatchDocumentQuery = IncludeContentQuery;
+
 #[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
     pub expiry: Option<usize>,
+    /// The maximum allowed views for a paste.
+    #[serde(default)]
+    pub max_views: Option<usize>,
 }
 
 pub type PostPasteBody = PasteBody;
 
 pub type PatchPasteBody = PasteBody;
-
-pub type PostDocumentQuery = IncludeContentQuery;
-
-pub type PatchDocumentQuery = IncludeContentQuery;
 
 #[derive(Serialize)]
 pub struct ResponsePaste {
@@ -44,6 +47,10 @@ pub struct ResponsePaste {
     pub edited: bool,
     /// The expiry time of the paste.
     pub expiry: Option<usize>,
+    /// The view count for the paste.
+    pub views: usize,
+    /// The maximum amount of views the paste can have.
+    pub max_views: Option<usize>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
@@ -57,6 +64,8 @@ impl ResponsePaste {
         token: Option<String>,
         edited: bool,
         expiry: Option<usize>,
+        views: usize,
+        max_views: Option<usize>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
@@ -64,6 +73,8 @@ impl ResponsePaste {
             token,
             edited,
             expiry,
+            views,
+            max_views,
             documents,
         }
     }
@@ -90,7 +101,15 @@ impl ResponsePaste {
 
         let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
 
-        Self::new(paste.id, token_value, paste.edited, expiry, documents)
+        Self::new(
+            paste.id,
+            token_value,
+            paste.edited,
+            expiry,
+            paste.views,
+            paste.max_views,
+            documents,
+        )
     }
 }
 

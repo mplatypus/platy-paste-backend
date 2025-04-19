@@ -142,7 +142,7 @@ async fn get_paste(
     Path(paste_id): Path<Snowflake>,
     Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
-    let paste = Paste::fetch(&app.database, paste_id)
+    let mut paste = Paste::fetch(&app.database, paste_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
@@ -152,6 +152,17 @@ async fn get_paste(
             return Err(AppError::NotFound("Paste not found.".to_string()));
         }
     }
+
+    if let Some(max_views) = paste.max_views {
+        if paste.views + 1 > max_views {
+            Paste::delete(&app.database, paste.id).await?;
+            return Err(AppError::NotFound("Paste not found.".to_string()));
+        }
+    }
+
+    let mut transaction = app.database.pool().begin().await?;
+
+    paste.add_view(&mut transaction).await?;
 
     let documents = Document::fetch_all(&app.database, paste.id).await?;
 
@@ -171,6 +182,8 @@ async fn get_paste(
 
         response_documents.push(response_document);
     }
+
+    transaction.commit().await?;
 
     let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 
@@ -194,10 +207,20 @@ async fn get_pastes(
 ) -> Result<Response, AppError> {
     let mut response_pastes: Vec<ResponsePaste> = Vec::new();
 
+    let mut transaction = app.database.pool().begin().await?;
     for paste_id in body {
-        let paste = Paste::fetch(&app.database, paste_id)
+        let mut paste = Paste::fetch(&app.database, paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
+
+        if let Some(max_views) = paste.max_views {
+            if paste.views + 1 > max_views {
+                Paste::delete(&app.database, paste.id).await?;
+                return Err(AppError::NotFound("Paste not found.".to_string()));
+            }
+        }
+
+        paste.add_view(&mut transaction).await?;
 
         if let Some(expiry) = paste.expiry {
             if expiry < OffsetDateTime::now_utc() {
@@ -219,6 +242,8 @@ async fn get_pastes(
 
         response_pastes.push(response_paste);
     }
+
+    transaction.commit().await?;
 
     Ok((StatusCode::OK, Json(response_pastes)).into_response())
 }
@@ -275,7 +300,7 @@ async fn post_paste(
 
     let mut transaction = app.database.pool().begin().await?;
 
-    let paste = Paste::new(Snowflake::generate()?, false, expiry);
+    let paste = Paste::new(Snowflake::generate()?, false, expiry, 0, body.max_views);
 
     paste.insert(&mut transaction).await?;
 

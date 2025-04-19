@@ -19,14 +19,30 @@ pub struct Paste {
     pub edited: bool,
     /// The time when the paste expires.
     pub expiry: Option<OffsetDateTime>,
+    /// The amount of views a paste has.
+    pub views: usize,
+    /// The maximum allowed views for a paste.
+    pub max_views: Option<usize>,
 }
 
 impl Paste {
     /// New.
     ///
     /// Create a new [`Paste`] object.
-    pub const fn new(id: Snowflake, edited: bool, expiry: Option<OffsetDateTime>) -> Self {
-        Self { id, edited, expiry }
+    pub const fn new(
+        id: Snowflake,
+        edited: bool,
+        expiry: Option<OffsetDateTime>,
+        views: usize,
+        max_views: Option<usize>,
+    ) -> Self {
+        Self {
+            id,
+            edited,
+            expiry,
+            views,
+            max_views,
+        }
     }
 
     /// Set Edited.
@@ -41,6 +57,13 @@ impl Paste {
     /// Set or remove the expiry on the paste.
     pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
+    }
+
+    /// Set Max Views.
+    ///
+    /// Set or remove the maximum amount of views for a paste.
+    pub fn set_max_views(&mut self, max_views: Option<usize>) {
+        self.max_views = max_views;
     }
 
     /// Fetch.
@@ -63,14 +86,20 @@ impl Paste {
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, edited, expiry FROM pastes WHERE id = $1",
+            "SELECT id, edited, expiry, views, max_views FROM pastes WHERE id = $1",
             paste_id
         )
         .fetch_optional(db.pool())
         .await?;
 
         if let Some(q) = query {
-            return Ok(Some(Self::new(q.id.into(), q.edited, q.expiry)));
+            return Ok(Some(Self::new(
+                q.id.into(),
+                q.edited,
+                q.expiry,
+                q.views as usize,
+                q.max_views.map(|v| v as usize),
+            )));
         }
 
         Ok(None)
@@ -99,7 +128,7 @@ impl Paste {
         end: OffsetDateTime,
     ) -> Result<Vec<Self>, AppError> {
         let records = sqlx::query!(
-            "SELECT id, edited, expiry FROM pastes WHERE expiry >= $1 AND expiry <= $2",
+            "SELECT id, edited, expiry, views, max_views FROM pastes WHERE expiry >= $1 AND expiry <= $2",
             start,
             end
         )
@@ -108,7 +137,13 @@ impl Paste {
 
         let mut pastes = Vec::new();
         for record in records {
-            let paste = Self::new(record.id.into(), record.edited, record.expiry);
+            let paste = Self::new(
+                record.id.into(),
+                record.edited,
+                record.expiry,
+                record.views as usize,
+                record.max_views.map(|v| v as usize),
+            );
 
             pastes.push(paste);
         }
@@ -131,10 +166,12 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3)",
+            "INSERT INTO pastes(id, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5)",
             paste_id,
             self.edited,
-            self.expiry
+            self.expiry,
+            self.views as i64,
+            self.max_views.map(|v| v as i64)
         )
         .execute(transaction.as_mut())
         .await?;
@@ -157,12 +194,39 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET edited = $2, expiry = $3",
+            "INSERT INTO pastes(id, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET edited = $2, expiry = $3, max_views = $5",
             paste_id,
             self.edited,
-            self.expiry
+            self.expiry,
+            self.views as i64,
+            self.max_views.map(|v|v as i64)
         ).execute(transaction.as_mut()).await?;
 
+        Ok(())
+    }
+
+    /// Add view.
+    ///
+    /// Create (or update) a document.
+    ///
+    /// ## Arguments
+    ///
+    /// - `transaction` The transaction to use.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    pub async fn add_view(&mut self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
+        let id: i64 = self.id.into();
+
+        let views = sqlx::query_scalar!(
+            "UPDATE pastes SET views = views + 1 WHERE id = $1 RETURNING views",
+            id,
+        )
+        .fetch_one(transaction.as_mut())
+        .await?;
+
+        self.views = views as usize;
         Ok(())
     }
 
