@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, edited, expiry FROM pastes WHERE id = $1",
+  "query": "SELECT id, edited, expiry, views, max_views FROM pastes WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,16 @@
         "ordinal": 2,
         "name": "expiry",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "views",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_views",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -27,8 +37,10 @@
     "nullable": [
       false,
       false,
+      true,
+      false,
       true
     ]
   },
-  "hash": "f640361539bc2f82005e4c7840fcb7a1f214ebd336b02fdcd36ff09ee3bbe10f"
+  "hash": "139a679b14b7d02aa34429c2cf241875622d13589ba4833077b07be949fb5ef7"
 }
