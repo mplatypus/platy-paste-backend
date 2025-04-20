@@ -44,8 +44,15 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Connect to PostgreSQL
+      - name: Install SQLX CLI
+        run: cargo install sqlx-cli
+      - name: Migrate tables
+        run: Migrate tables
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      - name: Build project
+        run: cargo build
+      - name: SQLX prepare
         run: cargo sqlx prepare --check
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
