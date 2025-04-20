@@ -18,7 +18,7 @@ jobs:
 
   sqlx:
     runs-on: ubuntu-latest
-    container: node:20-bookworm-slim
+    container: 1.86-slim-bullseye
     services:
       postgres:
         image: postgres
