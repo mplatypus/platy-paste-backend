@@ -45,9 +45,9 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install SQLX CLI
-        run: cargo install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features native-tls,postgres
       - name: Migrate tables
-        run: Migrate tables
+        run: sqlx migrate run
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
       - name: Build project
