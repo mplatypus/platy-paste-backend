@@ -1,8 +1,6 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::PgTransaction;
-
-use crate::app::database::Database;
+use sqlx::{Executor, Postgres};
 
 use super::{error::AppError, snowflake::Snowflake};
 
@@ -119,7 +117,7 @@ impl Document {
     ///
     /// ## Arguments
     ///
-    /// - `db` - The database to make the request to.
+    /// - `executor` - The pool or transaction to make the request to.
     /// - `id` - The ID of the document.
     ///
     /// ## Errors
@@ -130,13 +128,16 @@ impl Document {
     ///
     /// - [`Option::Some`] - The [`Document`] object.
     /// - [`Option::None`] - No document was found.
-    pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
+    pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<Option<Self>, AppError>
+    where
+        E: 'e + Executor<'c, Database = Postgres>,
+    {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name, size FROM documents WHERE id = $1",
             paste_id
         )
-        .fetch_optional(db.pool())
+        .fetch_optional(executor)
         .await?;
 
         if let Some(q) = query {
@@ -158,7 +159,7 @@ impl Document {
     ///
     /// ## Arguments
     ///
-    /// - `db` - The database to make the request to.
+    /// - `executor` - The pool or transaction to make the request to.
     /// - `id` - The ID of the paste.
     ///
     /// ## Errors
@@ -168,13 +169,16 @@ impl Document {
     /// ## Returns
     ///
     /// A [`Vec`] of [`Document`]'s.
-    pub async fn fetch_all(db: &Database, id: Snowflake) -> Result<Vec<Self>, AppError> {
+    pub async fn fetch_all<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<Vec<Self>, AppError>
+    where
+        E: 'e + Executor<'c, Database = Postgres>,
+    {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name, size FROM documents WHERE paste_id = $1",
             paste_id
         )
-        .fetch_all(db.pool())
+        .fetch_all(executor)
         .await?;
 
         let mut documents: Vec<Self> = Vec::new();
@@ -196,7 +200,7 @@ impl Document {
     ///
     /// ## Arguments
     ///
-    /// - `db` - The database to make the request to.
+    /// - `executor` - The pool or transaction to make the request to.
     /// - `id` - The ID of the paste.
     ///
     /// ## Errors
@@ -206,16 +210,19 @@ impl Document {
     /// ## Returns
     ///
     /// The size of the total documents.
-    pub async fn fetch_total_document_size(
-        db: &Database,
+    pub async fn fetch_total_document_size<'e, 'c: 'e, E>(
+        executor: E,
         id: Snowflake,
-    ) -> Result<usize, AppError> {
+    ) -> Result<usize, AppError>
+    where
+        E: 'e + Executor<'c, Database = Postgres>,
+    {
         let id: i64 = id.into();
         let size = sqlx::query_scalar!(
             "SELECT SUM(size)::BIGINT FROM documents WHERE paste_id = $1",
             id
         )
-        .fetch_one(db.pool())
+        .fetch_one(executor)
         .await?
         .unwrap_or(0);
 
@@ -228,7 +235,7 @@ impl Document {
     ///
     /// ## Arguments
     ///
-    /// - `db` - The database to make the request to.
+    /// - `executor` - The pool or transaction to make the request to.
     /// - `id` - The ID of the paste.
     ///
     /// ## Errors
@@ -238,13 +245,16 @@ impl Document {
     /// ## Returns
     ///
     /// The total count of documents.
-    pub async fn fetch_total_document_count(
-        db: &Database,
+    pub async fn fetch_total_document_count<'e, 'c: 'e, E>(
+        executor: E,
         id: Snowflake,
-    ) -> Result<usize, AppError> {
+    ) -> Result<usize, AppError>
+    where
+        E: 'e + Executor<'c, Database = Postgres>,
+    {
         let id: i64 = id.into();
         let size = sqlx::query_scalar!("SELECT COUNT(*) FROM documents WHERE paste_id = $1", id)
-            .fetch_one(db.pool())
+            .fetch_one(executor)
             .await?
             .unwrap_or(0);
 
@@ -257,12 +267,15 @@ impl Document {
     ///
     /// ## Arguments
     ///
-    /// - `transaction` The transaction to use.
+    /// - `executor` - The pool or transaction to make the request to.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error, or the snowflake exists already.
-    pub async fn insert(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
+    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    where
+        E: 'e + Executor<'c, Database = Postgres>,
+    {
         let document_id: i64 = self.id.into();
         let paste_id: i64 = self.paste_id.into();
 
@@ -274,7 +287,7 @@ impl Document {
             self.name,
             self.size as i64
         )
-        .execute(transaction.as_mut())
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -286,12 +299,15 @@ impl Document {
     ///
     /// ## Arguments
     ///
-    /// - `transaction` The transaction to use.
+    /// - `executor` - The pool or transaction to make the request to.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn update(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
+    pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    where
+        E: 'e + Executor<'c, Database = Postgres>,
+    {
         let document_id: i64 = self.id.into();
         let paste_id: i64 = self.paste_id.into();
 
@@ -302,7 +318,7 @@ impl Document {
             self.document_type,
             self.name,
             self.size as i64
-        ).execute(transaction.as_mut()).await?;
+        ).execute(executor).await?;
 
         Ok(())
     }
@@ -313,16 +329,19 @@ impl Document {
     ///
     /// ## Arguments
     ///
-    /// - `db` - The database to make the request to.
+    /// - `executor` - The pool or transaction to make the request to.
     /// - `id` - The id of the document.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn delete(db: &Database, id: Snowflake) -> Result<bool, AppError> {
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<bool, AppError>
+    where
+        E: 'e + Executor<'c, Database = Postgres>,
+    {
         let paste_id: i64 = id.into();
         let result = sqlx::query!("DELETE FROM documents WHERE id = $1", paste_id,)
-            .execute(db.pool())
+            .execute(executor)
             .await?;
 
         Ok(result.rows_affected() > 0)

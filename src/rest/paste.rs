@@ -142,18 +142,18 @@ async fn get_paste(
     Path(paste_id): Path<Snowflake>,
     Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
-    let paste = Paste::fetch(&app.database, paste_id)
+    let paste = Paste::fetch(app.database.pool(), paste_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
     if let Some(expiry) = paste.expiry {
         if expiry < OffsetDateTime::now_utc() {
-            Paste::delete(&app.database, paste.id).await?;
+            Paste::delete(app.database.pool(), paste.id).await?;
             return Err(AppError::NotFound("Paste not found.".to_string()));
         }
     }
 
-    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
     let mut response_documents = Vec::new();
     for document in documents {
@@ -195,18 +195,18 @@ async fn get_pastes(
     let mut response_pastes: Vec<ResponsePaste> = Vec::new();
 
     for paste_id in body {
-        let paste = Paste::fetch(&app.database, paste_id)
+        let paste = Paste::fetch(app.database.pool(), paste_id)
             .await?
             .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
         if let Some(expiry) = paste.expiry {
             if expiry < OffsetDateTime::now_utc() {
-                Paste::delete(&app.database, paste.id).await?;
+                Paste::delete(app.database.pool(), paste.id).await?;
                 return Err(AppError::NotFound("Paste not found.".to_string()));
             }
         }
 
-        let documents = Document::fetch_all(&app.database, paste.id).await?;
+        let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
         let mut response_documents = Vec::new();
         for document in documents {
@@ -277,7 +277,7 @@ async fn post_paste(
 
     let paste = Paste::new(Snowflake::generate()?, false, expiry);
 
-    paste.insert(&mut transaction).await?;
+    paste.insert(&mut *transaction).await?;
 
     let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -346,7 +346,7 @@ async fn post_paste(
     for (document, content) in documents {
         app.s3.create_document(&document, content.into()).await?;
 
-        document.insert(&mut transaction).await?;
+        document.insert(&mut *transaction).await?;
     }
 
     let paste_token = Token::new(paste.id, generate_token(paste.id)?);
@@ -398,13 +398,13 @@ async fn patch_paste(
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    let mut paste = Paste::fetch(&app.database, paste_id)
+    let mut paste = Paste::fetch(app.database.pool(), paste_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
     if let Some(expiry) = paste.expiry {
         if expiry < OffsetDateTime::now_utc() {
-            Paste::delete(&app.database, paste.id).await?;
+            Paste::delete(app.database.pool(), paste.id).await?;
             return Err(AppError::NotFound("Paste not found.".to_string()));
         }
     }
@@ -413,13 +413,9 @@ async fn patch_paste(
 
     paste.set_expiry(new_expiry);
 
-    let mut transaction = app.database.pool().begin().await?;
+    paste.update(app.database.pool()).await?;
 
-    paste.update(&mut transaction).await?;
-
-    transaction.commit().await?;
-
-    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
     let mut response_documents = Vec::new();
     for document in documents {
@@ -472,7 +468,7 @@ async fn delete_paste(
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    if !Paste::delete(&app.database, paste_id).await? {
+    if !Paste::delete(app.database.pool(), paste_id).await? {
         return Err(AppError::NotFound("The paste was not found.".to_string()));
     }
 
