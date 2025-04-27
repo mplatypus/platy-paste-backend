@@ -1,0 +1,60 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+  sqlx:
+    runs-on: ubuntu-latest
+    container: rust:1.86-slim-bullseye
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check code
+        uses: actions/checkout@v4
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y pkg-config libssl-dev
+      - name: Install SQLX CLI
+        run: cargo install sqlx-cli --no-default-features --features native-tls,postgres
+      - name: Migrate tables
+        run: sqlx migrate run
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      - name: Build project
+        run: cargo build
+      - name: SQLX prepare
+        run: cargo sqlx prepare --check
+        env:
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres

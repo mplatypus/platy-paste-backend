@@ -320,7 +320,12 @@ async fn post_paste(
                 None => DEFAULT_MIME.to_string(),
             }
         };
-        let name = field.name().unwrap_or("unknown").to_string();
+        let name = field
+            .file_name()
+            .ok_or(AppError::BadRequest(
+                "The filename of the document is required".to_string(),
+            ))?
+            .to_string();
         let data = field.bytes().await?;
 
         if data.len() > (app.config.global_paste_document_size_limit() * 1024 * 1024) {

@@ -46,6 +46,7 @@ services:
 
   backend:
     container_name: platy-paste-backend
+    image: ghcr.io/mplatypus/platy-paste-backend:latest
     restart: on-failure:3
     env_file: ".env"
     networks:
@@ -55,8 +56,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    build:
-      context: .
     ports:
       - ${PORT:?error}:${PORT:?error}
 
