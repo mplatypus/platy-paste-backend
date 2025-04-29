@@ -22,6 +22,7 @@ use crate::{
             ResponseDocument, ResponsePaste,
         },
         snowflake::Snowflake,
+        undefined::UndefinedOption,
     },
 };
 
@@ -275,7 +276,7 @@ async fn post_paste(
 
     let mut transaction = app.database.pool().begin().await?;
 
-    let paste = Paste::new(Snowflake::generate()?, false, expiry);
+    let paste = Paste::new(Snowflake::generate()?, false, expiry.to_option());
 
     paste.insert(&mut transaction).await?;
 
@@ -411,7 +412,9 @@ async fn patch_paste(
 
     let new_expiry = validate_expiry(&app.config, body.expiry)?;
 
-    paste.set_expiry(new_expiry);
+    if !new_expiry.is_undefined() {
+        paste.set_expiry(new_expiry.to_option());
+    }
 
     let mut transaction = app.database.pool().begin().await?;
 
@@ -499,40 +502,47 @@ async fn delete_paste(
 /// - [`Option::None`] - No datetime was provided, and no default was set.
 fn validate_expiry(
     config: &Config,
-    expiry: Option<usize>,
-) -> Result<Option<OffsetDateTime>, AppError> {
-    if expiry.is_none()
-        && config.default_expiry_hours().is_none()
-        && config.maximum_expiry_hours().is_some()
-    {
-        Err(AppError::BadRequest(
-            "A expiry time is required.".to_string(),
-        ))
-    } else if let Some(expiry) = expiry {
-        let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
-            .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
-        let now = OffsetDateTime::now_utc();
-        let difference = (time - now).whole_seconds();
+    expiry: UndefinedOption<usize>,
+) -> Result<UndefinedOption<OffsetDateTime>, AppError> {
+    match expiry {
+        UndefinedOption::Some(expiry) => {
+            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
+                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
+            let now = OffsetDateTime::now_utc();
+            let difference = (time - now).whole_seconds();
 
-        if difference.is_negative() {
-            return Err(AppError::BadRequest(
-                "The timestamp provided is invalid.".to_string(),
-            ));
-        }
-
-        if let Some(maximum_expiry_hours) = config.maximum_expiry_hours() {
-            if difference as usize > maximum_expiry_hours * 3600 {
+            if difference.is_negative() {
                 return Err(AppError::BadRequest(
-                    "The timestamp provided is above the maximum.".to_string(),
+                    "The timestamp provided is invalid.".to_string(),
                 ));
             }
-        }
 
-        Ok(Some(time))
-    } else {
-        Ok(config.default_expiry_hours().map(|default_expiry_time| {
-            OffsetDateTime::now_utc()
-                .saturating_add(time::Duration::hours(default_expiry_time as i64))
-        }))
+            if let Some(maximum_expiry_hours) = config.maximum_expiry_hours() {
+                if difference as usize > maximum_expiry_hours * 3600 {
+                    return Err(AppError::BadRequest(
+                        "The timestamp provided is above the maximum.".to_string(),
+                    ));
+                }
+            }
+
+            Ok(UndefinedOption::Some(time))
+        }
+        UndefinedOption::Undefined => {
+            if let Some(default_expiry_hours) = config.default_expiry_hours() {
+                return Ok(UndefinedOption::Some(
+                    OffsetDateTime::now_utc()
+                        .saturating_add(time::Duration::hours(default_expiry_hours as i64)),
+                ));
+            }
+
+            Ok(UndefinedOption::Undefined)
+        }
+        UndefinedOption::None => {
+            if config.maximum_expiry_hours().is_some() {
+                return Err(AppError::BadRequest("Timestamp must be set.".to_string()));
+            }
+
+            Ok(UndefinedOption::None)
+        }
     }
 }
