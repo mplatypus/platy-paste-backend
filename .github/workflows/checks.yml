@@ -32,6 +32,8 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: Check code
+        uses: actions/checkout@v4
       - name: Cache
         uses: actions/cache@v4
         with:
@@ -41,14 +43,16 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - uses: actions/checkout@v4
-      - name: Build binaries
-        run: cargo build
+      - name: Install dependencies
+        run: apt-get update && apt-get install -y pkg-config libssl-dev
       - name: Install SQLX CLI
         run: cargo install sqlx-cli --no-default-features --features native-tls,postgres
       - name: Migrate tables
         run: sqlx migrate run
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      - name: Build binaries
+        run: cargo build
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
