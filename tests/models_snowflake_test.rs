@@ -21,6 +21,6 @@ fn test_uniqueness() {
 
     assert!(
         set.len() == snowflakes.len(),
-        "Non-unique snowflake found: {snowflakes:?}"
+        "Non-unique snowflake(s) found: {snowflakes:?}"
     );
 }

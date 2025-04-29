@@ -22,7 +22,7 @@ fn test_getters() {
 }
 
 #[test]
-fn test_setters() {
+fn test_set_edited() {
     let paste_id = Snowflake::new(123);
     let edited = false;
     let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
@@ -31,49 +31,51 @@ fn test_setters() {
 
     assert!(!paste.edited, "Mismatched edited.");
 
-    assert!(paste.expiry == Some(expiry), "Mismatched expiry.");
-
     paste.set_edited();
 
-    assert!(paste.edited, "Edited not set.");
+    assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
-    paste.set_expiry(None);
+    assert!(paste.edited, "Mismatched edited.");
 
-    assert!(paste.expiry.is_none(), "Expiry not set.");
+    assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
 }
 
-#[sqlx::test]
-fn test_fetch(pool: PgPool) {
-    let db = Database::from_pool(pool);
-
+#[test]
+fn test_set_expiry() {
     let paste_id = Snowflake::new(123);
     let edited = false;
     let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
 
-    let paste_db_id: i64 = paste_id.into();
+    let mut paste = Paste::new(paste_id, edited, Some(expiry));
 
-    sqlx::query!(
-        "INSERT INTO pastes VALUES ($1, $2, $3)",
-        paste_db_id,
-        edited,
-        expiry
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
+    assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
+
+    paste.set_expiry(None);
+
+    assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
+
+    assert!(!paste.edited, "Mismatched edited.");
+
+    assert!(paste.expiry.is_none(), "Mismatched expiry.");
+}
+
+#[sqlx::test(fixtures("pastes"))]
+fn test_fetch(pool: PgPool) {
+    let db = Database::from_pool(pool);
+
+    let paste_id = Snowflake::new(517_815_304_354_763_650);
+    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
 
     let paste = Paste::fetch(&db, paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
 
-    assert!(paste.id == paste_id, "Mismatched paste ID.");
+    assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
     assert!(!paste.edited, "Mismatched edited.");
 
-    assert!(paste.expiry.is_some(), "Expiry does not exist.");
-
-    assert!(paste.expiry == Some(expiry), "Mismatched expiry.");
+    assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
 }
 
 #[sqlx::test]
@@ -90,157 +92,52 @@ fn test_fetch_missing(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes"))]
 fn test_fetch_between(pool: PgPool) {
     let db = Database::from_pool(pool);
-
-    let date =
-        Date::from_calendar_date(2000, time::Month::January, 1).expect("Failed to build date.");
-
-    let date_time_1 = OffsetDateTime::new_utc(
-        date,
-        Time::from_hms(1, 0, 0).expect("Failed to build time 1."),
-    );
-    let date_time_2 = OffsetDateTime::new_utc(
-        date,
-        Time::from_hms(2, 0, 0).expect("Failed to build time 2."),
-    );
-    let date_time_3 = OffsetDateTime::new_utc(
-        date,
-        Time::from_hms(4, 0, 0).expect("Failed to build time 3."),
-    );
-    let date_time_4 = OffsetDateTime::new_utc(
-        date,
-        Time::from_hms(8, 0, 0).expect("Failed to build time 4."),
-    );
-    let date_time_5 = OffsetDateTime::new_utc(
-        date,
-        Time::from_hms(16, 0, 0).expect("Failed to build time 5."),
-    );
-
-    sqlx::query!(
-        "INSERT INTO pastes VALUES (123, false, $1)",
-        Some(date_time_1)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    sqlx::query!(
-        "INSERT INTO pastes VALUES (456, false, $1)",
-        Some(date_time_2)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    sqlx::query!(
-        "INSERT INTO pastes VALUES (789, false, $1)",
-        Some(date_time_3)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    sqlx::query!(
-        "INSERT INTO pastes VALUES (101, false, $1)",
-        Some(date_time_4)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    sqlx::query!(
-        "INSERT INTO pastes VALUES (112, false, $1)",
-        Some(date_time_5)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
 
     let results = Paste::fetch_between(
         &db,
         OffsetDateTime::new_utc(
-            date,
-            Time::from_hms(2, 0, 0).expect("Failed to build time start."),
+            Date::from_calendar_date(1970, time::Month::January, 2)
+                .expect("Failed to build date start."),
+            Time::from_hms(0, 0, 0).expect("Failed to build time start."),
         ),
         OffsetDateTime::new_utc(
-            date,
-            Time::from_hms(10, 0, 0).expect("Failed to build time end."),
+            Date::from_calendar_date(1970, time::Month::January, 4)
+                .expect("Failed to build date end."),
+            Time::from_hms(0, 0, 0).expect("Failed to build time end."),
         ),
     )
     .await
     .expect("Failed to fetch value from database.");
 
-    assert!(
-        results.len() == 3,
-        "Not enough or too many results received."
-    );
+    assert_eq!(results.len(), 1, "Not enough or too many results received.");
 
-    assert!(
-        results[0].expiry == Some(date_time_2),
-        "Invalid expiry. Expected: {:?}, Received: {}",
+    assert_eq!(
         results[0].expiry,
-        date_time_2
-    );
-
-    assert!(
-        results[1].expiry == Some(date_time_3),
-        "Invalid expiry. Expected: {:?}, Received: {}",
-        results[1].expiry,
-        date_time_3
-    );
-
-    assert!(
-        results[2].expiry == Some(date_time_4),
-        "Invalid expiry. Expected: {:?}, Received: {}",
-        results[2].expiry,
-        date_time_4
+        Some(OffsetDateTime::from_unix_timestamp(172_800).expect("Failed to build result time.")),
+        "Invalid expiry. Expected: {:?}, Received: {:?}",
+        Some(OffsetDateTime::from_unix_timestamp(172_800).expect("Failed to build result time.")),
+        results[0].expiry,
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes"))]
 fn test_fetch_between_missing(pool: PgPool) {
     let db = Database::from_pool(pool);
-
-    let date =
-        Date::from_calendar_date(2000, time::Month::January, 1).expect("Failed to build date.");
-
-    let date_time_1 = OffsetDateTime::new_utc(
-        date,
-        Time::from_hms(1, 0, 0).expect("Failed to build time 1."),
-    );
-
-    let date_time_2 = OffsetDateTime::new_utc(
-        date,
-        Time::from_hms(16, 0, 0).expect("Failed to build time 5."),
-    );
-
-    sqlx::query!(
-        "INSERT INTO pastes VALUES (123, false, $1)",
-        Some(date_time_1)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    sqlx::query!(
-        "INSERT INTO pastes VALUES (456, false, $1)",
-        Some(date_time_2)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
 
     let results = Paste::fetch_between(
         &db,
         OffsetDateTime::new_utc(
-            date,
-            Time::from_hms(2, 0, 0).expect("Failed to build time start."),
+            Date::from_calendar_date(2000, time::Month::January, 1)
+                .expect("Failed to build date start."),
+            Time::from_hms(0, 0, 0).expect("Failed to build time start."),
         ),
         OffsetDateTime::new_utc(
-            date,
-            Time::from_hms(10, 0, 0).expect("Failed to build time end."),
+            Date::from_calendar_date(2001, time::Month::January, 1)
+                .expect("Failed to build date end."),
+            Time::from_hms(0, 0, 0).expect("Failed to build time end."),
         ),
     )
     .await
@@ -252,7 +149,7 @@ fn test_fetch_between_missing(pool: PgPool) {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes"))]
 fn test_insert(pool: PgPool) {
     let db = Database::from_pool(pool);
 
@@ -261,8 +158,6 @@ fn test_insert(pool: PgPool) {
     let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
 
     let paste = Paste::new(paste_id, edited, Some(expiry));
-
-    let paste_db_id: i64 = paste_id.into();
 
     let mut transaction = db
         .pool()
@@ -280,64 +175,38 @@ fn test_insert(pool: PgPool) {
         .await
         .expect("Failed to commit transaction");
 
-    let result = sqlx::query!(
-        "SELECT id, edited, expiry FROM pastes WHERE id = $1",
-        paste_db_id
-    )
-    .fetch_optional(db.pool())
-    .await
-    .expect("Failed to fetch value from database.")
-    .expect("No paste was found.");
+    let result = Paste::fetch(&db, paste_id)
+        .await
+        .expect("Failed to fetch value from database.")
+        .expect("No paste was found.");
 
-    assert!(result.id as u64 == paste_id.id(), "Mismatched paste ID.");
+    assert!(result.id == paste_id, "Mismatched paste ID.");
 
     assert!(!result.edited, "Mismatched edited.");
 
     assert!(result.expiry == Some(expiry), "Mismatched expiry.");
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes"))]
 fn test_update(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(123);
-    let edited = false;
-    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
+    let paste_id = Snowflake::new(517_815_304_354_763_650);
 
-    let mut paste = Paste::new(paste_id, edited, Some(expiry));
-
-    let paste_db_id: i64 = paste_id.into();
-
-    let mut transaction = db
-        .pool()
-        .begin()
+    let mut paste = Paste::fetch(&db, paste_id)
         .await
-        .expect("Failed to make transaction.");
+        .expect("Failed to fetch value from database.")
+        .expect("No paste was found.");
 
-    paste
-        .insert(&mut transaction)
-        .await
-        .expect("Failed to insert paste.");
+    assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
-    transaction
-        .commit()
-        .await
-        .expect("Failed to commit transaction");
+    assert!(!paste.edited, "Mismatched edited.");
 
-    let result = sqlx::query!(
-        "SELECT id, edited, expiry FROM pastes WHERE id = $1",
-        paste_db_id
-    )
-    .fetch_optional(db.pool())
-    .await
-    .expect("Failed to fetch value from database.")
-    .expect("No paste was found.");
-
-    assert!(result.id as u64 == paste_id.id(), "Mismatched paste ID.");
-
-    assert!(!result.edited, "Mismatched edited.");
-
-    assert!(result.expiry == Some(expiry), "Mismatched expiry.");
+    assert_eq!(
+        paste.expiry,
+        Some(OffsetDateTime::from_unix_timestamp(0).expect("Failed to build expected timestamp.")),
+        "Mismatched expiry."
+    );
 
     let mut transaction = db
         .pool()
@@ -359,65 +228,34 @@ fn test_update(pool: PgPool) {
         .await
         .expect("Failed to commit transaction");
 
-    let result = sqlx::query!(
-        "SELECT id, edited, expiry FROM pastes WHERE id = $1",
-        paste_db_id
-    )
-    .fetch_optional(db.pool())
-    .await
-    .expect("Failed to fetch value from database.")
-    .expect("No paste was found.");
+    let result = Paste::fetch(&db, paste_id)
+        .await
+        .expect("Failed to fetch value from database.")
+        .expect("No paste was found.");
 
     assert!(result.edited, "Mismatched edited.");
 
     assert!(result.expiry.is_none(), "Mismatched expiry.");
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes"))]
 fn test_delete(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(123);
-    let edited = false;
-    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
+    let paste_id = Snowflake::new(517_815_304_354_763_650);
 
-    let paste_db_id: i64 = paste_id.into();
-
-    sqlx::query!(
-        "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3)",
-        paste_db_id,
-        edited,
-        Some(expiry)
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    let result = sqlx::query!("SELECT * FROM pastes WHERE id = $1", paste_db_id)
-        .fetch_optional(db.pool())
+    Paste::fetch(&db, paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
 
-    assert!(result.id as u64 == paste_id.id(), "Mismatched paste ID.");
-
-    assert!(!result.edited, "Mismatched edited.");
-
-    assert!(result.expiry == Some(expiry), "Mismatched expiry.");
-
-    Paste::delete_with_id(&db, paste_id)
+    Paste::delete(&db, paste_id)
         .await
         .expect("Failed to delete value from database.");
 
-    assert!(
-        sqlx::query!(
-            "SELECT id, edited, expiry FROM pastes WHERE id = $1",
-            paste_db_id
-        )
-        .fetch_optional(db.pool())
+    let result = Paste::fetch(&db, paste_id)
         .await
-        .expect("Failed to fetch value from database.")
-        .is_none(),
-        "Found paste in db."
-    );
+        .expect("Failed to fetch value from database.");
+
+    assert!(result.is_none(), "Found paste in db.");
 }

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use platy_paste::{
     app::database::Database,
     models::{authentication::*, snowflake::Snowflake},
@@ -22,77 +24,48 @@ fn test_getters() {
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes", "tokens"))]
 fn test_fetch(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(123);
-    let token = SecretString::from("test.token");
+    let token_string = "NTE3ODE1MzA0MzU0NzYzNjUw.cMtyBLeeyOCsHyXjOyDZFRDUe".to_string();
 
-    let paste_db_id: i64 = paste_id.into();
-
-    sqlx::query!(
-        "INSERT INTO pastes(id, edited) VALUES ($1, false)",
-        paste_db_id,
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    sqlx::query!(
-        "INSERT INTO paste_tokens(paste_id, token) VALUES ($1, $2)",
-        paste_db_id,
-        token.expose_secret()
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    let paste_token = Token::fetch(&db, token.expose_secret().to_string())
+    let token = Token::fetch(&db, token_string.clone())
         .await
-        .expect("Failed to fetch value from database.")
-        .expect("No paste token was found.");
+        .expect("Could not fetch a token.")
+        .expect("No token found.");
 
-    assert!(paste_token.paste_id() == paste_id, "Mismatched paste ID.");
-
-    assert!(
-        paste_token.token().expose_secret() == token.expose_secret(),
+    assert_eq!(
+        token.token().expose_secret(),
+        token_string,
         "Mismatched token."
+    );
+    assert_eq!(
+        token.paste_id(),
+        Snowflake::new(517_815_304_354_763_650),
+        "Mismatched paste ID."
     );
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes", "tokens"))]
 fn test_fetch_missing(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let token = SecretString::from("test.token");
+    let token = Token::fetch(&db, "missing.token".to_string())
+        .await
+        .expect("Could not fetch a token.");
 
-    assert!(
-        Token::fetch(&db, token.expose_secret().to_string())
-            .await
-            .expect("Failed to fetch value from database.")
-            .is_none()
-    );
+    assert!(token.is_none(), "Token was found.");
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes"))]
 fn test_insert(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(123);
+    let paste_id = Snowflake::new(517_815_304_354_763_650);
     let token = SecretString::from("test.token");
 
     let paste_token = Token::new(paste_id, token.clone());
-
-    let paste_db_id: i64 = paste_id.into();
-
-    sqlx::query!(
-        "INSERT INTO pastes(id, edited) VALUES ($1, false)",
-        paste_db_id,
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
 
     let mut transaction = db
         .pool()
@@ -110,78 +83,107 @@ fn test_insert(pool: PgPool) {
         .await
         .expect("Failed to commit transaction");
 
-    let result = sqlx::query!(
-        "SELECT paste_id, token FROM paste_tokens WHERE token = $1",
-        token.expose_secret()
-    )
-    .fetch_optional(db.pool())
-    .await
-    .expect("Failed to fetch value from database.")
-    .expect("No paste token was found.");
+    let result_token = Token::fetch(&db, token.expose_secret().to_string())
+        .await
+        .expect("Failed to fetch value from database.")
+        .expect("No paste token was found.");
 
-    assert!(
-        result.paste_id as u64 == paste_id.id(),
-        "Mismatched paste ID."
+    assert_eq!(
+        result_token.token().expose_secret(),
+        token.expose_secret().to_string(),
+        "Mismatched token."
     );
-
-    assert!(result.token == token.expose_secret(), "Mismatched token.");
+    assert_eq!(result_token.paste_id(), paste_id, "Mismatched paste ID.");
 }
 
-#[sqlx::test]
+#[sqlx::test(fixtures("pastes", "tokens"))]
 fn test_delete(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(123);
-    let token = SecretString::from("test.token");
+    let token_string = "NTE3ODE1MzA0MzU0NzYzNjUw.cMtyBLeeyOCsHyXjOyDZFRDUe".to_string();
 
-    let paste_db_id: i64 = paste_id.into();
+    Token::fetch(&db, token_string.clone())
+        .await
+        .expect("Could not fetch a token.")
+        .expect("No token found.");
 
-    sqlx::query!(
-        "INSERT INTO pastes(id, edited) VALUES ($1, false)",
-        paste_db_id,
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    sqlx::query!(
-        "INSERT INTO paste_tokens(paste_id, token) VALUES ($1, $2)",
-        paste_db_id,
-        token.expose_secret()
-    )
-    .execute(db.pool())
-    .await
-    .expect("Failed to execute command.");
-
-    let result = sqlx::query!(
-        "SELECT paste_id, token FROM paste_tokens WHERE token = $1",
-        token.expose_secret()
-    )
-    .fetch_optional(db.pool())
-    .await
-    .expect("Failed to fetch value from database.")
-    .expect("No paste token was found.");
-
-    assert!(
-        result.paste_id as u64 == paste_id.id(),
-        "Mismatched paste ID."
-    );
-
-    assert!(result.token == token.expose_secret(), "Mismatched token.");
-
-    Token::delete(&db, token.expose_secret().to_string())
+    Token::delete(&db, token_string.clone())
         .await
         .expect("Failed to delete value from database.");
 
-    assert!(
-        sqlx::query!(
-            "SELECT paste_id, token FROM paste_tokens WHERE token = $1",
-            token.expose_secret()
-        )
-        .fetch_optional(db.pool())
+    let paste_token = Token::fetch(&db, token_string.clone())
         .await
-        .expect("Failed to fetch value from database.")
-        .is_none(),
-        "Found paste_token in db."
+        .expect("Could not fetch a token.");
+
+    assert!(paste_token.is_none(), "Found paste_token in db.");
+}
+
+#[test]
+fn test_generate_token() {
+    let token =
+        generate_token(Snowflake::new(517_815_304_354_763_650)).expect("Failed to generate token");
+
+    let (base64_id, _) = token
+        .expose_secret()
+        .split_once('.')
+        .expect("Failed to split token.");
+
+    assert_eq!(
+        base64_id, "NTE3ODE1MzA0MzU0NzYzNjUw",
+        "Base64 ID does not match."
+    );
+}
+
+#[test]
+fn test_generate_token_uniqueness() {
+    let snowflake = Snowflake::new(123);
+    let tokens = vec![
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+        generate_token(snowflake)
+            .expect("Failed to generate token")
+            .expose_secret()
+            .to_owned(),
+    ];
+
+    let set: HashSet<_> = tokens.iter().collect();
+
+    assert!(
+        set.len() == tokens.len(),
+        "Non-unique snowflake(s) found: {tokens:?}"
     );
 }
