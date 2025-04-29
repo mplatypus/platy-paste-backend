@@ -1,0 +1,15 @@
+INSERT INTO pastes VALUES (
+    517815304354763650,
+    false,
+    '1970-01-01 00:00:00.0+00'
+);
+INSERT INTO pastes VALUES (
+    517815304354284603,
+    false,
+    null
+);
+INSERT INTO pastes VALUES (
+    517815304355658605,
+    false,
+    '1970-01-03T00:00:00+00:00'
+);

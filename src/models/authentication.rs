@@ -13,6 +13,7 @@ use super::{
     snowflake::Snowflake,
 };
 
+#[derive(Clone, Debug)]
 pub struct Token {
     /// The paste ID the token is attached to.
     paste_id: Snowflake,
