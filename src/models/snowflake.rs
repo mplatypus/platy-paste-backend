@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::{Deserializer, Serialize, Serializer, de::Error as DEError};
+use serde_json::Value;
 use sqlx::{Decode, Encode};
 
 use super::error::AppError;
@@ -80,8 +81,15 @@ impl Serialize for Snowflake {
 
 impl<'de> serde::Deserialize<'de> for Snowflake {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let val = String::deserialize(d)?;
-        Ok(Self::new(val.parse().map_err(DEError::custom)?))
+        let value = Value::deserialize(d)?;
+        let snowflake: u64 = match value {
+            Value::Number(v) => v
+                .as_u64()
+                .ok_or_else(|| DEError::custom(format!("Unexpected number: {v}")))?,
+            Value::String(v) => v.parse().map_err(DEError::custom)?,
+            v => return Err(DEError::custom(format!("Unexpected type: {v}"))),
+        };
+        Ok(Self::new(snowflake))
     }
 }
 

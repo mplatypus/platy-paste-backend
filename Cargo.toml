@@ -69,17 +69,3 @@ getrandom = "0.3"
 http = "1.3"
 regex = "1.11"
 tower_governor = "0.7"
-
-[profile.dev.package.sqlx-macros]
-opt-level = 3
-
-[profile.dev.package.backtrace]
-opt-level = 3
-
-# Enable incremental compilation for dev builds to improve re-compilation time.
-[profile.dev]
-incremental = true
-
-# Enable LTO for release builds to reduce binary size.
-[profile.release]
-lto = true

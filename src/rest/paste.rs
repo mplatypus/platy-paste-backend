@@ -7,7 +7,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
-use regex::Regex;
 use time::OffsetDateTime;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
@@ -15,38 +14,16 @@ use crate::{
     app::{application::App, config::Config},
     models::{
         authentication::{Token, generate_token},
-        document::Document,
+        document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
         paste::Paste,
-        payload::{GetPasteQuery, PostPasteBody, PostPasteQuery, ResponseDocument, ResponsePaste},
+        payload::{
+            GetPasteQuery, PatchPasteBody, PatchPasteQuery, PostPasteBody, PostPasteQuery,
+            ResponseDocument, ResponsePaste,
+        },
         snowflake::Snowflake,
     },
 };
-
-/* FIXME: Unsure if this is actually needed.
-/// Supported mimes are the ones that will be supported by the website.
-const SUPPORTED_MIMES: &[&str] = &[
-    // Text mimes
-    "text/x-asm",
-    "text/x-c",
-    "text/plain",
-    "text/markdown",
-    "text/css",
-    "text/csv",
-    "text/html",
-    "text/x-java-source",
-    "text/javascript",
-    "text/x-pascal",
-    "text/x-python",
-    // Application mimes
-    "application/json"
-];
-*/
-
-/// Unsupported mimes, are ones that will be declined.
-const UNSUPPORTED_MIMES: &[&str] = &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
-
-const DEFAULT_MIME: &str = "text/plain";
 
 pub fn generate_router(config: &Config) -> Router<App> {
     let global_limiter = GovernorLayer {
@@ -171,7 +148,7 @@ async fn get_paste(
 
     if let Some(expiry) = paste.expiry {
         if expiry < OffsetDateTime::now_utc() {
-            Paste::delete_with_id(&app.database, paste.id).await?;
+            Paste::delete(&app.database, paste.id).await?;
             return Err(AppError::NotFound("Paste not found.".to_string()));
         }
     }
@@ -224,7 +201,7 @@ async fn get_pastes(
 
         if let Some(expiry) = paste.expiry {
             if expiry < OffsetDateTime::now_utc() {
-                Paste::delete_with_id(&app.database, paste.id).await?;
+                Paste::delete(&app.database, paste.id).await?;
                 return Err(AppError::NotFound("Paste not found.".to_string()));
             }
         }
@@ -270,7 +247,6 @@ async fn get_pastes(
 ///
 /// - `400` - The body and/or documents are invalid.
 /// - `200` - The [`ResponsePaste`] object.
-#[allow(clippy::too_many_lines)]
 async fn post_paste(
     State(app): State<App>,
     Query(query): Query<PostPasteQuery>,
@@ -295,44 +271,7 @@ async fn post_paste(
         }
     };
 
-    let expiry = {
-        if body.expiry.is_none()
-            && app.config.default_expiry_hours().is_none()
-            && app.config.maximum_expiry_hours().is_some()
-        {
-            return Err(AppError::BadRequest(
-                "A expiry time is required.".to_string(),
-            ));
-        } else if let Some(expiry) = body.expiry {
-            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
-                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
-            let now = OffsetDateTime::now_utc();
-            let difference = (time - now).whole_seconds();
-
-            if difference.is_negative() {
-                return Err(AppError::BadRequest(
-                    "The timestamp provided is invalid.".to_string(),
-                ));
-            }
-
-            if let Some(maximum_expiry_hours) = app.config.maximum_expiry_hours() {
-                if difference as usize > maximum_expiry_hours * 3600 {
-                    return Err(AppError::BadRequest(
-                        "The timestamp provided is above the maximum.".to_string(),
-                    ));
-                }
-            }
-
-            Some(time)
-        } else {
-            app.config
-                .default_expiry_hours()
-                .map(|default_expiry_time| {
-                    OffsetDateTime::now_utc()
-                        .saturating_add(time::Duration::hours(default_expiry_time as i64))
-                })
-        }
-    };
+    let expiry = validate_expiry(&app.config, body.expiry)?;
 
     let mut transaction = app.database.pool().begin().await?;
 
@@ -356,14 +295,25 @@ async fn post_paste(
                 None => DEFAULT_MIME.to_string(),
             }
         };
-        let name = field.name().unwrap_or("unknown").to_string();
+        let name = field
+            .file_name()
+            .ok_or(AppError::BadRequest(
+                "The filename of the document is required".to_string(),
+            ))?
+            .to_string();
         let data = field.bytes().await?;
 
         if data.len() > (app.config.global_paste_document_size_limit() * 1024 * 1024) {
             return Err(AppError::NotFound("Document too large.".to_string()));
         }
 
-        let document = Document::new(Snowflake::generate()?, paste.id, document_type, name);
+        let document = Document::new(
+            Snowflake::generate()?,
+            paste.id,
+            document_type,
+            name,
+            data.len(),
+        );
 
         documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
@@ -415,8 +365,82 @@ async fn post_paste(
 /// Edit an existing paste.
 ///
 /// **Requires authentication.**
-async fn patch_paste(State(_app): State<App>, _token: Token) -> Result<Response, AppError> {
-    Ok(StatusCode::NOT_IMPLEMENTED.into_response()) // FIXME: Make this actually work.
+///
+/// ## Path
+///
+/// - `paste_id` - The paste ID to edit.
+///
+/// ## Query
+///
+/// References: [`PatchPasteQuery`]
+///
+/// - `content` - Whether to include the content or not.
+///
+/// ## Body
+///
+/// References: [`PatchPasteBody`]
+///
+/// - `expiry` - The expiry of the paste.
+///
+/// ## Returns
+///
+/// - `401` - Invalid token and/or paste ID.
+/// - `400` - The body is invalid.
+/// - `200` - The [`ResponsePaste`] object.
+async fn patch_paste(
+    State(app): State<App>,
+    Path(paste_id): Path<Snowflake>,
+    Query(query): Query<PatchPasteQuery>,
+    token: Token,
+    Json(body): Json<PatchPasteBody>,
+) -> Result<Response, AppError> {
+    if token.paste_id() != paste_id {
+        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
+    }
+
+    let mut paste = Paste::fetch(&app.database, paste_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
+
+    if let Some(expiry) = paste.expiry {
+        if expiry < OffsetDateTime::now_utc() {
+            Paste::delete(&app.database, paste.id).await?;
+            return Err(AppError::NotFound("Paste not found.".to_string()));
+        }
+    }
+
+    let new_expiry = validate_expiry(&app.config, body.expiry)?;
+
+    paste.set_expiry(new_expiry);
+
+    let mut transaction = app.database.pool().begin().await?;
+
+    paste.update(&mut transaction).await?;
+
+    transaction.commit().await?;
+
+    let documents = Document::fetch_all(&app.database, paste.id).await?;
+
+    let mut response_documents = Vec::new();
+    for document in documents {
+        let content = {
+            if query.include_content {
+                let data = app.s3.fetch_document(document.generate_path()).await?;
+                let d: &str = &String::from_utf8_lossy(&data);
+                Some(d.to_string())
+            } else {
+                None
+            }
+        };
+
+        let response_document = ResponseDocument::from_document(document, content);
+
+        response_documents.push(response_document);
+    }
+
+    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
+
+    Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
 
 /// Delete Paste.
@@ -448,82 +472,67 @@ async fn delete_paste(
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    Paste::delete_with_id(&app.database, paste_id).await?;
+    if !Paste::delete(&app.database, paste_id).await? {
+        return Err(AppError::NotFound("The paste was not found.".to_string()));
+    }
 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-// FIXME: This whole function needs rebuilding. I do not like the way its made.
-// For example, the regex values. Can I have them as constants in any way? or are they super light when unwrapping?
-// Any way to shrink the `.capture` call so that its not being called each time?
-/// Contains Mime.
+/// Validate Expiry.
 ///
-/// Checks if the mime is in the list of mimes.
-///
-/// If a mime in the mimes list ends with an asterisk "*",
-/// at the end like `images/*` it will become a catch all,
-/// making all mimes that start with `images` return true.
+/// Checks if the expiry time is valid (if provided)
+/// Otherwise, if not provided, returns the default, or None.
 ///
 /// ## Arguments
 ///
-/// - `mimes` - The array of mimes to check in.
-/// - `value` - The value to look for.
+/// - `config` - The config values to use.
+/// - `expiry` - The expiry to validate (if provided).
+///
+/// ## Errors
+///
+/// - [`AppError`] - The app error returned, if the provided expiry is invalid.
 ///
 /// ## Returns
 ///
-/// True if mime was found, otherwise False.
-fn contains_mime(mimes: &[&str], value: &str) -> bool {
-    let match_all_mime = Regex::new(r"^(?P<left>[a-zA-Z0-9\-]+)/\*$")
-        .expect("Failed to build match all mime regex."); // checks if the mime ends with /* which indicates any of the mime type.
-    let split_mime = Regex::new(r"^(?P<type>[A-Za-z0-9!#$%&'*+.^_`|~-]+)/(?P<subtype>[A-Za-z0-9!#$%&'*+.^_`|~-]+)(?:\s*;.*)?$")
-        .expect("Failed to build split mime regex."); // extracts the left and right parts of the mime.
+/// - [`Option::Some`] - The [`OffsetDateTime`] that was extracted, or defaulted to.
+/// - [`Option::None`] - No datetime was provided, and no default was set.
+fn validate_expiry(
+    config: &Config,
+    expiry: Option<usize>,
+) -> Result<Option<OffsetDateTime>, AppError> {
+    if expiry.is_none()
+        && config.default_expiry_hours().is_none()
+        && config.maximum_expiry_hours().is_some()
+    {
+        Err(AppError::BadRequest(
+            "A expiry time is required.".to_string(),
+        ))
+    } else if let Some(expiry) = expiry {
+        let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
+            .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
+        let now = OffsetDateTime::now_utc();
+        let difference = (time - now).whole_seconds();
 
-    if let Some(split_mime_value) = split_mime.captures(value) {
-        for mime in mimes {
-            println!("{}: {:?}", mime, match_all_mime.captures(mime));
-            if mime == &value {
-                return true;
-            } else if let Some(capture) = match_all_mime.captures(mime) {
-                if let (Some(mime_value_left), Some(capture_value_left)) =
-                    (split_mime_value.name("type"), capture.name("left"))
-                {
-                    if mime_value_left.as_str() == capture_value_left.as_str() {
-                        return true;
-                    }
-                }
+        if difference.is_negative() {
+            return Err(AppError::BadRequest(
+                "The timestamp provided is invalid.".to_string(),
+            ));
+        }
+
+        if let Some(maximum_expiry_hours) = config.maximum_expiry_hours() {
+            if difference as usize > maximum_expiry_hours * 3600 {
+                return Err(AppError::BadRequest(
+                    "The timestamp provided is above the maximum.".to_string(),
+                ));
             }
         }
-    }
 
-    false
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const TEST_MIMES: &[&str] = &["test/beanos", "test-all/*"];
-
-    #[test]
-    fn test_contains_mime() {
-        assert!(
-            contains_mime(TEST_MIMES, "test/beanos"),
-            "Catch exact failed."
-        );
-
-        assert!(
-            contains_mime(TEST_MIMES, "test-all/apples"),
-            "Catch all failed."
-        );
-
-        assert!(
-            contains_mime(TEST_MIMES, "test-all/apples; beanos=12;"),
-            "Extra parameters failed."
-        );
-
-        assert!(
-            !contains_mime(TEST_MIMES, "application/json"),
-            "Catch missing failed."
-        );
+        Ok(Some(time))
+    } else {
+        Ok(config.default_expiry_hours().map(|default_expiry_time| {
+            OffsetDateTime::now_utc()
+                .saturating_add(time::Duration::hours(default_expiry_time as i64))
+        }))
     }
 }

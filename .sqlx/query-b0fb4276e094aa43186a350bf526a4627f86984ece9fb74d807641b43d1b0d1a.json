@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, paste_id, type, name FROM documents WHERE paste_id = $1",
+  "query": "SELECT id, paste_id, type, name, size FROM documents WHERE paste_id = $1",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "name",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "size",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "0a91e150b86dda76bccc5f1a54bd4d482b64895de62557c46be97977ff80aceb"
+  "hash": "b0fb4276e094aa43186a350bf526a4627f86984ece9fb74d807641b43d1b0d1a"
 }

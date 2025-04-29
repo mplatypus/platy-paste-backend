@@ -25,8 +25,6 @@ pub enum AppError {
     Multipart(#[from] MultipartError),
     #[error("JSON Error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("Reqwest Error: {0}")]
-    Reqwest(#[from] reqwest::Error),
     #[error("Parse Int Error: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("Internal Server Error: {0}")]
@@ -44,7 +42,6 @@ impl IntoResponse for AppError {
             Self::Database(ref e) => (StatusCode::BAD_REQUEST, "Database Error", e.to_string()),
             Self::Multipart(e) => return e.into_response(),
             Self::Json(ref e) => (StatusCode::BAD_REQUEST, "Json Error", e.to_string()),
-            Self::Reqwest(ref e) => (StatusCode::BAD_REQUEST, "Reqwest Error", e.to_string()),
             Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error", e.clone()),
             Self::ParseInt(ref e) => (
                 StatusCode::BAD_REQUEST,

@@ -1,9 +1,16 @@
-use axum::{Router, http::HeaderValue};
+pub mod app;
+pub mod models;
+pub mod rest;
+
+use axum::{
+    Router,
+    http::HeaderValue,
+    response::{IntoResponse, Response},
+};
 use http::{Method, header};
-use platy_paste::{
-    app::application::ApplicationState,
-    models::paste::{ExpiryTaskMessage, expiry_tasks},
-    rest,
+use models::{
+    error::AppError,
+    paste::{ExpiryTaskMessage, expiry_tasks},
 };
 use time::{UtcOffset, format_description};
 use tokio::sync::mpsc;
@@ -51,10 +58,11 @@ async fn main() {
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
-    let state: Arc<ApplicationState> = match ApplicationState::new().await {
-        Ok(s) => s,
-        Err(err) => panic!("Failed to build state: {err}"),
-    };
+    let state: Arc<app::application::ApplicationState> =
+        match app::application::ApplicationState::new().await {
+            Ok(s) => s,
+            Err(err) => panic!("Failed to build state: {err}"),
+        };
 
     let cors = CorsLayer::new()
         .allow_origin(
@@ -87,12 +95,13 @@ async fn main() {
     };
 
     let app = Router::new()
-        //.nest("/admin", rest::admin::generate_router())
         .nest("/v1", rest::paste::generate_router(&state.config))
+        .nest("/v1", rest::document::generate_router(&state.config))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)
         .layer(limiter)
+        .fallback(fallback)
         .with_state(state.clone());
 
     let host = state.config.host();
@@ -132,4 +141,8 @@ async fn main() {
             tracing::error!("Failed to cleanly shutdown message task! Reason: {e}");
         }
     };
+}
+
+async fn fallback() -> Response {
+    AppError::NotFound("This endpoint does not exist.".to_string()).into_response()
 }
