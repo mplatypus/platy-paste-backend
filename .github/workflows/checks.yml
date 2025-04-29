@@ -31,6 +31,8 @@ jobs:
       - name: Build binaries
         run: cargo build
       - name: Run tests
+        env:
+          SQLX_OFFLINE: true
         run: cargo test --verbose
 
   sqlx:
