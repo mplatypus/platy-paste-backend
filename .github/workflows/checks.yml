@@ -18,6 +18,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    container: rust:1.86-slim-bullseye
     services:
       postgres:
         image: postgres
