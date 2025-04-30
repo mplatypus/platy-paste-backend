@@ -86,7 +86,7 @@ async fn main() {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(state.config.global_rate_limiter())
+                .burst_size(state.config.rate_limits().global())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()

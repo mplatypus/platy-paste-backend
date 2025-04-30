@@ -31,7 +31,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.global_paste_rate_limiter())
+                .burst_size(config.rate_limits().global_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -43,7 +43,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_pastes_rate_limiter())
+                .burst_size(config.rate_limits().get_pastes())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -55,7 +55,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_paste_rate_limiter())
+                .burst_size(config.rate_limits().get_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -67,7 +67,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.post_paste_rate_limiter())
+                .burst_size(config.rate_limits().post_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -79,7 +79,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.patch_paste_rate_limiter())
+                .burst_size(config.rate_limits().patch_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -91,7 +91,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.delete_paste_rate_limiter())
+                .burst_size(config.rate_limits().delete_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -558,7 +558,10 @@ fn validate_expiry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{app::config::Config, models::error::AppError};
+    use crate::{
+        app::config::{Config, RateLimitConfigBuilder},
+        models::error::AppError,
+    };
     use time::Duration;
 
     fn make_config(
@@ -580,18 +583,11 @@ mod tests {
             .global_paste_total_document_count(0)
             .global_paste_total_document_size_limit(0)
             .global_paste_document_size_limit(0)
-            .global_rate_limiter(0)
-            .global_paste_rate_limiter(0)
-            .get_pastes_rate_limiter(0)
-            .get_paste_rate_limiter(0)
-            .post_paste_rate_limiter(0)
-            .patch_paste_rate_limiter(0)
-            .delete_paste_rate_limiter(0)
-            .global_document_rate_limiter(0)
-            .get_document_rate_limiter(0)
-            .post_document_rate_limiter(0)
-            .patch_document_rate_limiter(0)
-            .delete_document_rate_limiter(0)
+            .rate_limits(
+                RateLimitConfigBuilder::default()
+                    .build()
+                    .expect("Failed to build rate limits"),
+            )
             .build()
             .expect("Failed to build config.")
     }

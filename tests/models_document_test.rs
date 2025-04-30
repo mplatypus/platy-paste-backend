@@ -201,6 +201,47 @@ fn test_fetch_missing(pool: PgPool) {
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
+fn test_fetch_with_paste(pool: PgPool) {
+    let db = Database::from_pool(pool);
+
+    let paste_id = Snowflake::new(517_815_304_354_763_650);
+    let document_id = Snowflake::new(517_815_304_355_368_628);
+
+    let document = Document::fetch_with_paste(&db, paste_id, document_id)
+        .await
+        .expect("Failed to fetch value from database.")
+        .expect("No document was found.");
+
+    assert_eq!(document.id, document_id, "Mismatched document ID.");
+
+    assert_eq!(document.paste_id, paste_id, "Mismatched paste ID.");
+
+    assert_eq!(
+        document.document_type, "plain/text",
+        "Mismatched document type."
+    );
+
+    assert_eq!(document.name, "cool.txt", "Mismatched document type.");
+
+    assert_eq!(document.size, 811, "Mismatched document size.");
+}
+
+#[sqlx::test(fixtures("pastes", "documents"))]
+fn test_fetch_with_paste_missing(pool: PgPool) {
+    let db = Database::from_pool(pool);
+
+    let paste_id = Snowflake::new(123);
+    let document_id = Snowflake::new(456);
+
+    assert!(
+        Document::fetch_with_paste(&db, paste_id, document_id)
+            .await
+            .expect("Failed to fetch value from database.")
+            .is_none()
+    );
+}
+
+#[sqlx::test(fixtures("pastes", "documents"))]
 fn test_fetch_all(pool: PgPool) {
     let db = Database::from_pool(pool);
 

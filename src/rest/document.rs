@@ -31,7 +31,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.global_document_rate_limiter())
+                .burst_size(config.rate_limits().global_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -43,7 +43,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_document_rate_limiter())
+                .burst_size(config.rate_limits().get_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -55,7 +55,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.post_document_rate_limiter())
+                .burst_size(config.rate_limits().post_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -67,7 +67,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.patch_document_rate_limiter())
+                .burst_size(config.rate_limits().patch_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -79,7 +79,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.delete_document_rate_limiter())
+                .burst_size(config.rate_limits().delete_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -127,7 +127,7 @@ async fn get_document(
     State(app): State<App>,
     Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
 ) -> Result<Response, AppError> {
-    let document = Document::fetch(&app.database, document_id)
+    let document = Document::fetch_with_paste(&app.database, paste_id, document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -231,9 +231,7 @@ async fn post_document(
 
     paste.update(&mut transaction).await?;
 
-    document.update(&mut transaction).await?;
-
-    app.s3.delete_document(document.generate_path()).await?;
+    document.insert(&mut transaction).await?;
 
     app.s3.create_document(&document, body.clone()).await?;
 
@@ -319,7 +317,7 @@ async fn patch_document(
         ));
     }
 
-    let mut document = Document::fetch(&app.database, document_id)
+    let mut document = Document::fetch_with_paste(&app.database, paste_id, document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
