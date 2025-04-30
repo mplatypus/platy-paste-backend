@@ -127,7 +127,7 @@ async fn get_document(
     State(app): State<App>,
     Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
 ) -> Result<Response, AppError> {
-    let document = Document::fetch(&app.database, document_id)
+    let document = Document::fetch_with_paste(&app.database, paste_id, document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -319,7 +319,7 @@ async fn patch_document(
         ));
     }
 
-    let mut document = Document::fetch(&app.database, document_id)
+    let mut document = Document::fetch_with_paste(&app.database, paste_id, document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
