@@ -535,11 +535,19 @@ fn validate_expiry(
                 ));
             }
 
+            if config.maximum_expiry_hours().is_some() {
+                return Err(AppError::BadRequest(
+                    "Timestamp must be provided.".to_string(),
+                ));
+            }
+
             Ok(UndefinedOption::Undefined)
         }
         UndefinedOption::None => {
             if config.maximum_expiry_hours().is_some() {
-                return Err(AppError::BadRequest("Timestamp must be set.".to_string()));
+                return Err(AppError::BadRequest(
+                    "Timestamp must be provided.".to_string(),
+                ));
             }
 
             Ok(UndefinedOption::None)
@@ -590,30 +598,36 @@ mod tests {
 
     #[test]
     fn test_validate_expiry_valid() {
-        let config = make_config(None, None);
+        let config = make_config(Some(100), Some(10));
 
         let expiry = OffsetDateTime::now_utc()
             .saturating_add(Duration::hours(5))
             .replace_nanosecond(0)
             .expect("Failed to remove nanoseconds");
 
-        let validated_expiry = validate_expiry(&config, Some(expiry.unix_timestamp() as usize))
-            .expect("validate timestamp returned an unexpected error.");
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
 
         assert_eq!(
             validated_expiry,
-            Some(expiry),
+            UndefinedOption::Some(expiry),
             "Timestamp was modified or changed."
         );
     }
 
     #[test]
     fn test_validate_expiry_invalid() {
-        let config = make_config(None, None);
+        let config = make_config(Some(100), Some(10));
 
         let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
 
-        let validated_expiry = validate_expiry(&config, Some(expiry.unix_timestamp() as usize));
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
 
         if let Err(validated_expiry) = validated_expiry {
             match validated_expiry {
@@ -632,69 +646,13 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_expiry_exceeds_maximum() {
-        let config = make_config(Some(100), None);
+    fn test_validate_expiry_undefined() {
+        let config = make_config(Some(100), Some(10));
 
-        let expiry = OffsetDateTime::now_utc().saturating_add(Duration::days(5));
-
-        let validated_expiry = validate_expiry(&config, Some(expiry.unix_timestamp() as usize));
-
-        if let Err(validated_expiry) = validated_expiry {
-            match validated_expiry {
-                AppError::BadRequest(bad_request) => {
-                    assert_eq!(
-                        bad_request,
-                        "The timestamp provided is above the maximum.".to_string(),
-                        "Invalid bad request received."
-                    );
-                }
-                _ => panic!("Wrong error received."),
-            }
-        } else {
-            panic!("Expected no timestamp to be returned.");
-        }
-    }
-
-    #[test]
-    fn test_validate_expiry_none() {
-        let config = make_config(None, None);
-
-        let validated_expiry = validate_expiry(&config, None)
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined)
             .expect("validate timestamp returned an unexpected error.");
 
-        assert_eq!(validated_expiry, None, "Timestamp was modified or changed.");
-    }
-
-    #[test]
-    fn test_validate_expiry_none_with_maximum() {
-        let config = make_config(Some(100), None);
-
-        let validated_expiry = validate_expiry(&config, None);
-
-        if let Err(validated_expiry) = validated_expiry {
-            match validated_expiry {
-                AppError::BadRequest(bad_request) => {
-                    assert_eq!(
-                        bad_request,
-                        "A expiry time is required.".to_string(),
-                        "Invalid bad request received."
-                    );
-                }
-                _ => panic!("Wrong error received."),
-            }
-        } else {
-            panic!("Expected no timestamp to be returned.");
-        }
-    }
-
-    #[test]
-    fn test_validate_expiry_none_with_default() {
-        let config = make_config(None, Some(10));
-
-        let validated_expiry = validate_expiry(&config, None)
-            .expect("validate timestamp returned an unexpected error.");
-
-        if let Some(validated_expiry) = validated_expiry {
+        if let UndefinedOption::Some(validated_expiry) = validated_expiry {
             let current_time = OffsetDateTime::now_utc().saturating_add(Duration::hours(10));
 
             assert_eq!(
@@ -710,5 +668,285 @@ mod tests {
         } else {
             panic!("Expected no timestamp to be returned.");
         }
+    }
+
+    #[test]
+    fn test_validate_expiry_null() {
+        let config = make_config(Some(100), Some(10));
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None);
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "Timestamp must be provided.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_valid_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let expiry = OffsetDateTime::now_utc()
+            .saturating_add(Duration::hours(5))
+            .replace_nanosecond(0)
+            .expect("Failed to remove nanoseconds");
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Some(expiry),
+            "Timestamp was modified or changed."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_invalid_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "The timestamp provided is invalid.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_undefined_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined)
+            .expect("validate timestamp returned an unexpected error.");
+
+        if let UndefinedOption::Some(validated_expiry) = validated_expiry {
+            let current_time = OffsetDateTime::now_utc().saturating_add(Duration::hours(10));
+
+            assert_eq!(
+                validated_expiry.date(),
+                current_time.date(),
+                "Mismatching date."
+            );
+            assert_eq!(
+                validated_expiry.to_hms(),
+                current_time.to_hms(),
+                "Mismatching hms."
+            );
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_null_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None)
+            .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::None,
+            "Timestamp was found."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_valid_no_default() {
+        let config = make_config(Some(100), None);
+
+        let expiry = OffsetDateTime::now_utc()
+            .saturating_add(Duration::hours(5))
+            .replace_nanosecond(0)
+            .expect("Failed to remove nanoseconds");
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Some(expiry),
+            "Timestamp was modified or changed."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_invalid_no_default() {
+        let config = make_config(Some(100), None);
+
+        let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "The timestamp provided is invalid.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_undefined_no_default() {
+        let config = make_config(Some(100), None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined);
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "Timestamp must be provided.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned. {validated_expiry:?}");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_null_no_default() {
+        let config = make_config(Some(100), None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None);
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "Timestamp must be provided.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_valid_no_both() {
+        let config = make_config(None, None);
+
+        let expiry = OffsetDateTime::now_utc()
+            .saturating_add(Duration::hours(5))
+            .replace_nanosecond(0)
+            .expect("Failed to remove nanoseconds");
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Some(expiry),
+            "Timestamp was modified or changed."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_invalid_no_both() {
+        let config = make_config(None, None);
+
+        let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "The timestamp provided is invalid.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_undefined_no_both() {
+        let config = make_config(None, None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined)
+            .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Undefined,
+            "Timestamp was provided."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_null_no_both() {
+        let config = make_config(None, None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None)
+            .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::None,
+            "Timestamp was provided."
+        );
     }
 }
