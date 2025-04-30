@@ -231,9 +231,7 @@ async fn post_document(
 
     paste.update(&mut transaction).await?;
 
-    document.update(&mut transaction).await?;
-
-    app.s3.delete_document(document.generate_path()).await?;
+    document.insert(&mut transaction).await?;
 
     app.s3.create_document(&document, body.clone()).await?;
 
