@@ -31,7 +31,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.global_document_rate_limiter())
+                .burst_size(config.rate_limits().global_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -43,7 +43,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_document_rate_limiter())
+                .burst_size(config.rate_limits().get_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -55,7 +55,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.post_document_rate_limiter())
+                .burst_size(config.rate_limits().post_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -67,7 +67,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.patch_document_rate_limiter())
+                .burst_size(config.rate_limits().patch_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -79,7 +79,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.delete_document_rate_limiter())
+                .burst_size(config.rate_limits().delete_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
