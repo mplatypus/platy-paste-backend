@@ -21,6 +21,10 @@ pub type PostPasteQuery = IncludeContentQuery;
 
 pub type PatchPasteQuery = IncludeContentQuery;
 
+pub type PostDocumentQuery = IncludeContentQuery;
+
+pub type PatchDocumentQuery = IncludeContentQuery;
+
 #[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
@@ -31,10 +35,6 @@ pub struct PasteBody {
 pub type PostPasteBody = PasteBody;
 
 pub type PatchPasteBody = PasteBody;
-
-pub type PostDocumentQuery = IncludeContentQuery;
-
-pub type PatchDocumentQuery = IncludeContentQuery;
 
 #[derive(Serialize)]
 pub struct ResponsePaste {
