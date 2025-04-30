@@ -1,7 +1,10 @@
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 
-use super::{authentication::Token, document::Document, paste::Paste, snowflake::Snowflake};
+use super::{
+    authentication::Token, document::Document, paste::Paste, snowflake::Snowflake,
+    undefined::UndefinedOption,
+};
 
 #[derive(Deserialize)]
 pub struct IncludeContentQuery {
@@ -18,20 +21,20 @@ pub type PostPasteQuery = IncludeContentQuery;
 
 pub type PatchPasteQuery = IncludeContentQuery;
 
+pub type PostDocumentQuery = IncludeContentQuery;
+
+pub type PatchDocumentQuery = IncludeContentQuery;
+
 #[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
-    #[serde(default)]
-    pub expiry: Option<usize>,
+    #[serde(default, skip_serializing_if = "UndefinedOption::is_undefined")]
+    pub expiry: UndefinedOption<usize>,
 }
 
 pub type PostPasteBody = PasteBody;
 
 pub type PatchPasteBody = PasteBody;
-
-pub type PostDocumentQuery = IncludeContentQuery;
-
-pub type PatchDocumentQuery = IncludeContentQuery;
 
 #[derive(Serialize)]
 pub struct ResponsePaste {
