@@ -131,10 +131,55 @@ impl Document {
     /// - [`Option::Some`] - The [`Document`] object.
     /// - [`Option::None`] - No document was found.
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
-        let paste_id: i64 = id.into();
+        let id: i64 = id.into();
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name, size FROM documents WHERE id = $1",
-            paste_id
+            id
+        )
+        .fetch_optional(db.pool())
+        .await?;
+
+        if let Some(q) = query {
+            return Ok(Some(Self::new(
+                q.id.into(),
+                q.paste_id.into(),
+                q.r#type,
+                q.name,
+                q.size as usize,
+            )));
+        }
+
+        Ok(None)
+    }
+
+    /// Fetch With Paste.
+    ///
+    /// Fetch a document via its ID, along with a paste ID.
+    ///
+    /// ## Arguments
+    ///
+    /// - `db` - The database to make the request to.
+    /// - `id` - The ID of the document.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// - [`Option::Some`] - The [`Document`] object.
+    /// - [`Option::None`] - No document was found.
+    pub async fn fetch_with_paste(
+        db: &Database,
+        paste_id: Snowflake,
+        id: Snowflake,
+    ) -> Result<Option<Self>, AppError> {
+        let paste_id: i64 = paste_id.into();
+        let id: i64 = id.into();
+        let query = sqlx::query!(
+            "SELECT id, paste_id, type, name, size FROM documents WHERE paste_id = $1 AND id = $2",
+            paste_id,
+            id
         )
         .fetch_optional(db.pool())
         .await?;

@@ -127,7 +127,7 @@ async fn get_document(
     State(app): State<App>,
     Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
 ) -> Result<Response, AppError> {
-    let document = Document::fetch(&app.database, document_id)
+    let document = Document::fetch_with_paste(&app.database, paste_id, document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -231,9 +231,7 @@ async fn post_document(
 
     paste.update(&mut transaction).await?;
 
-    document.update(&mut transaction).await?;
-
-    app.s3.delete_document(document.generate_path()).await?;
+    document.insert(&mut transaction).await?;
 
     app.s3.create_document(&document, body.clone()).await?;
 
@@ -319,7 +317,7 @@ async fn patch_document(
         ));
     }
 
-    let mut document = Document::fetch(&app.database, document_id)
+    let mut document = Document::fetch_with_paste(&app.database, paste_id, document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
