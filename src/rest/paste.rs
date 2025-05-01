@@ -509,7 +509,8 @@ fn validate_expiry(
             let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
                 .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
             let now = OffsetDateTime::now_utc();
-            let difference = (time - now).whole_seconds();
+
+            let difference = time - now;
 
             if difference.is_negative() {
                 return Err(AppError::BadRequest(
@@ -518,7 +519,7 @@ fn validate_expiry(
             }
 
             if let Some(maximum_expiry_hours) = config.maximum_expiry_hours() {
-                if difference as usize > maximum_expiry_hours * 3600 {
+                if difference > time::Duration::hours(maximum_expiry_hours as i64) {
                     return Err(AppError::BadRequest(
                         "The timestamp provided is above the maximum.".to_string(),
                     ));
