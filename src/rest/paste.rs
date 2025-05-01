@@ -494,12 +494,13 @@ async fn delete_paste(
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - The app error returned, if the provided expiry is invalid.
+/// - [`AppError`] - The app error returned, if the provided expiry is invalid, or a timestamp was required.
 ///
 /// ## Returns
 ///
-/// - [`Option::Some`] - The [`OffsetDateTime`] that was extracted, or defaulted to.
-/// - [`Option::None`] - No datetime was provided, and no default was set.
+/// - [`UndefinedOption::Some`] - The [`OffsetDateTime`] that was extracted, or defaulted to.
+/// - [`UndefinedOption::Undefined`] - No default set, and it was undefined.
+/// - [`UndefinedOption::None`] - None was given, and no maximum expiry has been set.
 fn validate_expiry(
     config: &Config,
     expiry: UndefinedOption<usize>,
