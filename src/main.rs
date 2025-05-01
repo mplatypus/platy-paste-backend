@@ -9,7 +9,7 @@ use axum::{
 };
 use http::{Method, header};
 use models::{
-    error::AppError,
+    error::{AppError, governor_error_handler},
     paste::{ExpiryTaskMessage, expiry_tasks},
 };
 use time::{UtcOffset, format_description};
@@ -22,6 +22,7 @@ use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     let offset = UtcOffset::current_local_offset().expect("should get local offset!");
     let timer = OffsetTime::new(
@@ -85,6 +86,7 @@ async fn main() {
     let limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
+                .error_handler(governor_error_handler)
                 .per_second(60)
                 .burst_size(state.config.rate_limits().global())
                 .period(Duration::from_secs(5))

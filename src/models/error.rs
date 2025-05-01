@@ -11,6 +11,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
+use tower_governor::GovernorError;
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
@@ -27,6 +28,8 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("Parse Int Error: {0}")]
     ParseInt(#[from] ParseIntError),
+    #[error("Too Many Requests: {0}")]
+    TooManyRequests(String),
     #[error("Internal Server Error: {0}")]
     InternalServer(String),
     #[error("Bad Request Error: {0}")]
@@ -47,6 +50,11 @@ impl IntoResponse for AppError {
                 StatusCode::BAD_REQUEST,
                 "Failed to parse integer",
                 e.to_string(),
+            ),
+            Self::TooManyRequests(ref e) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too Many Requests",
+                e.clone(),
             ),
             Self::InternalServer(ref e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -131,4 +139,14 @@ pub struct ErrorResponse {
     trace: Option<String>,
     /// Time since epoch of when the error occurred.
     timestamp: u64,
+}
+
+#[allow(clippy::needless_pass_by_value)]
+pub fn governor_error_handler(error: GovernorError) -> Response {
+    match error {
+        GovernorError::TooManyRequests { wait_time, .. } => {
+            AppError::TooManyRequests(format!("Wait for {wait_time} second(s).")).into_response()
+        }
+        err => AppError::TooManyRequests(err.to_string()).into_response(),
+    }
 }

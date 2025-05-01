@@ -15,7 +15,7 @@ use crate::{
     models::{
         authentication::{Token, generate_token},
         document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
-        error::{AppError, AuthError},
+        error::{AppError, AuthError, governor_error_handler},
         paste::Paste,
         payload::{
             GetPasteQuery, PatchPasteBody, PatchPasteQuery, PostPasteBody, PostPasteQuery,
@@ -30,6 +30,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
     let global_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
+                .error_handler(governor_error_handler)
                 .per_second(60)
                 .burst_size(config.rate_limits().global_paste())
                 .period(Duration::from_secs(5))
@@ -42,6 +43,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
     let get_pastes_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
+                .error_handler(governor_error_handler)
                 .per_second(60)
                 .burst_size(config.rate_limits().get_pastes())
                 .period(Duration::from_secs(5))
@@ -54,6 +56,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
     let get_paste_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
+                .error_handler(governor_error_handler)
                 .per_second(60)
                 .burst_size(config.rate_limits().get_paste())
                 .period(Duration::from_secs(5))
@@ -66,6 +69,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
     let post_paste_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
+                .error_handler(governor_error_handler)
                 .per_second(60)
                 .burst_size(config.rate_limits().post_paste())
                 .period(Duration::from_secs(5))
@@ -78,6 +82,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
     let patch_paste_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
+                .error_handler(governor_error_handler)
                 .per_second(60)
                 .burst_size(config.rate_limits().patch_paste())
                 .period(Duration::from_secs(5))
@@ -90,6 +95,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
     let delete_paste_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
+                .error_handler(governor_error_handler)
                 .per_second(60)
                 .burst_size(config.rate_limits().delete_paste())
                 .period(Duration::from_secs(5))
