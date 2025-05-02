@@ -1,6 +1,8 @@
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 
+use crate::app::config::Config;
+
 use super::{
     authentication::Token, document::Document, paste::Paste, snowflake::Snowflake,
     undefined::UndefinedOption,
@@ -35,6 +37,51 @@ pub struct PasteBody {
 pub type PostPasteBody = PasteBody;
 
 pub type PatchPasteBody = PasteBody;
+
+#[derive(Serialize)]
+pub struct ResponseConfig {
+    /// The default expiry in hours.
+    pub default_expiry: Option<usize>,
+    /// The maximum expiry in hours.
+    pub maximum_expiry: Option<usize>,
+    /// The maximum document count.
+    pub maximum_document_count: usize,
+    /// The maximum individual document size in mb.
+    pub maximum_document_size: usize,
+    /// The maximum total size of all documents in mb. (includes payload)
+    pub maximum_total_document_size: usize,
+}
+
+impl ResponseConfig {
+    /// New.
+    ///
+    /// Create a new [`ResponseConfig`] object.
+    pub const fn new(
+        default_expiry: Option<usize>,
+        maximum_expiry: Option<usize>,
+        maximum_document_count: usize,
+        maximum_document_size: usize,
+        maximum_total_document_size: usize,
+    ) -> Self {
+        Self {
+            default_expiry,
+            maximum_expiry,
+            maximum_document_count,
+            maximum_document_size,
+            maximum_total_document_size,
+        }
+    }
+
+    pub const fn from_config(config: &Config) -> Self {
+        Self::new(
+            config.default_expiry_hours(),
+            config.maximum_expiry_hours(),
+            config.global_paste_total_document_count(),
+            config.global_paste_document_size_limit(),
+            config.global_paste_total_document_size_limit(),
+        )
+    }
+}
 
 #[derive(Serialize)]
 pub struct ResponsePaste {
