@@ -238,6 +238,10 @@ pub struct RateLimitConfig {
     patch_document: u32,
     /// Delete paste rate limiter.
     delete_document: u32,
+    /// Global config rate limiter.
+    global_config: u32,
+    /// Get config rate limiter.
+    get_config: u32,
 }
 
 impl RateLimitConfig {
@@ -333,6 +337,19 @@ impl RateLimitConfig {
                         .expect("RATE_LIMIT_DELETE_DOCUMENT requires an integer.")
                 },
             ))
+            .global_config(std::env::var("RATE_LIMIT_GLOBAL_CONFIG").map_or(
+                defaults.global_config,
+                |v| {
+                    v.parse()
+                        .expect("RATE_LIMIT_GLOBAL_CONFIG requires an integer.")
+                },
+            ))
+            .get_config(
+                std::env::var("RATE_LIMIT_GET_CONFIG").map_or(defaults.get_config, |v| {
+                    v.parse()
+                        .expect("RATE_LIMIT_GET_CONFIG requires an integer.")
+                }),
+            )
             .build()
             .expect("Failed to create application configuration.")
     }
@@ -384,6 +401,14 @@ impl RateLimitConfig {
     pub const fn delete_document(&self) -> u32 {
         self.delete_document
     }
+
+    pub const fn global_config(&self) -> u32 {
+        self.global_config
+    }
+
+    pub const fn get_config(&self) -> u32 {
+        self.get_config
+    }
 }
 
 impl Default for RateLimitConfig {
@@ -401,6 +426,8 @@ impl Default for RateLimitConfig {
             post_document: 100,
             patch_document: 120,
             delete_document: 200,
+            global_config: 200,
+            get_config: 200,
         }
     }
 }
