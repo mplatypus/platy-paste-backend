@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use base64::{Engine, prelude::BASE64_URL_SAFE};
 use platy_paste::{
     app::database::Database,
     models::{authentication::*, snowflake::Snowflake},
@@ -8,6 +9,7 @@ use platy_paste::{
 use secrecy::{ExposeSecret, SecretString};
 
 use sqlx::PgPool;
+use time::UtcDateTime;
 
 #[test]
 fn test_getters() {
@@ -120,18 +122,30 @@ fn test_delete(pool: PgPool) {
 
 #[test]
 fn test_generate_token() {
+    let current = UtcDateTime::now();
+
     let token =
         generate_token(Snowflake::new(517_815_304_354_763_650)).expect("Failed to generate token");
 
-    let (base64_id, _) = token
-        .expose_secret()
-        .split_once('.')
-        .expect("Failed to split token.");
+    let values: Vec<&str> = token.expose_secret().split('.').collect();
+
+    assert_eq!(values.len(), 3);
 
     assert_eq!(
-        base64_id, "NTE3ODE1MzA0MzU0NzYzNjUw",
+        values[0], "NTE3ODE1MzA0MzU0NzYzNjUw",
         "Base64 ID does not match."
     );
+
+    let timestamp: i64 = String::from_utf8_lossy(
+        &BASE64_URL_SAFE
+            .decode(values[1])
+            .expect("Failed to decode timestamp."),
+    )
+    .to_string()
+    .parse()
+    .expect("Failed to convert timestamp string to integer.");
+
+    assert_eq!(timestamp, current.unix_timestamp());
 }
 
 #[test]
