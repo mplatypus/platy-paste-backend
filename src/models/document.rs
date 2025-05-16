@@ -417,3 +417,41 @@ pub fn contains_mime(mimes: &[&str], value: &str) -> bool {
 
     false
 }
+
+/// Clean Content.
+///
+/// Clean the document's contents.
+///
+/// This strips excess whitespace from documents,
+/// to make them take less space.
+///
+/// This also strips excessive linefeeds from documents.
+///
+/// ## Arguments
+///
+/// - `content` - The content to clean.
+///
+/// ## Returns
+///
+/// The content that has been cleaned.
+pub fn clean_content(content: &str) -> String {
+    let had_final_newline = content.ends_with('\n');
+
+    // Match 5+ mostly empty lines (space/tab only)
+    let excessive_blank_lines =
+        Regex::new(r"(?m:(?:[ \t]*\n){5,})").expect("Failed to build excessive linefeed regex.");
+    // Match 3+ trailing spaces/tabs before newline or EOF
+    let trailing_whitespace =
+        Regex::new(r"[ \t]{3,}(\n|$)").expect("Failed to build excessive whitespace regex.");
+
+    let content = excessive_blank_lines.replace_all(content, "\n\n\n");
+    let content = trailing_whitespace.replace_all(&content, "$1");
+
+    let mut cleaned = content.into_owned();
+
+    if had_final_newline && !cleaned.ends_with('\n') {
+        cleaned.push('\n');
+    }
+
+    cleaned
+}

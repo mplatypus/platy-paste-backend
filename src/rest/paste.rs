@@ -14,7 +14,7 @@ use crate::{
     app::{application::App, config::Config},
     models::{
         authentication::{Token, generate_token},
-        document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
+        document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, clean_content, contains_mime},
         error::{AppError, AuthError},
         paste::Paste,
         payload::{
@@ -304,6 +304,10 @@ async fn post_paste(
             .to_string();
         let data = field.bytes().await?;
 
+        let mut content = String::from_utf8_lossy(&data).to_string();
+
+        content = clean_content(&content);
+
         if data.len() > (app.config.global_paste_document_size_limit() * 1024 * 1024) {
             return Err(AppError::NotFound("Document too large.".to_string()));
         }
@@ -316,7 +320,7 @@ async fn post_paste(
             data.len(),
         );
 
-        documents.push((document, String::from_utf8_lossy(&data).to_string()));
+        documents.push((document, content));
     }
 
     let final_documents: Vec<ResponseDocument> = documents

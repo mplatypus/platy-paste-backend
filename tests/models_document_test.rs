@@ -465,3 +465,273 @@ fn test_contains_mime() {
         "Found image/png in mimes."
     );
 }
+
+#[test]
+fn test_clean_content() {
+    let test_content_1 = "test_function(beanos) -> None:
+    print(beanos)";
+
+    let test_content_2 = "test_function(beanos) -> None:
+    print(beanos)              ";
+
+    let test_content_3 = "test_function(beanos) -> None:                
+    print(beanos)";
+
+    let test_content_4 = "test_function(beanos) -> None:                
+    print(beanos)              ";
+
+    let expected_content = "test_function(beanos) -> None:
+    print(beanos)";
+
+    assert_eq!(
+        clean_content(test_content_1),
+        expected_content,
+        "test content 1 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_2),
+        expected_content,
+        "test content 2 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_3),
+        expected_content,
+        "test content 3 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_4),
+        expected_content,
+        "test content 4 failed."
+    );
+}
+
+#[test]
+fn test_clean_content_with_linefeed() {
+    let test_content_1 = "test_function(beanos) -> None:
+    print(beanos)
+";
+
+    let test_content_2 = "test_function(beanos) -> None:
+    print(beanos)              
+";
+
+    let test_content_3 = "test_function(beanos) -> None:                
+    print(beanos)
+";
+
+    let test_content_4 = "test_function(beanos) -> None:                
+    print(beanos)              
+";
+
+    let expected_content = "test_function(beanos) -> None:
+    print(beanos)
+";
+
+    assert_eq!(
+        clean_content(test_content_1),
+        expected_content,
+        "test content 1 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_2),
+        expected_content,
+        "test content 2 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_3),
+        expected_content,
+        "test content 3 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_4),
+        expected_content,
+        "test content 4 failed."
+    );
+}
+
+#[test]
+fn test_clean_content_with_excessive_linefeed() {
+    let test_content_1 = "test_function(beanos) -> None:
+
+
+
+
+
+
+
+    print(beanos)";
+
+    let test_cleaned_content_1 = "test_function(beanos) -> None:
+
+
+    print(beanos)";
+
+    let test_content_2 = "test_function(beanos) -> None:
+
+
+
+
+
+
+
+    print(beanos)
+";
+
+    let test_cleaned_content_2 = "test_function(beanos) -> None:
+
+
+    print(beanos)
+";
+
+    let test_content_3 = "test_function(beanos) -> None:
+
+
+
+
+
+
+
+    print(beanos)
+
+
+
+
+
+
+
+";
+
+    let test_cleaned_content_3 = "test_function(beanos) -> None:
+
+
+    print(beanos)
+
+
+";
+
+    assert_eq!(
+        clean_content(test_content_1),
+        test_cleaned_content_1,
+        "test content 1 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_2),
+        test_cleaned_content_2,
+        "test content 2 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_3),
+        test_cleaned_content_3,
+        "test content 3 failed."
+    );
+}
+
+#[test]
+fn test_clean_content_with_excessive_linefeed_and_whitespace() {
+    let test_content_1 = "test_function(beanos) -> None:
+
+      
+
+            
+
+     
+
+    print(beanos)";
+
+    let test_cleaned_content_1 = "test_function(beanos) -> None:
+
+
+    print(beanos)";
+
+    let test_content_2 = "test_function(beanos) -> None:
+
+       
+        
+     
+
+
+       
+    print(beanos)
+";
+
+    let test_cleaned_content_2 = "test_function(beanos) -> None:
+
+
+    print(beanos)
+";
+
+    let test_content_3 = "test_function(beanos) -> None:
+
+
+        
+
+
+         
+
+    print(beanos)
+
+      
+
+     
+
+
+
+";
+
+    let test_cleaned_content_3 = "test_function(beanos) -> None:
+
+
+    print(beanos)
+
+
+";
+
+    assert_eq!(
+        clean_content(test_content_1),
+        test_cleaned_content_1,
+        "test content 1 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_2),
+        test_cleaned_content_2,
+        "test content 2 failed."
+    );
+
+    assert_eq!(
+        clean_content(test_content_3),
+        test_cleaned_content_3,
+        "test content 3 failed."
+    );
+}
+
+#[test]
+fn test_clean_content_with_excessive_linefeed_and_minimal_whitespace() {
+    let test_content_1 = "test_function(beanos) -> None:
+ 
+  
+ 
+
+
+ 
+    print(beanos)";
+
+    let test_cleaned_content_1 = "test_function(beanos) -> None:
+
+
+    print(beanos)";
+
+    assert_eq!(
+        clean_content(test_content_1),
+        test_cleaned_content_1,
+        "test content 1 failed."
+    );
+}
