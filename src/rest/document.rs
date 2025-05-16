@@ -18,7 +18,7 @@ use crate::{
     app::{application::App, config::Config},
     models::{
         authentication::Token,
-        document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
+        document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, clean_content, contains_mime},
         error::{AppError, AuthError},
         paste::Paste,
         payload::{PatchDocumentQuery, PostDocumentQuery, ResponseDocument},
@@ -205,10 +205,14 @@ async fn post_document(
         ));
     }
 
+    let mut content = String::from_utf8_lossy(&body).to_string();
+
+    content = clean_content(&content);
+
     let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
 
     if (app.config.global_paste_total_document_size_limit() * 1024 * 1024)
-        < (total_document_size + body.len())
+        < (total_document_size + content.len())
     {
         return Err(AppError::BadRequest(
             "The new content exceeds the total document limit.".to_string(),
@@ -222,7 +226,7 @@ async fn post_document(
         content_disposition
             .filename()
             .unwrap_or_else(|| "unknown".to_string()),
-        body.len(),
+        content.len(),
     );
 
     let mut transaction = app.database.pool().begin().await?;
@@ -233,20 +237,21 @@ async fn post_document(
 
     document.insert(&mut transaction).await?;
 
-    app.s3.create_document(&document, body.clone()).await?;
+    app.s3
+        .create_document(&document, content.clone().into())
+        .await?;
 
     transaction.commit().await?;
 
-    let content = {
+    let c = {
         if query.include_content {
-            let d: &str = &String::from_utf8_lossy(&body);
-            Some(d.to_string())
+            Some(content)
         } else {
             None
         }
     };
 
-    let document_response = ResponseDocument::from_document(document, content);
+    let document_response = ResponseDocument::from_document(document, c);
 
     Ok((StatusCode::OK, Json(document_response)).into_response())
 }
