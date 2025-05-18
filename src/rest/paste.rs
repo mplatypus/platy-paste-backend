@@ -116,7 +116,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         )
         .layer(global_limiter)
         .layer(DefaultBodyLimit::max(
-            config.global_paste_total_document_size_limit() * 1024 * 1024,
+            (config.global_paste_total_document_size_limit() * 1024.0 * 1024.0) as usize,
         ))
 }
 
@@ -304,7 +304,7 @@ async fn post_paste(
             .to_string();
         let data = field.bytes().await?;
 
-        if data.len() > (app.config.global_paste_document_size_limit() * 1024 * 1024) {
+        if data.len() as f64 > (app.config.global_paste_document_size_limit() * 1024.0 * 1024.0) {
             return Err(AppError::NotFound("Document too large.".to_string()));
         }
 
@@ -583,8 +583,8 @@ mod tests {
             .maximum_expiry_hours(maximum_expiry_hours)
             .default_expiry_hours(default_expiry_hours)
             .global_paste_total_document_count(0)
-            .global_paste_total_document_size_limit(0)
-            .global_paste_document_size_limit(0)
+            .global_paste_total_document_size_limit(0.0)
+            .global_paste_document_size_limit(0.0)
             .rate_limits(
                 RateLimitConfigBuilder::default()
                     .build()

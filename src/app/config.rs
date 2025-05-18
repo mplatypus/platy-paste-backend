@@ -29,9 +29,9 @@ pub struct Config {
     /// The maximum allowed documents in a paste.
     global_paste_total_document_count: usize,
     /// Maximum paste body size.
-    global_paste_total_document_size_limit: usize,
+    global_paste_total_document_size_limit: f64,
     /// Individual paste document size.
-    global_paste_document_size_limit: usize,
+    global_paste_document_size_limit: f64,
     // Rate limits.
     rate_limits: RateLimitConfig,
 }
@@ -176,11 +176,11 @@ impl Config {
         self.global_paste_total_document_count
     }
 
-    pub const fn global_paste_total_document_size_limit(&self) -> usize {
+    pub const fn global_paste_total_document_size_limit(&self) -> f64 {
         self.global_paste_total_document_size_limit
     }
 
-    pub const fn global_paste_document_size_limit(&self) -> usize {
+    pub const fn global_paste_document_size_limit(&self) -> f64 {
         self.global_paste_document_size_limit
     }
 
@@ -204,8 +204,8 @@ impl Default for Config {
             maximum_expiry_hours: None,
             default_expiry_hours: None,
             global_paste_total_document_count: 10,
-            global_paste_total_document_size_limit: 100,
-            global_paste_document_size_limit: 15,
+            global_paste_total_document_size_limit: 100.0,
+            global_paste_document_size_limit: 15.0,
             rate_limits: RateLimitConfig::default(),
         }
     }

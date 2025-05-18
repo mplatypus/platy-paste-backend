@@ -106,7 +106,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         )
         .layer(global_limiter)
         .layer(DefaultBodyLimit::max(
-            config.global_paste_total_document_size_limit() * 1024 * 1024,
+            (config.global_paste_total_document_size_limit() * 1024.0 * 1024.0) as usize,
         ))
 }
 
@@ -207,8 +207,8 @@ async fn post_document(
 
     let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
 
-    if (app.config.global_paste_total_document_size_limit() * 1024 * 1024)
-        < (total_document_size + body.len())
+    if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
+        < (total_document_size + body.len()) as f64
     {
         return Err(AppError::BadRequest(
             "The new content exceeds the total document limit.".to_string(),
@@ -309,8 +309,8 @@ async fn patch_document(
 
     let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
 
-    if (app.config.global_paste_total_document_size_limit() * 1024 * 1024)
-        >= (total_document_size + body.len())
+    if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
+        >= (total_document_size + body.len()) as f64
     {
         return Err(AppError::BadRequest(
             "The new content exceeds the total document limit.".to_string(),
