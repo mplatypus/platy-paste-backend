@@ -47,9 +47,9 @@ pub struct ResponseConfig {
     /// The maximum document count.
     pub maximum_document_count: usize,
     /// The maximum individual document size in mb.
-    pub maximum_document_size: usize,
+    pub maximum_document_size: f64,
     /// The maximum total size of all documents in mb. (includes payload)
-    pub maximum_total_document_size: usize,
+    pub maximum_total_document_size: f64,
 }
 
 impl ResponseConfig {
@@ -60,8 +60,8 @@ impl ResponseConfig {
         default_expiry: Option<usize>,
         maximum_expiry: Option<usize>,
         maximum_document_count: usize,
-        maximum_document_size: usize,
-        maximum_total_document_size: usize,
+        maximum_document_size: f64,
+        maximum_total_document_size: f64,
     ) -> Self {
         Self {
             default_expiry,
