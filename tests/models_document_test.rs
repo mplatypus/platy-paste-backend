@@ -161,7 +161,7 @@ fn test_set_size() {
 fn test_fetch(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let document_id = Snowflake::new(517_815_304_355_368_628);
+    let document_id = Snowflake::new(517_815_304_354_284_701);
 
     let document = Document::fetch(&db, document_id)
         .await
@@ -172,7 +172,7 @@ fn test_fetch(pool: PgPool) {
 
     assert_eq!(
         document.paste_id,
-        Snowflake::new(517_815_304_354_763_650),
+        Snowflake::new(517_815_304_354_284_601),
         "Mismatched paste ID."
     );
 
@@ -204,8 +204,8 @@ fn test_fetch_missing(pool: PgPool) {
 fn test_fetch_with_paste(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(517_815_304_354_763_650);
-    let document_id = Snowflake::new(517_815_304_355_368_628);
+    let paste_id = Snowflake::new(517_815_304_354_284_601);
+    let document_id = Snowflake::new(517_815_304_354_284_701);
 
     let document = Document::fetch_with_paste(&db, paste_id, document_id)
         .await
@@ -245,7 +245,7 @@ fn test_fetch_with_paste_missing(pool: PgPool) {
 fn test_fetch_all(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(517_815_304_355_658_605);
+    let paste_id = Snowflake::new(517_815_304_354_284_603);
 
     let documents = Document::fetch_all(&db, paste_id)
         .await
@@ -257,21 +257,21 @@ fn test_fetch_all(pool: PgPool) {
     );
 
     assert!(
-        documents[0].id == Snowflake::new(517_815_304_353_663_922),
+        documents[0].id == Snowflake::new(517_815_304_354_284_704),
         "Mismatched document ID 1."
     );
 
     assert!(documents[0].paste_id == paste_id, "Mismatched paste ID 1.");
 
     assert!(
-        documents[1].id == Snowflake::new(517_815_304_357_264_399),
+        documents[1].id == Snowflake::new(517_815_304_354_284_705),
         "Mismatched document ID 2."
     );
 
     assert!(documents[1].paste_id == paste_id, "Mismatched paste ID 2.");
 
     assert!(
-        documents[2].id == Snowflake::new(517_815_304_353_794_606),
+        documents[2].id == Snowflake::new(517_815_304_354_284_706),
         "Mismatched document ID 3."
     );
 
@@ -296,7 +296,7 @@ fn test_fetch_all_missing(pool: PgPool) {
 fn test_insert(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(517_815_304_354_763_650);
+    let paste_id = Snowflake::new(517_815_304_354_284_601);
     let document_id = Snowflake::new(456);
     let document_type = String::from("example/document");
     let name = String::from("test.document");
@@ -349,7 +349,7 @@ fn test_insert(pool: PgPool) {
 fn test_update(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let document_id = Snowflake::new(517_815_304_355_368_628);
+    let document_id = Snowflake::new(517_815_304_354_284_701);
 
     let mut document = Document::fetch(&db, document_id)
         .await
@@ -360,7 +360,7 @@ fn test_update(pool: PgPool) {
 
     assert_eq!(
         document.paste_id,
-        Snowflake::new(517_815_304_354_763_650),
+        Snowflake::new(517_815_304_354_284_601),
         "Mismatched paste ID."
     );
 
@@ -410,7 +410,7 @@ fn test_update(pool: PgPool) {
 
     assert_eq!(
         result_document.paste_id,
-        Snowflake::new(517_815_304_354_763_650),
+        Snowflake::new(517_815_304_354_284_601),
         "Mismatched paste ID."
     );
 
@@ -428,7 +428,7 @@ fn test_update(pool: PgPool) {
 fn test_delete(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let document_id = Snowflake::new(517_815_304_355_368_628);
+    let document_id = Snowflake::new(517_815_304_354_284_701);
 
     Document::fetch(&db, document_id)
         .await

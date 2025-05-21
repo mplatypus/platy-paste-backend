@@ -20,7 +20,7 @@ use crate::{
         authentication::Token,
         document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
-        paste::Paste,
+        paste::validate_paste,
         payload::{PatchDocumentQuery, PostDocumentQuery, ResponseDocument},
         snowflake::Snowflake,
     },
@@ -174,9 +174,7 @@ async fn post_document(
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
-    }
+    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
@@ -191,10 +189,6 @@ async fn post_document(
             DEFAULT_MIME.to_string()
         }
     };
-
-    let mut paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
     let total_document_count =
         Document::fetch_total_document_count(&app.database, paste.id).await?;
@@ -285,9 +279,7 @@ async fn patch_document(
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
-    }
+    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
@@ -302,10 +294,6 @@ async fn patch_document(
             DEFAULT_MIME.to_string()
         }
     };
-
-    let mut paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
 
     let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
 

@@ -30,7 +30,8 @@ fn test_getters() {
 fn test_fetch(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let token_string = "NTE3ODE1MzA0MzU0NzYzNjUw.cMtyBLeeyOCsHyXjOyDZFRDUe".to_string();
+    let token_string =
+        "NTE3ODE1MzA0MzU0Mjg0NjAx.MTc0NzgxNjA1NA==.zYXUmCXIcnlvtAxJNJsUaDvRD".to_string();
 
     let token = Token::fetch(&db, token_string.clone())
         .await
@@ -44,7 +45,7 @@ fn test_fetch(pool: PgPool) {
     );
     assert_eq!(
         token.paste_id(),
-        Snowflake::new(517_815_304_354_763_650),
+        Snowflake::new(517_815_304_354_284_601),
         "Mismatched paste ID."
     );
 }
@@ -64,7 +65,7 @@ fn test_fetch_missing(pool: PgPool) {
 fn test_insert(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(517_815_304_354_763_650);
+    let paste_id = Snowflake::new(517_815_304_354_284_601);
     let token = SecretString::from("test.token");
 
     let paste_token = Token::new(paste_id, token.clone());
@@ -102,7 +103,8 @@ fn test_insert(pool: PgPool) {
 fn test_delete(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let token_string = "NTE3ODE1MzA0MzU0NzYzNjUw.cMtyBLeeyOCsHyXjOyDZFRDUe".to_string();
+    let token_string =
+        "NTE3ODE1MzA0MzU0Mjg0NjAx.MTc0NzgxNjA1NA==.zYXUmCXIcnlvtAxJNJsUaDvRD".to_string();
 
     Token::fetch(&db, token_string.clone())
         .await
