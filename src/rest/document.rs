@@ -230,9 +230,9 @@ async fn post_document(
 
     paste.set_edited();
 
-    paste.update(&mut *transaction).await?;
+    paste.update(transaction.as_mut()).await?;
 
-    document.update(&mut *transaction).await?;
+    document.update(transaction.as_mut()).await?;
 
     app.s3.delete_document(document.generate_path()).await?;
 
@@ -329,7 +329,7 @@ async fn patch_document(
 
     paste.set_edited();
 
-    paste.update(&mut *transaction).await?;
+    paste.update(transaction.as_mut()).await?;
 
     document.set_document_type(document_type);
 
@@ -339,7 +339,7 @@ async fn patch_document(
         document.set_name(filename);
     }
 
-    document.update(&mut *transaction).await?;
+    document.update(transaction.as_mut()).await?;
 
     app.s3.delete_document(document.generate_path()).await?;
 

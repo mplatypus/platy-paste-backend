@@ -277,7 +277,7 @@ async fn post_paste(
 
     let paste = Paste::new(Snowflake::generate()?, false, expiry);
 
-    paste.insert(&mut *transaction).await?;
+    paste.insert(transaction.as_mut()).await?;
 
     let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -346,12 +346,12 @@ async fn post_paste(
     for (document, content) in documents {
         app.s3.create_document(&document, content.into()).await?;
 
-        document.insert(&mut *transaction).await?;
+        document.insert(transaction.as_mut()).await?;
     }
 
     let paste_token = Token::new(paste.id, generate_token(paste.id)?);
 
-    paste_token.insert(&mut transaction).await?;
+    paste_token.insert(transaction.as_mut()).await?;
 
     transaction.commit().await?;
 

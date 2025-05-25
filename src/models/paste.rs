@@ -1,4 +1,4 @@
-use sqlx::{Executor, Postgres};
+use sqlx::{Executor, PgExecutor, Postgres};
 use std::time::Duration;
 
 use time::OffsetDateTime;
@@ -49,7 +49,7 @@ impl Paste {
     ///
     /// ## Arguments
     ///
-    /// - `executor` - The pool or transaction to make the request to.
+    /// - `executor` - The database pool or transaction to use.
     /// - `id` - The ID of the paste.
     ///
     /// ## Errors
@@ -62,7 +62,7 @@ impl Paste {
     /// - [`Option::None`] - No paste was found.
     pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<Option<Self>, AppError>
     where
-        E: 'e + Executor<'c, Database = Postgres>,
+        E: 'e + PgExecutor<'c>,
     {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
@@ -85,7 +85,7 @@ impl Paste {
     ///
     /// ## Arguments
     ///
-    /// - `executor` - The pool or transaction to make the request to.
+    /// - `executor` - The database pool or transaction to use.
     /// - `start` - The start [`OffsetDateTime`] (inclusive).
     /// - `end` - The end [`OffsetDateTime`] (inclusive).
     ///
@@ -102,7 +102,7 @@ impl Paste {
         end: OffsetDateTime,
     ) -> Result<Vec<Self>, AppError>
     where
-        E: 'e + Executor<'c, Database = Postgres>,
+        E: 'e + PgExecutor<'c>,
     {
         let records = sqlx::query!(
             "SELECT id, edited, expiry FROM pastes WHERE expiry >= $1 AND expiry <= $2",
@@ -128,14 +128,14 @@ impl Paste {
     ///
     /// ## Arguments
     ///
-    /// - `executor` - The pool or transaction to make the request to.
+    /// - `executor` - The database pool or transaction to use.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error, or the snowflake exists already.
     pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
     where
-        E: 'e + Executor<'c, Database = Postgres>,
+        E: 'e + PgExecutor<'c>,
     {
         let paste_id: i64 = self.id.into();
 
@@ -157,14 +157,14 @@ impl Paste {
     ///
     /// ## Arguments
     ///
-    /// - `executor` - The pool or transaction to make the request to.
+    /// - `executor` - The database pool or transaction to use.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
     pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
     where
-        E: 'e + Executor<'c, Database = Postgres>,
+        E: 'e + PgExecutor<'c>,
     {
         let paste_id: i64 = self.id.into();
 
@@ -184,7 +184,7 @@ impl Paste {
     ///
     /// ## Arguments
     ///
-    /// - `executor` - The pool or transaction to make the request to.
+    /// - `executor` - The database pool or transaction to use.
     /// - `id` - The id of the paste.
     ///
     /// ## Errors
@@ -192,7 +192,7 @@ impl Paste {
     /// - [`AppError`] - The database had an error.
     pub async fn delete<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<bool, AppError>
     where
-        E: 'e + Executor<'c, Database = Postgres>,
+        E: 'e + PgExecutor<'c>,
     {
         let paste_id: i64 = id.into();
         let result = sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
