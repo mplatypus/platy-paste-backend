@@ -16,7 +16,7 @@ use crate::{
         authentication::{Token, generate_token},
         document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
-        paste::Paste,
+        paste::{Paste, validate_paste},
         payload::{
             GetPasteQuery, PatchPasteBody, PatchPasteQuery, PostPasteBody, PostPasteQuery,
             ResponseDocument, ResponsePaste,
@@ -143,16 +143,7 @@ async fn get_paste(
     Path(paste_id): Path<Snowflake>,
     Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
-    let paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
-
-    if let Some(expiry) = paste.expiry {
-        if expiry < OffsetDateTime::now_utc() {
-            Paste::delete(&app.database, paste.id).await?;
-            return Err(AppError::NotFound("Paste not found.".to_string()));
-        }
-    }
+    let paste = validate_paste(&app.database, paste_id, None).await?;
 
     let documents = Document::fetch_all(&app.database, paste.id).await?;
 
@@ -196,16 +187,7 @@ async fn get_pastes(
     let mut response_pastes: Vec<ResponsePaste> = Vec::new();
 
     for paste_id in body {
-        let paste = Paste::fetch(&app.database, paste_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
-
-        if let Some(expiry) = paste.expiry {
-            if expiry < OffsetDateTime::now_utc() {
-                Paste::delete(&app.database, paste.id).await?;
-                return Err(AppError::NotFound("Paste not found.".to_string()));
-            }
-        }
+        let paste = validate_paste(&app.database, paste_id, None).await?;
 
         let documents = Document::fetch_all(&app.database, paste.id).await?;
 
@@ -276,7 +258,12 @@ async fn post_paste(
 
     let mut transaction = app.database.pool().begin().await?;
 
-    let paste = Paste::new(Snowflake::generate()?, false, expiry.to_option());
+    let paste = Paste::new(
+        Snowflake::generate()?,
+        OffsetDateTime::now_utc(),
+        None,
+        expiry.to_option(),
+    );
 
     paste.insert(&mut transaction).await?;
 
@@ -395,20 +382,7 @@ async fn patch_paste(
     token: Token,
     Json(body): Json<PatchPasteBody>,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
-    }
-
-    let mut paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
-
-    if let Some(expiry) = paste.expiry {
-        if expiry < OffsetDateTime::now_utc() {
-            Paste::delete(&app.database, paste.id).await?;
-            return Err(AppError::NotFound("Paste not found.".to_string()));
-        }
-    }
+    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
 
     let new_expiry = validate_expiry(&app.config, body.expiry)?;
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, edited, expiry FROM pastes WHERE id = $1",
+  "query": "SELECT id, creation, edited, expiry FROM pastes WHERE expiry >= $1 AND expiry <= $2",
   "describe": {
     "columns": [
       {
@@ -10,25 +10,32 @@
       },
       {
         "ordinal": 1,
-        "name": "edited",
-        "type_info": "Bool"
+        "name": "creation",
+        "type_info": "Timestamptz"
       },
       {
         "ordinal": 2,
+        "name": "edited",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
         "name": "expiry",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Timestamptz",
+        "Timestamptz"
       ]
     },
     "nullable": [
       false,
       false,
+      true,
       true
     ]
   },
-  "hash": "f640361539bc2f82005e4c7840fcb7a1f214ebd336b02fdcd36ff09ee3bbe10f"
+  "hash": "039c82e4065e2d8b8c4c282e26169f755ba97b9eae850adbd7878c3988f1abf1"
 }

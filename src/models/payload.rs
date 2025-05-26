@@ -1,5 +1,6 @@
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::app::config::Config;
 
@@ -90,9 +91,14 @@ pub struct ResponsePaste {
     /// The token attached to the paste.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// The time at which the paste was created.
+    #[serde(rename = "timestamp")]
+    pub creation: usize,
     /// Whether the paste has been edited.
-    pub edited: bool,
+    #[serde(rename = "edited_timestamp")]
+    pub edited: Option<usize>,
     /// The expiry time of the paste.
+    #[serde(rename = "expiry_timestamp")]
     pub expiry: Option<usize>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
@@ -102,18 +108,20 @@ impl ResponsePaste {
     /// New.
     ///
     /// Create a new [`ResponsePaste`] object.
-    pub const fn new(
+    pub fn new(
         id: Snowflake,
         token: Option<String>,
-        edited: bool,
-        expiry: Option<usize>,
+        creation: OffsetDateTime,
+        edited: Option<OffsetDateTime>,
+        expiry: Option<OffsetDateTime>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
             token,
-            edited,
-            expiry,
+            creation: creation.unix_timestamp() as usize,
+            edited: edited.map(|t| t.unix_timestamp() as usize),
+            expiry: expiry.map(|t| t.unix_timestamp() as usize),
             documents,
         }
     }
@@ -138,9 +146,14 @@ impl ResponsePaste {
     ) -> Self {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
-        let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
-
-        Self::new(paste.id, token_value, paste.edited, expiry, documents)
+        Self::new(
+            paste.id,
+            token_value,
+            paste.creation,
+            paste.edited,
+            paste.expiry,
+            documents,
+        )
     }
 }
 

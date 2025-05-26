@@ -9,15 +9,21 @@ use crate::{
     models::document::Document,
 };
 
-use super::{error::AppError, snowflake::Snowflake};
+use super::{
+    authentication::Token,
+    error::{AppError, AuthError},
+    snowflake::Snowflake,
+};
 
 #[derive(Debug, Clone)]
 pub struct Paste {
     /// The ID of the paste.
     pub id: Snowflake,
-    /// Whether the paste has been edited.
-    pub edited: bool,
-    /// The time when the paste expires.
+    /// When the paste was created.
+    pub creation: OffsetDateTime,
+    /// When the paste was last modified.
+    pub edited: Option<OffsetDateTime>,
+    /// The time at which the paste will expire.
     pub expiry: Option<OffsetDateTime>,
 }
 
@@ -25,15 +31,25 @@ impl Paste {
     /// New.
     ///
     /// Create a new [`Paste`] object.
-    pub const fn new(id: Snowflake, edited: bool, expiry: Option<OffsetDateTime>) -> Self {
-        Self { id, edited, expiry }
+    pub const fn new(
+        id: Snowflake,
+        creation: OffsetDateTime,
+        edited: Option<OffsetDateTime>,
+        expiry: Option<OffsetDateTime>,
+    ) -> Self {
+        Self {
+            id,
+            creation,
+            edited,
+            expiry,
+        }
     }
 
     /// Set Edited.
     ///
-    /// Update the paste so it shows as edited.
+    /// Update the edited timestamp to the current time.
     pub fn set_edited(&mut self) {
-        self.edited = true;
+        self.edited = Some(OffsetDateTime::now_utc());
     }
 
     /// Set Expiry.
@@ -63,14 +79,14 @@ impl Paste {
     pub async fn fetch(db: &Database, id: Snowflake) -> Result<Option<Self>, AppError> {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, edited, expiry FROM pastes WHERE id = $1",
+            "SELECT id, creation, edited, expiry FROM pastes WHERE id = $1",
             paste_id
         )
         .fetch_optional(db.pool())
         .await?;
 
         if let Some(q) = query {
-            return Ok(Some(Self::new(q.id.into(), q.edited, q.expiry)));
+            return Ok(Some(Self::new(q.id.into(), q.creation, q.edited, q.expiry)));
         }
 
         Ok(None)
@@ -99,7 +115,7 @@ impl Paste {
         end: OffsetDateTime,
     ) -> Result<Vec<Self>, AppError> {
         let records = sqlx::query!(
-            "SELECT id, edited, expiry FROM pastes WHERE expiry >= $1 AND expiry <= $2",
+            "SELECT id, creation, edited, expiry FROM pastes WHERE expiry >= $1 AND expiry <= $2",
             start,
             end
         )
@@ -108,7 +124,12 @@ impl Paste {
 
         let mut pastes = Vec::new();
         for record in records {
-            let paste = Self::new(record.id.into(), record.edited, record.expiry);
+            let paste = Self::new(
+                record.id.into(),
+                record.creation,
+                record.edited,
+                record.expiry,
+            );
 
             pastes.push(paste);
         }
@@ -131,8 +152,9 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3)",
+            "INSERT INTO pastes(id, creation, edited, expiry) VALUES ($1, $2, $3, $4)",
             paste_id,
+            self.creation,
             self.edited,
             self.expiry
         )
@@ -157,8 +179,9 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, edited, expiry) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET edited = $2, expiry = $3",
+            "INSERT INTO pastes(id, creation, edited, expiry) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET edited = $3, expiry = $4",
             paste_id,
+            self.creation,
             self.edited,
             self.expiry
         ).execute(transaction.as_mut()).await?;
@@ -186,6 +209,53 @@ impl Paste {
 
         Ok(result.rows_affected() > 0)
     }
+}
+
+/// Validate Paste.
+///
+/// Checks that a paste exists, and has not expired,
+/// as well as supporting validating the token.
+///
+/// ## Arguments
+///
+/// - `db` - The database to make the request to.
+/// - `paste_id` - The ID of the paste.
+/// - `token` - The token to validate (if required.)
+///
+/// ## Errors
+///
+/// - [`AppError`] - The database had an error.
+///
+/// ## Returns
+///
+/// The paste that was checked and found.
+pub async fn validate_paste(
+    db: &Database,
+    paste_id: Snowflake,
+    token: Option<Token>,
+) -> Result<Paste, AppError> {
+    let Some(paste) = Paste::fetch(db, paste_id).await? else {
+        return Err(AppError::NotFound(
+            "The paste requested could not be found".to_string(),
+        ));
+    };
+
+    if let Some(expiry) = paste.expiry {
+        if expiry < OffsetDateTime::now_utc() {
+            Paste::delete(db, paste_id).await?;
+            return Err(AppError::NotFound(
+                "The paste requested could not be found".to_string(),
+            ));
+        }
+    }
+
+    if let Some(token) = token {
+        if paste.id != token.paste_id() {
+            return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
+        }
+    }
+
+    Ok(paste)
 }
 
 #[derive(Clone, Debug)]

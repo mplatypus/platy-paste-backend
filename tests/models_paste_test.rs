@@ -9,14 +9,15 @@ use time::{Date, OffsetDateTime, Time};
 #[test]
 fn test_getters() {
     let paste_id = Snowflake::new(123);
-    let edited = false;
-    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
+    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
+    let edited = OffsetDateTime::from_unix_timestamp(15).expect("failed to generate timestamp.");
+    let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
 
-    let paste = Paste::new(paste_id, edited, Some(expiry));
+    let paste = Paste::new(paste_id, creation, Some(edited), Some(expiry));
 
-    assert!(paste.id == paste_id, "Mismatched paste ID.");
+    assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
-    assert!(!paste.edited, "Mismatched edited.");
+    assert_eq!(paste.edited, Some(edited), "Mismatched edited.");
 
     assert!(paste.expiry == Some(expiry), "Mismatched expiry.");
 }
@@ -24,18 +25,30 @@ fn test_getters() {
 #[test]
 fn test_set_edited() {
     let paste_id = Snowflake::new(123);
-    let edited = false;
-    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
+    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
+    let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
 
-    let mut paste = Paste::new(paste_id, edited, Some(expiry));
+    let mut paste = Paste::new(paste_id, creation, None, Some(expiry));
 
-    assert!(!paste.edited, "Mismatched edited.");
+    assert_eq!(paste.edited, None, "Mismatched edited.");
 
+    let current = OffsetDateTime::now_utc();
     paste.set_edited();
 
     assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
-    assert!(paste.edited, "Mismatched edited.");
+    let paste_edited = paste.edited.expect("Edited was not found.");
+
+    assert_eq!(
+        paste_edited.date(),
+        current.date(),
+        "Mismatched edited Date."
+    );
+    assert_eq!(
+        paste_edited.to_hms(),
+        current.to_hms(),
+        "Mismatched edited HMS."
+    );
 
     assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
 }
@@ -43,10 +56,10 @@ fn test_set_edited() {
 #[test]
 fn test_set_expiry() {
     let paste_id = Snowflake::new(123);
-    let edited = false;
+    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
     let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
 
-    let mut paste = Paste::new(paste_id, edited, Some(expiry));
+    let mut paste = Paste::new(paste_id, creation, None, Some(expiry));
 
     assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
 
@@ -54,7 +67,7 @@ fn test_set_expiry() {
 
     assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
-    assert!(!paste.edited, "Mismatched edited.");
+    assert_eq!(paste.edited, None, "Mismatched edited.");
 
     assert!(paste.expiry.is_none(), "Mismatched expiry.");
 }
@@ -63,8 +76,13 @@ fn test_set_expiry() {
 fn test_fetch(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(517_815_304_354_763_650);
-    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
+    let paste_id = Snowflake::new(517_815_304_354_284_601);
+    let creation =
+        OffsetDateTime::from_unix_timestamp(0).expect("failed to generate creation timestamp.");
+    let edited =
+        OffsetDateTime::from_unix_timestamp(86400).expect("failed to generate edited timestamp.");
+    let expiry =
+        OffsetDateTime::from_unix_timestamp(172_800).expect("failed to generate expiry timestamp.");
 
     let paste = Paste::fetch(&db, paste_id)
         .await
@@ -73,9 +91,11 @@ fn test_fetch(pool: PgPool) {
 
     assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
-    assert!(!paste.edited, "Mismatched edited.");
+    assert_eq!(paste.creation, creation, "Mismatched creation time.");
 
-    assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
+    assert_eq!(paste.edited, Some(edited), "Mismatched edited time.");
+
+    assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry time.");
 }
 
 #[sqlx::test]
@@ -154,10 +174,11 @@ fn test_insert(pool: PgPool) {
     let db = Database::from_pool(pool);
 
     let paste_id = Snowflake::new(123);
-    let edited = false;
-    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
+    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
+    let edited = OffsetDateTime::from_unix_timestamp(15).expect("failed to generate timestamp.");
+    let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
 
-    let paste = Paste::new(paste_id, edited, Some(expiry));
+    let paste = Paste::new(paste_id, creation, Some(edited), Some(expiry));
 
     let mut transaction = db
         .pool()
@@ -180,19 +201,20 @@ fn test_insert(pool: PgPool) {
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
 
-    assert!(result.id == paste_id, "Mismatched paste ID.");
+    assert_eq!(result.id, paste_id, "Mismatched paste ID.");
 
-    assert!(!result.edited, "Mismatched edited.");
+    assert_eq!(result.creation, creation, "Mismatched creation time.");
 
-    assert!(result.expiry == Some(expiry), "Mismatched expiry.");
+    assert_eq!(result.edited, Some(edited), "Mismatched edited time.");
+
+    assert_eq!(result.expiry, Some(expiry), "Mismatched expiry time.");
 }
 
 #[sqlx::test(fixtures("pastes"))]
 fn test_update(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(517_815_304_354_763_650);
-
+    let paste_id = Snowflake::new(517_815_304_354_284_601);
     let mut paste = Paste::fetch(&db, paste_id)
         .await
         .expect("Failed to fetch value from database.")
@@ -200,12 +222,19 @@ fn test_update(pool: PgPool) {
 
     assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
-    assert!(!paste.edited, "Mismatched edited.");
+    assert_eq!(
+        paste.edited,
+        Some(OffsetDateTime::from_unix_timestamp(86400).expect("failed to generate timestamp.")),
+        "Mismatched edited time."
+    );
 
     assert_eq!(
         paste.expiry,
-        Some(OffsetDateTime::from_unix_timestamp(0).expect("Failed to build expected timestamp.")),
-        "Mismatched expiry."
+        Some(
+            OffsetDateTime::from_unix_timestamp(172_800)
+                .expect("Failed to build expected timestamp.")
+        ),
+        "Mismatched expiry time."
     );
 
     let mut transaction = db
@@ -214,6 +243,7 @@ fn test_update(pool: PgPool) {
         .await
         .expect("Failed to make transaction.");
 
+    let current = OffsetDateTime::now_utc();
     paste.set_edited();
 
     paste.set_expiry(None);
@@ -233,16 +263,27 @@ fn test_update(pool: PgPool) {
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
 
-    assert!(result.edited, "Mismatched edited.");
+    let paste_edited = paste.edited.expect("Edited was not found.");
 
-    assert!(result.expiry.is_none(), "Mismatched expiry.");
+    assert_eq!(
+        paste_edited.date(),
+        current.date(),
+        "Mismatched edited Date."
+    );
+    assert_eq!(
+        paste_edited.to_hms(),
+        current.to_hms(),
+        "Mismatched edited HMS."
+    );
+
+    assert!(result.expiry.is_none(), "Mismatched expiry time.");
 }
 
 #[sqlx::test(fixtures("pastes"))]
 fn test_delete(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let paste_id = Snowflake::new(517_815_304_354_763_650);
+    let paste_id = Snowflake::new(517_815_304_354_284_601);
 
     Paste::fetch(&db, paste_id)
         .await
