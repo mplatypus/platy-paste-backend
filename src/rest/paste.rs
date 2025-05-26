@@ -39,18 +39,6 @@ pub fn generate_router(config: &Config) -> Router<App> {
         ),
     };
 
-    let get_pastes_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().get_pastes())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build get pastes limiter."),
-        ),
-    };
-
     let get_paste_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
@@ -100,7 +88,6 @@ pub fn generate_router(config: &Config) -> Router<App> {
     };
 
     Router::new()
-        .route("/pastes", get(get_pastes).layer(get_pastes_limiter))
         .route(
             "/pastes/{paste_id}",
             get(get_paste).layer(get_paste_limiter),
@@ -167,43 +154,6 @@ async fn get_paste(
     let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 
     Ok((StatusCode::OK, Json(paste_response)).into_response())
-}
-
-/// Get Pastes.
-///
-/// Get a list of existing pastes.
-///
-/// ## Body
-///
-/// An array of [`Snowflake`]'s.
-///
-/// ## Returns
-///
-/// - `200` - A list of [`ResponsePaste`] objects.
-async fn get_pastes(
-    State(app): State<App>,
-    Json(body): Json<Vec<Snowflake>>,
-) -> Result<Response, AppError> {
-    let mut response_pastes: Vec<ResponsePaste> = Vec::new();
-
-    for paste_id in body {
-        let paste = validate_paste(&app.database, paste_id, None).await?;
-
-        let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
-
-        let mut response_documents = Vec::new();
-        for document in documents {
-            let response_document = ResponseDocument::from_document(document, None);
-
-            response_documents.push(response_document);
-        }
-
-        let response_paste = ResponsePaste::from_paste(&paste, None, response_documents);
-
-        response_pastes.push(response_paste);
-    }
-
-    Ok((StatusCode::OK, Json(response_pastes)).into_response())
 }
 
 /// Post Paste.
