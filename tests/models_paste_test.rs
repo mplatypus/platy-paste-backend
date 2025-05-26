@@ -230,7 +230,10 @@ fn test_update(pool: PgPool) {
 
     assert_eq!(
         paste.expiry,
-        Some(OffsetDateTime::from_unix_timestamp(172_800).expect("Failed to build expected timestamp.")),
+        Some(
+            OffsetDateTime::from_unix_timestamp(172_800)
+                .expect("Failed to build expected timestamp.")
+        ),
         "Mismatched expiry time."
     );
 
