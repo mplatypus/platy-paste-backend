@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::app::application::App;
 use axum::{RequestPartsExt, extract::FromRequestParts, http::request::Parts};
 use axum_extra::{
@@ -13,6 +15,7 @@ use super::{
     snowflake::Snowflake,
 };
 
+#[derive(Clone, Debug)]
 pub struct Token {
     /// The paste ID the token is attached to.
     paste_id: Snowflake,
@@ -166,9 +169,16 @@ pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, AppError> {
         .map(|x| ascii.as_bytes()[(*x as usize) % ascii.len()] as char) // This maps the ascii table to the buffer
         .collect::<String>(); // Collect the items into a string.
 
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
+    let timestamp_encrypted = BASE64_URL_SAFE.encode(timestamp.to_string());
+
     let paste_id_encrypted = BASE64_URL_SAFE.encode(paste_id.to_string());
 
     Ok(SecretString::new(
-        format!("{paste_id_encrypted}.{unique_token}").into(),
+        format!("{paste_id_encrypted}.{timestamp_encrypted}.{unique_token}").into(),
     ))
 }

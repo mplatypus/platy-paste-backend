@@ -1,7 +1,13 @@
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
-use super::{authentication::Token, document::Document, paste::Paste, snowflake::Snowflake};
+use crate::app::config::Config;
+
+use super::{
+    authentication::Token, document::Document, paste::Paste, snowflake::Snowflake,
+    undefined::UndefinedOption,
+};
 
 #[derive(Deserialize)]
 pub struct IncludeContentQuery {
@@ -18,20 +24,65 @@ pub type PostPasteQuery = IncludeContentQuery;
 
 pub type PatchPasteQuery = IncludeContentQuery;
 
+pub type PostDocumentQuery = IncludeContentQuery;
+
+pub type PatchDocumentQuery = IncludeContentQuery;
+
 #[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
-    #[serde(default)]
-    pub expiry: Option<usize>,
+    #[serde(default, skip_serializing_if = "UndefinedOption::is_undefined")]
+    pub expiry: UndefinedOption<usize>,
 }
 
 pub type PostPasteBody = PasteBody;
 
 pub type PatchPasteBody = PasteBody;
 
-pub type PostDocumentQuery = IncludeContentQuery;
+#[derive(Serialize)]
+pub struct ResponseConfig {
+    /// The default expiry in hours.
+    pub default_expiry: Option<usize>,
+    /// The maximum expiry in hours.
+    pub maximum_expiry: Option<usize>,
+    /// The maximum document count.
+    pub maximum_document_count: usize,
+    /// The maximum individual document size in mb.
+    pub maximum_document_size: f64,
+    /// The maximum total size of all documents in mb. (includes payload)
+    pub maximum_total_document_size: f64,
+}
 
-pub type PatchDocumentQuery = IncludeContentQuery;
+impl ResponseConfig {
+    /// New.
+    ///
+    /// Create a new [`ResponseConfig`] object.
+    pub const fn new(
+        default_expiry: Option<usize>,
+        maximum_expiry: Option<usize>,
+        maximum_document_count: usize,
+        maximum_document_size: f64,
+        maximum_total_document_size: f64,
+    ) -> Self {
+        Self {
+            default_expiry,
+            maximum_expiry,
+            maximum_document_count,
+            maximum_document_size,
+            maximum_total_document_size,
+        }
+    }
+
+    pub const fn from_config(config: &Config) -> Self {
+        Self::new(
+            config.default_expiry_hours(),
+            config.maximum_expiry_hours(),
+            config.global_paste_total_document_count(),
+            config.global_paste_document_size_limit(),
+            config.global_paste_total_document_size_limit(),
+        )
+    }
+}
 
 #[derive(Serialize)]
 pub struct ResponsePaste {
@@ -40,9 +91,14 @@ pub struct ResponsePaste {
     /// The token attached to the paste.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// The time at which the paste was created.
+    #[serde(rename = "timestamp")]
+    pub creation: usize,
     /// Whether the paste has been edited.
-    pub edited: bool,
+    #[serde(rename = "edited_timestamp")]
+    pub edited: Option<usize>,
     /// The expiry time of the paste.
+    #[serde(rename = "expiry_timestamp")]
     pub expiry: Option<usize>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
@@ -52,18 +108,20 @@ impl ResponsePaste {
     /// New.
     ///
     /// Create a new [`ResponsePaste`] object.
-    pub const fn new(
+    pub fn new(
         id: Snowflake,
         token: Option<String>,
-        edited: bool,
-        expiry: Option<usize>,
+        creation: OffsetDateTime,
+        edited: Option<OffsetDateTime>,
+        expiry: Option<OffsetDateTime>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
             id,
             token,
-            edited,
-            expiry,
+            creation: creation.unix_timestamp() as usize,
+            edited: edited.map(|t| t.unix_timestamp() as usize),
+            expiry: expiry.map(|t| t.unix_timestamp() as usize),
             documents,
         }
     }
@@ -88,9 +146,14 @@ impl ResponsePaste {
     ) -> Self {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
-        let expiry = paste.expiry.map(|v| v.unix_timestamp() as usize);
-
-        Self::new(paste.id, token_value, paste.edited, expiry, documents)
+        Self::new(
+            paste.id,
+            token_value,
+            paste.creation,
+            paste.edited,
+            paste.expiry,
+            documents,
+        )
     }
 }
 

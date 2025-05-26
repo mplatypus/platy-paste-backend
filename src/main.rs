@@ -22,6 +22,7 @@ use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     let offset = UtcOffset::current_local_offset().expect("should get local offset!");
     let timer = OffsetTime::new(
@@ -86,7 +87,7 @@ async fn main() {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(state.config.global_rate_limiter())
+                .burst_size(state.config.rate_limits().global())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -97,6 +98,7 @@ async fn main() {
     let app = Router::new()
         .nest("/v1", rest::paste::generate_router(&state.config))
         .nest("/v1", rest::document::generate_router(&state.config))
+        .nest("/v1", rest::config::generate_router(&state.config))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)

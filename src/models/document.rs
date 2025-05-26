@@ -1,6 +1,6 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::{Executor, PgExecutor, Postgres};
+use sqlx::PgExecutor;
 
 use super::{error::AppError, snowflake::Snowflake};
 
@@ -136,6 +136,55 @@ impl Document {
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name, size FROM documents WHERE id = $1",
             paste_id
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        if let Some(q) = query {
+            return Ok(Some(Self::new(
+                q.id.into(),
+                q.paste_id.into(),
+                q.r#type,
+                q.name,
+                q.size as usize,
+            )));
+        }
+
+        Ok(None)
+    }
+
+    /// Fetch With Paste.
+    ///
+    /// Fetch a document via its ID, along with a paste ID.
+    ///
+    /// ## Arguments
+    ///
+    /// - `executor` - The database pool or transaction to use.
+    /// - `paste_id` - The ID of the paste.
+    /// - `id` - The ID of the document.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    ///
+    /// ## Returns
+    ///
+    /// - [`Option::Some`] - The [`Document`] object.
+    /// - [`Option::None`] - No document was found.
+    pub async fn fetch_with_paste<'e, 'c: 'e, E>(
+        executor: E,
+        paste_id: Snowflake,
+        id: Snowflake,
+    ) -> Result<Option<Self>, AppError>
+    where
+        E: 'e + PgExecutor<'c>,
+    {
+        let paste_id: i64 = paste_id.into();
+        let id: i64 = id.into();
+        let query = sqlx::query!(
+            "SELECT id, paste_id, type, name, size FROM documents WHERE paste_id = $1 AND id = $2",
+            paste_id,
+            id
         )
         .fetch_optional(executor)
         .await?;
