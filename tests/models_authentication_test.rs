@@ -33,7 +33,7 @@ fn test_fetch(pool: PgPool) {
     let token_string =
         "NTE3ODE1MzA0MzU0Mjg0NjAx.MTc0NzgxNjA1NA==.zYXUmCXIcnlvtAxJNJsUaDvRD".to_string();
 
-    let token = Token::fetch(&db, token_string.clone())
+    let token = Token::fetch(db.pool(), token_string.clone())
         .await
         .expect("Could not fetch a token.")
         .expect("No token found.");
@@ -54,7 +54,7 @@ fn test_fetch(pool: PgPool) {
 fn test_fetch_missing(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let token = Token::fetch(&db, "missing.token".to_string())
+    let token = Token::fetch(db.pool(), "missing.token".to_string())
         .await
         .expect("Could not fetch a token.");
 
@@ -70,23 +70,12 @@ fn test_insert(pool: PgPool) {
 
     let paste_token = Token::new(paste_id, token.clone());
 
-    let mut transaction = db
-        .pool()
-        .begin()
-        .await
-        .expect("Failed to make transaction.");
-
     paste_token
-        .insert(&mut transaction)
+        .insert(db.pool())
         .await
         .expect("Failed to insert paste token");
 
-    transaction
-        .commit()
-        .await
-        .expect("Failed to commit transaction");
-
-    let result_token = Token::fetch(&db, token.expose_secret().to_string())
+    let result_token = Token::fetch(db.pool(), token.expose_secret().to_string())
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste token was found.");
@@ -106,16 +95,16 @@ fn test_delete(pool: PgPool) {
     let token_string =
         "NTE3ODE1MzA0MzU0Mjg0NjAx.MTc0NzgxNjA1NA==.zYXUmCXIcnlvtAxJNJsUaDvRD".to_string();
 
-    Token::fetch(&db, token_string.clone())
+    Token::fetch(db.pool(), token_string.clone())
         .await
         .expect("Could not fetch a token.")
         .expect("No token found.");
 
-    Token::delete(&db, token_string.clone())
+    Token::delete(db.pool(), token_string.clone())
         .await
         .expect("Failed to delete value from database.");
 
-    let paste_token = Token::fetch(&db, token_string.clone())
+    let paste_token = Token::fetch(db.pool(), token_string.clone())
         .await
         .expect("Could not fetch a token.");
 

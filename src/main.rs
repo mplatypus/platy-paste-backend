@@ -142,7 +142,7 @@ async fn main() {
         Err(e) => {
             tracing::error!("Failed to cleanly shutdown message task! Reason: {e}");
         }
-    };
+    }
 }
 
 async fn fallback() -> Response {

@@ -163,7 +163,7 @@ fn test_fetch(pool: PgPool) {
 
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    let document = Document::fetch(&db, document_id)
+    let document = Document::fetch(db.pool(), document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No document was found.");
@@ -193,7 +193,7 @@ fn test_fetch_missing(pool: PgPool) {
     let document_id = Snowflake::new(456);
 
     assert!(
-        Document::fetch(&db, document_id)
+        Document::fetch(db.pool(), document_id)
             .await
             .expect("Failed to fetch value from database.")
             .is_none()
@@ -207,7 +207,7 @@ fn test_fetch_with_paste(pool: PgPool) {
     let paste_id = Snowflake::new(517_815_304_354_284_601);
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    let document = Document::fetch_with_paste(&db, paste_id, document_id)
+    let document = Document::fetch_with_paste(db.pool(), paste_id, document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No document was found.");
@@ -234,7 +234,7 @@ fn test_fetch_with_paste_missing(pool: PgPool) {
     let document_id = Snowflake::new(456);
 
     assert!(
-        Document::fetch_with_paste(&db, paste_id, document_id)
+        Document::fetch_with_paste(db.pool(), paste_id, document_id)
             .await
             .expect("Failed to fetch value from database.")
             .is_none()
@@ -247,7 +247,7 @@ fn test_fetch_all(pool: PgPool) {
 
     let paste_id = Snowflake::new(517_815_304_354_284_603);
 
-    let documents = Document::fetch_all(&db, paste_id)
+    let documents = Document::fetch_all(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.");
 
@@ -285,7 +285,7 @@ fn test_fetch_all_missing(pool: PgPool) {
     let paste_id = Snowflake::new(456);
 
     assert!(
-        Document::fetch_all(&db, paste_id)
+        Document::fetch_all(db.pool(), paste_id)
             .await
             .expect("Failed to fetch value from database.")
             .is_empty()
@@ -310,23 +310,12 @@ fn test_insert(pool: PgPool) {
         size,
     );
 
-    let mut transaction = db
-        .pool()
-        .begin()
-        .await
-        .expect("Failed to make transaction.");
-
     document
-        .insert(&mut transaction)
+        .insert(db.pool())
         .await
         .expect("Failed to insert paste");
 
-    transaction
-        .commit()
-        .await
-        .expect("Failed to commit transaction");
-
-    let result = Document::fetch(&db, document_id)
+    let result = Document::fetch(db.pool(), document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No document was found.");
@@ -351,7 +340,7 @@ fn test_update(pool: PgPool) {
 
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    let mut document = Document::fetch(&db, document_id)
+    let mut document = Document::fetch(db.pool(), document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("Document was not found.");
@@ -385,23 +374,12 @@ fn test_update(pool: PgPool) {
 
     document.set_size(new_size);
 
-    let mut transaction = db
-        .pool()
-        .begin()
-        .await
-        .expect("Failed to make transaction.");
-
     document
-        .update(&mut transaction)
+        .update(db.pool())
         .await
         .expect("Failed to update paste.");
 
-    transaction
-        .commit()
-        .await
-        .expect("Failed to commit transaction");
-
-    let result_document = Document::fetch(&db, document_id)
+    let result_document = Document::fetch(db.pool(), document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("Document was not found.");
@@ -430,16 +408,16 @@ fn test_delete(pool: PgPool) {
 
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    Document::fetch(&db, document_id)
+    Document::fetch(db.pool(), document_id)
         .await
         .expect("Could not fetch a document.")
         .expect("No token found.");
 
-    Document::delete(&db, document_id)
+    Document::delete(db.pool(), document_id)
         .await
         .expect("Failed to delete value from database.");
 
-    let paste_token = Document::fetch(&db, document_id)
+    let paste_token = Document::fetch(db.pool(), document_id)
         .await
         .expect("Could not fetch a token.");
 

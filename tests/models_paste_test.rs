@@ -84,7 +84,7 @@ fn test_fetch(pool: PgPool) {
     let expiry =
         OffsetDateTime::from_unix_timestamp(172_800).expect("failed to generate expiry timestamp.");
 
-    let paste = Paste::fetch(&db, paste_id)
+    let paste = Paste::fetch(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
@@ -105,7 +105,7 @@ fn test_fetch_missing(pool: PgPool) {
     let id = Snowflake::new(123);
 
     assert!(
-        Paste::fetch(&db, id)
+        Paste::fetch(db.pool(), id)
             .await
             .expect("Failed to fetch value from database.")
             .is_none()
@@ -117,7 +117,7 @@ fn test_fetch_between(pool: PgPool) {
     let db = Database::from_pool(pool);
 
     let results = Paste::fetch_between(
-        &db,
+        db.pool(),
         OffsetDateTime::new_utc(
             Date::from_calendar_date(1970, time::Month::January, 2)
                 .expect("Failed to build date start."),
@@ -148,7 +148,7 @@ fn test_fetch_between_missing(pool: PgPool) {
     let db = Database::from_pool(pool);
 
     let results = Paste::fetch_between(
-        &db,
+        db.pool(),
         OffsetDateTime::new_utc(
             Date::from_calendar_date(2000, time::Month::January, 1)
                 .expect("Failed to build date start."),
@@ -180,23 +180,12 @@ fn test_insert(pool: PgPool) {
 
     let paste = Paste::new(paste_id, creation, Some(edited), Some(expiry));
 
-    let mut transaction = db
-        .pool()
-        .begin()
-        .await
-        .expect("Failed to make transaction.");
-
     paste
-        .insert(&mut transaction)
+        .insert(db.pool())
         .await
         .expect("Failed to insert paste");
 
-    transaction
-        .commit()
-        .await
-        .expect("Failed to commit transaction");
-
-    let result = Paste::fetch(&db, paste_id)
+    let result = Paste::fetch(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
@@ -215,7 +204,7 @@ fn test_update(pool: PgPool) {
     let db = Database::from_pool(pool);
 
     let paste_id = Snowflake::new(517_815_304_354_284_601);
-    let mut paste = Paste::fetch(&db, paste_id)
+    let mut paste = Paste::fetch(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
@@ -237,28 +226,18 @@ fn test_update(pool: PgPool) {
         "Mismatched expiry time."
     );
 
-    let mut transaction = db
-        .pool()
-        .begin()
-        .await
-        .expect("Failed to make transaction.");
-
     let current = OffsetDateTime::now_utc();
+
     paste.set_edited();
 
     paste.set_expiry(None);
 
     paste
-        .update(&mut transaction)
+        .update(db.pool())
         .await
         .expect("Failed to update paste.");
 
-    transaction
-        .commit()
-        .await
-        .expect("Failed to commit transaction");
-
-    let result = Paste::fetch(&db, paste_id)
+    let result = Paste::fetch(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
@@ -285,16 +264,16 @@ fn test_delete(pool: PgPool) {
 
     let paste_id = Snowflake::new(517_815_304_354_284_601);
 
-    Paste::fetch(&db, paste_id)
+    Paste::fetch(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
 
-    Paste::delete(&db, paste_id)
+    Paste::delete(db.pool(), paste_id)
         .await
         .expect("Failed to delete value from database.");
 
-    let result = Paste::fetch(&db, paste_id)
+    let result = Paste::fetch(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.");
 

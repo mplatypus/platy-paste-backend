@@ -145,7 +145,7 @@ async fn get_paste(
 ) -> Result<Response, AppError> {
     let paste = validate_paste(&app.database, paste_id, None).await?;
 
-    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
     let mut response_documents = Vec::new();
     for document in documents {
@@ -189,7 +189,7 @@ async fn get_pastes(
     for paste_id in body {
         let paste = validate_paste(&app.database, paste_id, None).await?;
 
-        let documents = Document::fetch_all(&app.database, paste.id).await?;
+        let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
         let mut response_documents = Vec::new();
         for document in documents {
@@ -265,7 +265,7 @@ async fn post_paste(
         expiry.to_option(),
     );
 
-    paste.insert(&mut transaction).await?;
+    paste.insert(transaction.as_mut()).await?;
 
     let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -334,12 +334,12 @@ async fn post_paste(
     for (document, content) in documents {
         app.s3.create_document(&document, content.into()).await?;
 
-        document.insert(&mut transaction).await?;
+        document.insert(transaction.as_mut()).await?;
     }
 
     let paste_token = Token::new(paste.id, generate_token(paste.id)?);
 
-    paste_token.insert(&mut transaction).await?;
+    paste_token.insert(transaction.as_mut()).await?;
 
     transaction.commit().await?;
 
@@ -390,13 +390,9 @@ async fn patch_paste(
         paste.set_expiry(new_expiry.to_option());
     }
 
-    let mut transaction = app.database.pool().begin().await?;
+    paste.update(app.database.pool()).await?;
 
-    paste.update(&mut transaction).await?;
-
-    transaction.commit().await?;
-
-    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
     let mut response_documents = Vec::new();
     for document in documents {
@@ -449,7 +445,7 @@ async fn delete_paste(
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    if !Paste::delete(&app.database, paste_id).await? {
+    if !Paste::delete(app.database.pool(), paste_id).await? {
         return Err(AppError::NotFound("The paste was not found.".to_string()));
     }
 

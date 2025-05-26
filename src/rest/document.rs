@@ -127,7 +127,7 @@ async fn get_document(
     State(app): State<App>,
     Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
 ) -> Result<Response, AppError> {
-    let document = Document::fetch_with_paste(&app.database, paste_id, document_id)
+    let document = Document::fetch(app.database.pool(), document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -191,7 +191,7 @@ async fn post_document(
     };
 
     let total_document_count =
-        Document::fetch_total_document_count(&app.database, paste.id).await?;
+        Document::fetch_total_document_count(app.database.pool(), paste.id).await?;
 
     if app.config.global_paste_total_document_count() < (total_document_count + 1) {
         return Err(AppError::BadRequest(
@@ -199,7 +199,8 @@ async fn post_document(
         ));
     }
 
-    let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
+    let total_document_size =
+        Document::fetch_total_document_size(app.database.pool(), paste_id).await?;
 
     if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
         < (total_document_size + body.len()) as f64
@@ -223,9 +224,9 @@ async fn post_document(
 
     paste.set_edited();
 
-    paste.update(&mut transaction).await?;
+    paste.update(transaction.as_mut()).await?;
 
-    document.insert(&mut transaction).await?;
+    document.insert(transaction.as_mut()).await?;
 
     app.s3.create_document(&document, body.clone()).await?;
 
@@ -295,7 +296,8 @@ async fn patch_document(
         }
     };
 
-    let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
+    let total_document_size =
+        Document::fetch_total_document_size(app.database.pool(), paste_id).await?;
 
     if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
         >= (total_document_size + body.len()) as f64
@@ -305,7 +307,7 @@ async fn patch_document(
         ));
     }
 
-    let mut document = Document::fetch_with_paste(&app.database, paste_id, document_id)
+    let mut document = Document::fetch(app.database.pool(), document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -313,7 +315,7 @@ async fn patch_document(
 
     paste.set_edited();
 
-    paste.update(&mut transaction).await?;
+    paste.update(transaction.as_mut()).await?;
 
     document.set_document_type(document_type);
 
@@ -323,7 +325,7 @@ async fn patch_document(
         document.set_name(filename);
     }
 
-    document.update(&mut transaction).await?;
+    document.update(transaction.as_mut()).await?;
 
     app.s3.delete_document(document.generate_path()).await?;
 
@@ -369,7 +371,7 @@ async fn delete_document(
     }
 
     let total_document_count =
-        Document::fetch_total_document_count(&app.database, paste_id).await?;
+        Document::fetch_total_document_count(app.database.pool(), paste_id).await?;
 
     if total_document_count <= 1 {
         return Err(AppError::BadRequest(
@@ -377,7 +379,7 @@ async fn delete_document(
         ));
     }
 
-    if !Document::delete(&app.database, document_id).await? {
+    if !Document::delete(app.database.pool(), document_id).await? {
         return Err(AppError::NotFound(
             "The document was not found.".to_string(),
         ));
