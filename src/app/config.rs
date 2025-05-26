@@ -218,8 +218,6 @@ pub struct RateLimitConfig {
     global: u32,
     /// Global paste rate limiter.
     global_paste: u32,
-    /// Get pastes rate limiter.
-    get_pastes: u32,
     /// Get paste rate limiter.
     get_paste: u32,
     /// Post paste rate limiter.
@@ -270,12 +268,6 @@ impl RateLimitConfig {
                         .expect("RATE_LIMIT_GLOBAL_PASTE requires an integer.")
                 },
             ))
-            .get_pastes(
-                std::env::var("RATE_LIMIT_GET_PASTES").map_or(defaults.get_pastes, |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_GET_PASTES requires an integer.")
-                }),
-            )
             .get_paste(
                 std::env::var("RATE_LIMIT_GET_PASTE").map_or(defaults.get_paste, |v| {
                     v.parse()
@@ -362,10 +354,6 @@ impl RateLimitConfig {
         self.global_paste
     }
 
-    pub const fn get_pastes(&self) -> u32 {
-        self.get_pastes
-    }
-
     pub const fn get_paste(&self) -> u32 {
         self.get_paste
     }
@@ -416,7 +404,6 @@ impl Default for RateLimitConfig {
         Self {
             global: 800,
             global_paste: 500,
-            get_pastes: 40,
             get_paste: 200,
             post_paste: 100,
             patch_paste: 120,
