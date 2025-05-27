@@ -26,13 +26,15 @@ pub struct Config {
     maximum_expiry_hours: Option<usize>,
     /// The default expiry for pastes.
     default_expiry_hours: Option<usize>,
+    /// The default value for maximum views.
+    default_maximum_views: Option<usize>,
     /// The maximum allowed documents in a paste.
     global_paste_total_document_count: usize,
     /// Maximum paste body size.
     global_paste_total_document_size_limit: f64,
     /// Individual paste document size.
     global_paste_document_size_limit: f64,
-    // Rate limits.
+    /// Rate limits.
     rate_limits: RateLimitConfig,
 }
 
@@ -85,6 +87,15 @@ impl Config {
                 v.parse()
                     .expect("DEFAULT_EXPIRY_HOURS requires an integer.")
             }))
+            .default_maximum_views(std::env::var("DEFAULT_MAXIMUM_VIEWS").map_or(
+                Self::default().default_maximum_views,
+                |v| {
+                    Some(
+                        v.parse()
+                            .expect("DEFAULT_MAXIMUM_VIEWS requires an integer."),
+                    )
+                },
+            ))
             .global_paste_total_document_count(
                 std::env::var("GLOBAL_PASTE_TOTAL_DOCUMENT_COUNT").map_or(
                     Self::default().global_paste_total_document_count,
@@ -172,6 +183,10 @@ impl Config {
         self.default_expiry_hours
     }
 
+    pub const fn default_maximum_views(&self) -> Option<usize> {
+        self.default_maximum_views
+    }
+
     pub const fn global_paste_total_document_count(&self) -> usize {
         self.global_paste_total_document_count
     }
@@ -203,6 +218,7 @@ impl Default for Config {
             domain: String::default(),
             maximum_expiry_hours: None,
             default_expiry_hours: None,
+            default_maximum_views: None,
             global_paste_total_document_count: 10,
             global_paste_total_document_size_limit: 100.0,
             global_paste_document_size_limit: 15.0,

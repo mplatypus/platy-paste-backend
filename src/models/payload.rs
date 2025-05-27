@@ -33,9 +33,9 @@ pub struct PasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
     pub expiry: UndefinedOption<usize>,
-    /// The maximum allowed views for a paste.
+    /// The maximum allowed views for the paste.
     #[serde(default)]
-    pub max_views: Option<usize>,
+    pub max_views: UndefinedOption<usize>,
 }
 
 pub type PostPasteBody = PasteBody;

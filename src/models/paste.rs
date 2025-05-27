@@ -320,6 +320,15 @@ pub async fn validate_paste(
         }
     }
 
+    if let Some(max_views) = paste.max_views {
+        if paste.views >= max_views {
+            Paste::delete(db.pool(), paste_id).await?;
+            return Err(AppError::NotFound(
+                "The paste requested could not be found".to_string(),
+            ));
+        }
+    }
+
     if let Some(token) = token {
         if paste.id != token.paste_id() {
             return Err(AppError::Authentication(AuthError::ForbiddenPasteId));

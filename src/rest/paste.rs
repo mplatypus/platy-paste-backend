@@ -208,6 +208,14 @@ async fn post_paste(
 
     let expiry = validate_expiry(&app.config, body.expiry)?;
 
+    let max_views = {
+        match body.max_views {
+            UndefinedOption::Undefined => app.config.default_maximum_views(),
+            UndefinedOption::Some(max_views) => Some(max_views),
+            UndefinedOption::None => None,
+        }
+    };
+
     let mut transaction = app.database.pool().begin().await?;
 
     let paste = Paste::new(
@@ -216,7 +224,7 @@ async fn post_paste(
         None,
         expiry.to_option(),
         0,
-        body.max_views,
+        max_views,
     );
 
     paste.insert(transaction.as_mut()).await?;
@@ -506,6 +514,7 @@ mod tests {
             .domain(String::new())
             .maximum_expiry_hours(maximum_expiry_hours)
             .default_expiry_hours(default_expiry_hours)
+            .default_maximum_views(None)
             .global_paste_total_document_count(0)
             .global_paste_total_document_size_limit(0.0)
             .global_paste_document_size_limit(0.0)
