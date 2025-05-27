@@ -20,7 +20,7 @@ use crate::{
         authentication::Token,
         document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
-        paste::Paste,
+        paste::validate_paste,
         payload::{PatchDocumentQuery, PostDocumentQuery, ResponseDocument},
         snowflake::Snowflake,
     },
@@ -31,7 +31,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.global_document_rate_limiter())
+                .burst_size(config.rate_limits().global_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -43,7 +43,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_document_rate_limiter())
+                .burst_size(config.rate_limits().get_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -55,7 +55,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.post_document_rate_limiter())
+                .burst_size(config.rate_limits().post_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -67,7 +67,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.patch_document_rate_limiter())
+                .burst_size(config.rate_limits().patch_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -79,7 +79,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.delete_document_rate_limiter())
+                .burst_size(config.rate_limits().delete_document())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -106,7 +106,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         )
         .layer(global_limiter)
         .layer(DefaultBodyLimit::max(
-            config.global_paste_total_document_size_limit() * 1024 * 1024,
+            (config.global_paste_total_document_size_limit() * 1024.0 * 1024.0) as usize,
         ))
 }
 
@@ -127,7 +127,7 @@ async fn get_document(
     State(app): State<App>,
     Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
 ) -> Result<Response, AppError> {
-    let document = Document::fetch(&app.database, document_id)
+    let document = Document::fetch(app.database.pool(), document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -174,9 +174,7 @@ async fn post_document(
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
-    }
+    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
@@ -192,12 +190,8 @@ async fn post_document(
         }
     };
 
-    let mut paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
-
     let total_document_count =
-        Document::fetch_total_document_count(&app.database, paste.id).await?;
+        Document::fetch_total_document_count(app.database.pool(), paste.id).await?;
 
     if app.config.global_paste_total_document_count() < (total_document_count + 1) {
         return Err(AppError::BadRequest(
@@ -205,10 +199,11 @@ async fn post_document(
         ));
     }
 
-    let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
+    let total_document_size =
+        Document::fetch_total_document_size(app.database.pool(), paste_id).await?;
 
-    if (app.config.global_paste_total_document_size_limit() * 1024 * 1024)
-        < (total_document_size + body.len())
+    if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
+        < (total_document_size + body.len()) as f64
     {
         return Err(AppError::BadRequest(
             "The new content exceeds the total document limit.".to_string(),
@@ -229,11 +224,9 @@ async fn post_document(
 
     paste.set_edited();
 
-    paste.update(&mut transaction).await?;
+    paste.update(transaction.as_mut()).await?;
 
-    document.update(&mut transaction).await?;
-
-    app.s3.delete_document(document.generate_path()).await?;
+    document.insert(transaction.as_mut()).await?;
 
     app.s3.create_document(&document, body.clone()).await?;
 
@@ -287,9 +280,7 @@ async fn patch_document(
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
-    }
+    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
@@ -305,21 +296,18 @@ async fn patch_document(
         }
     };
 
-    let mut paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
+    let total_document_size =
+        Document::fetch_total_document_size(app.database.pool(), paste_id).await?;
 
-    let total_document_size = Document::fetch_total_document_size(&app.database, paste_id).await?;
-
-    if (app.config.global_paste_total_document_size_limit() * 1024 * 1024)
-        >= (total_document_size + body.len())
+    if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
+        >= (total_document_size + body.len()) as f64
     {
         return Err(AppError::BadRequest(
             "The new content exceeds the total document limit.".to_string(),
         ));
     }
 
-    let mut document = Document::fetch(&app.database, document_id)
+    let mut document = Document::fetch(app.database.pool(), document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -327,7 +315,7 @@ async fn patch_document(
 
     paste.set_edited();
 
-    paste.update(&mut transaction).await?;
+    paste.update(transaction.as_mut()).await?;
 
     document.set_document_type(document_type);
 
@@ -337,7 +325,7 @@ async fn patch_document(
         document.set_name(filename);
     }
 
-    document.update(&mut transaction).await?;
+    document.update(transaction.as_mut()).await?;
 
     app.s3.delete_document(document.generate_path()).await?;
 
@@ -383,7 +371,7 @@ async fn delete_document(
     }
 
     let total_document_count =
-        Document::fetch_total_document_count(&app.database, paste_id).await?;
+        Document::fetch_total_document_count(app.database.pool(), paste_id).await?;
 
     if total_document_count <= 1 {
         return Err(AppError::BadRequest(
@@ -391,7 +379,7 @@ async fn delete_document(
         ));
     }
 
-    if !Document::delete(&app.database, document_id).await? {
+    if !Document::delete(app.database.pool(), document_id).await? {
         return Err(AppError::NotFound(
             "The document was not found.".to_string(),
         ));

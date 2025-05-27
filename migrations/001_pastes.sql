@@ -1,10 +1,12 @@
 CREATE TABLE IF NOT EXISTS pastes (
     -- The unique ID for the paste.
     "id" BIGINT NOT NULL PRIMARY KEY,
+    -- When the paste was created.
+    "creation" TIMESTAMPTZ NOT NULL,
     -- Whether the paste has been modified.
-    "edited" BOOLEAN NOT NULL,
+    "edited" TIMESTAMPTZ,
     -- The expiry of the paste.
-    "expiry" TIMESTAMP WITH TIME ZONE,
+    "expiry" TIMESTAMPTZ,
     -- The total amount of views of the paste.
     "views" BIGINT NOT NULL,
     -- The maximum amount of views allowed for the paste.

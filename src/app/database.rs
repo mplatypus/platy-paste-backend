@@ -23,6 +23,20 @@ impl Database {
         }
     }
 
+    /// From Pool
+    ///
+    /// Create a new database instance with a pre-connected pool.
+    ///
+    /// ## Arguments
+    ///
+    /// - `pool` - The pool to use.
+    pub const fn from_pool(pool: PgPool) -> Self {
+        Self {
+            pool: Some(pool),
+            app: Weak::new(),
+        }
+    }
+
     pub fn bind_to(&mut self, app: Weak<ApplicationState>) {
         self.app = app;
     }

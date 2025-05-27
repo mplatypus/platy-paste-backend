@@ -6,11 +6,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    num::ParseIntError,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::num::ParseIntError;
 use thiserror::Error;
+use time::OffsetDateTime;
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
@@ -60,10 +58,7 @@ impl IntoResponse for AppError {
             tracing::error!(error = %self);
         }
         let body = Json(ErrorResponse {
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Could not fetch current time.")
-                .as_secs(),
+            timestamp: OffsetDateTime::now_utc().unix_timestamp() as u64,
             reason: String::from(reason),
             trace: Some(trace), // This should only appear if the trace is requested (the query contains trace=True)
         });
@@ -112,10 +107,7 @@ impl IntoResponse for AuthError {
         };
 
         let body = Json(ErrorResponse {
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Could not fetch current time.")
-                .as_secs(),
+            timestamp: OffsetDateTime::now_utc().unix_timestamp() as u64,
             reason: String::from(reason),
             trace: None,
         });

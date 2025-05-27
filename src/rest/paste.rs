@@ -16,12 +16,13 @@ use crate::{
         authentication::{Token, generate_token},
         document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
-        paste::Paste,
+        paste::{Paste, validate_paste},
         payload::{
             GetPasteQuery, PatchPasteBody, PatchPasteQuery, PostPasteBody, PostPasteQuery,
             ResponseDocument, ResponsePaste,
         },
         snowflake::Snowflake,
+        undefined::UndefinedOption,
     },
 };
 
@@ -30,7 +31,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.global_paste_rate_limiter())
+                .burst_size(config.rate_limits().global_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -38,23 +39,11 @@ pub fn generate_router(config: &Config) -> Router<App> {
         ),
     };
 
-    let get_pastes_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.get_pastes_rate_limiter())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build get pastes limiter."),
-        ),
-    };
-
     let get_paste_limiter = GovernorLayer {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.get_paste_rate_limiter())
+                .burst_size(config.rate_limits().get_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -66,7 +55,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.post_paste_rate_limiter())
+                .burst_size(config.rate_limits().post_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -78,7 +67,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.patch_paste_rate_limiter())
+                .burst_size(config.rate_limits().patch_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -90,7 +79,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(config.delete_paste_rate_limiter())
+                .burst_size(config.rate_limits().delete_paste())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -99,7 +88,6 @@ pub fn generate_router(config: &Config) -> Router<App> {
     };
 
     Router::new()
-        .route("/pastes", get(get_pastes).layer(get_pastes_limiter))
         .route(
             "/pastes/{paste_id}",
             get(get_paste).layer(get_paste_limiter),
@@ -115,7 +103,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         )
         .layer(global_limiter)
         .layer(DefaultBodyLimit::max(
-            config.global_paste_total_document_size_limit() * 1024 * 1024,
+            (config.global_paste_total_document_size_limit() * 1024.0 * 1024.0) as usize,
         ))
 }
 
@@ -142,29 +130,9 @@ async fn get_paste(
     Path(paste_id): Path<Snowflake>,
     Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
-    let mut paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
+    let mut paste = validate_paste(&app.database, paste_id, None).await?;
 
-    if let Some(expiry) = paste.expiry {
-        if expiry < OffsetDateTime::now_utc() {
-            Paste::delete(&app.database, paste.id).await?;
-            return Err(AppError::NotFound("Paste not found.".to_string()));
-        }
-    }
-
-    if let Some(max_views) = paste.max_views {
-        if paste.views + 1 > max_views {
-            Paste::delete(&app.database, paste.id).await?;
-            return Err(AppError::NotFound("Paste not found.".to_string()));
-        }
-    }
-
-    let mut transaction = app.database.pool().begin().await?;
-
-    paste.add_view(&mut transaction).await?;
-
-    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
     let mut response_documents = Vec::new();
     for document in documents {
@@ -183,69 +151,11 @@ async fn get_paste(
         response_documents.push(response_document);
     }
 
-    transaction.commit().await?;
+    paste.add_view(app.database.pool()).await?;
 
     let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 
     Ok((StatusCode::OK, Json(paste_response)).into_response())
-}
-
-/// Get Pastes.
-///
-/// Get a list of existing pastes.
-///
-/// ## Body
-///
-/// An array of [`Snowflake`]'s.
-///
-/// ## Returns
-///
-/// - `200` - A list of [`ResponsePaste`] objects.
-async fn get_pastes(
-    State(app): State<App>,
-    Json(body): Json<Vec<Snowflake>>,
-) -> Result<Response, AppError> {
-    let mut response_pastes: Vec<ResponsePaste> = Vec::new();
-
-    let mut transaction = app.database.pool().begin().await?;
-    for paste_id in body {
-        let mut paste = Paste::fetch(&app.database, paste_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
-
-        if let Some(max_views) = paste.max_views {
-            if paste.views + 1 > max_views {
-                Paste::delete(&app.database, paste.id).await?;
-                return Err(AppError::NotFound("Paste not found.".to_string()));
-            }
-        }
-
-        paste.add_view(&mut transaction).await?;
-
-        if let Some(expiry) = paste.expiry {
-            if expiry < OffsetDateTime::now_utc() {
-                Paste::delete(&app.database, paste.id).await?;
-                return Err(AppError::NotFound("Paste not found.".to_string()));
-            }
-        }
-
-        let documents = Document::fetch_all(&app.database, paste.id).await?;
-
-        let mut response_documents = Vec::new();
-        for document in documents {
-            let response_document = ResponseDocument::from_document(document, None);
-
-            response_documents.push(response_document);
-        }
-
-        let response_paste = ResponsePaste::from_paste(&paste, None, response_documents);
-
-        response_pastes.push(response_paste);
-    }
-
-    transaction.commit().await?;
-
-    Ok((StatusCode::OK, Json(response_pastes)).into_response())
 }
 
 /// Post Paste.
@@ -300,9 +210,16 @@ async fn post_paste(
 
     let mut transaction = app.database.pool().begin().await?;
 
-    let paste = Paste::new(Snowflake::generate()?, false, expiry, 0, body.max_views);
+    let paste = Paste::new(
+        Snowflake::generate()?,
+        OffsetDateTime::now_utc(),
+        None,
+        expiry.to_option(),
+        0,
+        body.max_views,
+    );
 
-    paste.insert(&mut transaction).await?;
+    paste.insert(transaction.as_mut()).await?;
 
     let mut documents: Vec<(Document, String)> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
@@ -328,7 +245,7 @@ async fn post_paste(
             .to_string();
         let data = field.bytes().await?;
 
-        if data.len() > (app.config.global_paste_document_size_limit() * 1024 * 1024) {
+        if data.len() as f64 > (app.config.global_paste_document_size_limit() * 1024.0 * 1024.0) {
             return Err(AppError::NotFound("Document too large.".to_string()));
         }
 
@@ -371,12 +288,12 @@ async fn post_paste(
     for (document, content) in documents {
         app.s3.create_document(&document, content.into()).await?;
 
-        document.insert(&mut transaction).await?;
+        document.insert(transaction.as_mut()).await?;
     }
 
     let paste_token = Token::new(paste.id, generate_token(paste.id)?);
 
-    paste_token.insert(&mut transaction).await?;
+    paste_token.insert(transaction.as_mut()).await?;
 
     transaction.commit().await?;
 
@@ -419,32 +336,17 @@ async fn patch_paste(
     token: Token,
     Json(body): Json<PatchPasteBody>,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
-    }
-
-    let mut paste = Paste::fetch(&app.database, paste_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Paste not found.".to_string()))?;
-
-    if let Some(expiry) = paste.expiry {
-        if expiry < OffsetDateTime::now_utc() {
-            Paste::delete(&app.database, paste.id).await?;
-            return Err(AppError::NotFound("Paste not found.".to_string()));
-        }
-    }
+    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
 
     let new_expiry = validate_expiry(&app.config, body.expiry)?;
 
-    paste.set_expiry(new_expiry);
+    if !new_expiry.is_undefined() {
+        paste.set_expiry(new_expiry.to_option());
+    }
 
-    let mut transaction = app.database.pool().begin().await?;
+    paste.update(app.database.pool()).await?;
 
-    paste.update(&mut transaction).await?;
-
-    transaction.commit().await?;
-
-    let documents = Document::fetch_all(&app.database, paste.id).await?;
+    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
     let mut response_documents = Vec::new();
     for document in documents {
@@ -497,7 +399,7 @@ async fn delete_paste(
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    if !Paste::delete(&app.database, paste_id).await? {
+    if !Paste::delete(app.database.pool(), paste_id).await? {
         return Err(AppError::NotFound("The paste was not found.".to_string()));
     }
 
@@ -516,48 +418,457 @@ async fn delete_paste(
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - The app error returned, if the provided expiry is invalid.
+/// - [`AppError`] - The app error returned, if the provided expiry is invalid, or a timestamp was required.
 ///
 /// ## Returns
 ///
-/// - [`Option::Some`] - The [`OffsetDateTime`] that was extracted, or defaulted to.
-/// - [`Option::None`] - No datetime was provided, and no default was set.
+/// - [`UndefinedOption::Some`] - The [`OffsetDateTime`] that was extracted, or defaulted to.
+/// - [`UndefinedOption::Undefined`] - No default set, and it was undefined.
+/// - [`UndefinedOption::None`] - None was given, and no maximum expiry has been set.
 fn validate_expiry(
     config: &Config,
-    expiry: Option<usize>,
-) -> Result<Option<OffsetDateTime>, AppError> {
-    if expiry.is_none()
-        && config.default_expiry_hours().is_none()
-        && config.maximum_expiry_hours().is_some()
-    {
-        Err(AppError::BadRequest(
-            "A expiry time is required.".to_string(),
-        ))
-    } else if let Some(expiry) = expiry {
-        let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
-            .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
-        let now = OffsetDateTime::now_utc();
-        let difference = (time - now).whole_seconds();
+    expiry: UndefinedOption<usize>,
+) -> Result<UndefinedOption<OffsetDateTime>, AppError> {
+    match expiry {
+        UndefinedOption::Some(expiry) => {
+            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
+                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
+            let now = OffsetDateTime::now_utc();
 
-        if difference.is_negative() {
-            return Err(AppError::BadRequest(
-                "The timestamp provided is invalid.".to_string(),
-            ));
-        }
+            let difference = time - now;
 
-        if let Some(maximum_expiry_hours) = config.maximum_expiry_hours() {
-            if difference as usize > maximum_expiry_hours * 3600 {
+            if difference.is_negative() {
                 return Err(AppError::BadRequest(
-                    "The timestamp provided is above the maximum.".to_string(),
+                    "The timestamp provided is invalid.".to_string(),
                 ));
             }
-        }
 
-        Ok(Some(time))
-    } else {
-        Ok(config.default_expiry_hours().map(|default_expiry_time| {
-            OffsetDateTime::now_utc()
-                .saturating_add(time::Duration::hours(default_expiry_time as i64))
-        }))
+            if let Some(maximum_expiry_hours) = config.maximum_expiry_hours() {
+                if difference > time::Duration::hours(maximum_expiry_hours as i64) {
+                    return Err(AppError::BadRequest(
+                        "The timestamp provided is above the maximum.".to_string(),
+                    ));
+                }
+            }
+
+            Ok(UndefinedOption::Some(time))
+        }
+        UndefinedOption::Undefined => {
+            if let Some(default_expiry_hours) = config.default_expiry_hours() {
+                return Ok(UndefinedOption::Some(
+                    OffsetDateTime::now_utc()
+                        .saturating_add(time::Duration::hours(default_expiry_hours as i64)),
+                ));
+            }
+
+            if config.maximum_expiry_hours().is_some() {
+                return Err(AppError::BadRequest(
+                    "Timestamp must be provided.".to_string(),
+                ));
+            }
+
+            Ok(UndefinedOption::Undefined)
+        }
+        UndefinedOption::None => {
+            if config.maximum_expiry_hours().is_some() {
+                return Err(AppError::BadRequest(
+                    "Timestamp must be provided.".to_string(),
+                ));
+            }
+
+            Ok(UndefinedOption::None)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        app::config::{Config, RateLimitConfigBuilder},
+        models::error::AppError,
+    };
+    use time::Duration;
+
+    fn make_config(
+        maximum_expiry_hours: Option<usize>,
+        default_expiry_hours: Option<usize>,
+    ) -> Config {
+        Config::builder()
+            .host(String::new())
+            .port(5454)
+            .database_url(String::new())
+            .s3_url(String::new())
+            .s3_access_key(String::new().into())
+            .s3_secret_key(String::new().into())
+            .minio_root_user(String::new())
+            .minio_root_password(String::new().into())
+            .domain(String::new())
+            .maximum_expiry_hours(maximum_expiry_hours)
+            .default_expiry_hours(default_expiry_hours)
+            .global_paste_total_document_count(0)
+            .global_paste_total_document_size_limit(0.0)
+            .global_paste_document_size_limit(0.0)
+            .rate_limits(
+                RateLimitConfigBuilder::default()
+                    .build()
+                    .expect("Failed to build rate limits"),
+            )
+            .build()
+            .expect("Failed to build config.")
+    }
+
+    #[test]
+    fn test_validate_expiry_valid() {
+        let config = make_config(Some(100), Some(10));
+
+        let expiry = OffsetDateTime::now_utc()
+            .saturating_add(Duration::hours(5))
+            .replace_nanosecond(0)
+            .expect("Failed to remove nanoseconds");
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Some(expiry),
+            "Timestamp was modified or changed."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_invalid() {
+        let config = make_config(Some(100), Some(10));
+
+        let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "The timestamp provided is invalid.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_undefined() {
+        let config = make_config(Some(100), Some(10));
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined)
+            .expect("validate timestamp returned an unexpected error.");
+
+        if let UndefinedOption::Some(validated_expiry) = validated_expiry {
+            let current_time = OffsetDateTime::now_utc().saturating_add(Duration::hours(10));
+
+            assert_eq!(
+                validated_expiry.date(),
+                current_time.date(),
+                "Mismatching date."
+            );
+            assert_eq!(
+                validated_expiry.to_hms(),
+                current_time.to_hms(),
+                "Mismatching hms."
+            );
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_null() {
+        let config = make_config(Some(100), Some(10));
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None);
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "Timestamp must be provided.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_valid_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let expiry = OffsetDateTime::now_utc()
+            .saturating_add(Duration::hours(5))
+            .replace_nanosecond(0)
+            .expect("Failed to remove nanoseconds");
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Some(expiry),
+            "Timestamp was modified or changed."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_invalid_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "The timestamp provided is invalid.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_undefined_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined)
+            .expect("validate timestamp returned an unexpected error.");
+
+        if let UndefinedOption::Some(validated_expiry) = validated_expiry {
+            let current_time = OffsetDateTime::now_utc().saturating_add(Duration::hours(10));
+
+            assert_eq!(
+                validated_expiry.date(),
+                current_time.date(),
+                "Mismatching date."
+            );
+            assert_eq!(
+                validated_expiry.to_hms(),
+                current_time.to_hms(),
+                "Mismatching hms."
+            );
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_null_no_maximum() {
+        let config = make_config(None, Some(10));
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None)
+            .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::None,
+            "Timestamp was found."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_valid_no_default() {
+        let config = make_config(Some(100), None);
+
+        let expiry = OffsetDateTime::now_utc()
+            .saturating_add(Duration::hours(5))
+            .replace_nanosecond(0)
+            .expect("Failed to remove nanoseconds");
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Some(expiry),
+            "Timestamp was modified or changed."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_invalid_no_default() {
+        let config = make_config(Some(100), None);
+
+        let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "The timestamp provided is invalid.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_undefined_no_default() {
+        let config = make_config(Some(100), None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined);
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "Timestamp must be provided.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned. {validated_expiry:?}");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_null_no_default() {
+        let config = make_config(Some(100), None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None);
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "Timestamp must be provided.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_valid_no_both() {
+        let config = make_config(None, None);
+
+        let expiry = OffsetDateTime::now_utc()
+            .saturating_add(Duration::hours(5))
+            .replace_nanosecond(0)
+            .expect("Failed to remove nanoseconds");
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        )
+        .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Some(expiry),
+            "Timestamp was modified or changed."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_invalid_no_both() {
+        let config = make_config(None, None);
+
+        let expiry = OffsetDateTime::now_utc().saturating_sub(Duration::hours(5));
+
+        let validated_expiry = validate_expiry(
+            &config,
+            UndefinedOption::Some(expiry.unix_timestamp() as usize),
+        );
+
+        if let Err(validated_expiry) = validated_expiry {
+            match validated_expiry {
+                AppError::BadRequest(bad_request) => {
+                    assert_eq!(
+                        bad_request,
+                        "The timestamp provided is invalid.".to_string(),
+                        "Invalid bad request received."
+                    );
+                }
+                _ => panic!("Wrong error received."),
+            }
+        } else {
+            panic!("Expected no timestamp to be returned.");
+        }
+    }
+
+    #[test]
+    fn test_validate_expiry_undefined_no_both() {
+        let config = make_config(None, None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::Undefined)
+            .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::Undefined,
+            "Timestamp was provided."
+        );
+    }
+
+    #[test]
+    fn test_validate_expiry_null_no_both() {
+        let config = make_config(None, None);
+
+        let validated_expiry = validate_expiry(&config, UndefinedOption::None)
+            .expect("validate timestamp returned an unexpected error.");
+
+        assert_eq!(
+            validated_expiry,
+            UndefinedOption::None,
+            "Timestamp was provided."
+        );
     }
 }

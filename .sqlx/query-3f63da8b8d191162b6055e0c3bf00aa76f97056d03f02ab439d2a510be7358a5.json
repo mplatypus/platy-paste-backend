@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, creation, edited, expiry, views, max_views FROM pastes WHERE expiry >= $1 AND expiry <= $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "creation",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "edited",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "expiry",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "views",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "max_views",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "3f63da8b8d191162b6055e0c3bf00aa76f97056d03f02ab439d2a510be7358a5"
+}

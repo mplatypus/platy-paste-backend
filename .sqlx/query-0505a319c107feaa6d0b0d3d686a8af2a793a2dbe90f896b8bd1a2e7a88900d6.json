@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, edited, expiry, views, max_views FROM pastes WHERE id = $1",
+  "query": "SELECT id, paste_id, type, name, size FROM documents WHERE paste_id = $1 AND id = $2",
   "describe": {
     "columns": [
       {
@@ -10,37 +10,38 @@
       },
       {
         "ordinal": 1,
-        "name": "edited",
-        "type_info": "Bool"
-      },
-      {
-        "ordinal": 2,
-        "name": "expiry",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 3,
-        "name": "views",
+        "name": "paste_id",
         "type_info": "Int8"
       },
       {
+        "ordinal": 2,
+        "name": "type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
         "ordinal": 4,
-        "name": "max_views",
+        "name": "size",
         "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8"
       ]
     },
     "nullable": [
       false,
       false,
-      true,
       false,
-      true
+      false,
+      false
     ]
   },
-  "hash": "139a679b14b7d02aa34429c2cf241875622d13589ba4833077b07be949fb5ef7"
+  "hash": "0505a319c107feaa6d0b0d3d686a8af2a793a2dbe90f896b8bd1a2e7a88900d6"
 }

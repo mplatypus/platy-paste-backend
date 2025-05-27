@@ -1,4 +1,6 @@
-use crate::app::{application::App, database::Database};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::app::application::App;
 use axum::{RequestPartsExt, extract::FromRequestParts, http::request::Parts};
 use axum_extra::{
     TypedHeader,
@@ -6,13 +8,14 @@ use axum_extra::{
 };
 use base64::{Engine, prelude::BASE64_URL_SAFE};
 use secrecy::{ExposeSecret, SecretString};
-use sqlx::PgTransaction;
+use sqlx::PgExecutor;
 
 use super::{
     error::{AppError, AuthError},
     snowflake::Snowflake,
 };
 
+#[derive(Clone, Debug)]
 pub struct Token {
     /// The paste ID the token is attached to.
     paste_id: Snowflake,
@@ -44,7 +47,7 @@ impl Token {
     ///
     /// ## Arguments
     ///
-    /// - `db` - The database to make the request to.
+    /// - `executor` - The database pool or transaction to use.
     /// - `token` - The token of the paste.
     ///
     /// ## Errors
@@ -55,13 +58,16 @@ impl Token {
     ///
     /// - [`Option::Some`] - The [`Token`] object.
     /// - [`Option::None`] - No token was found.
-    pub async fn fetch(db: &Database, token: String) -> Result<Option<Self>, AppError> {
+    pub async fn fetch<'e, 'c: 'e, E>(executor: E, token: String) -> Result<Option<Self>, AppError>
+    where
+        E: 'e + PgExecutor<'c>,
+    {
         Ok(sqlx::query_as!(
             Self,
             "SELECT paste_id, token FROM paste_tokens WHERE token = $1",
             token,
         )
-        .fetch_optional(db.pool())
+        .fetch_optional(executor)
         .await?)
     }
 
@@ -71,19 +77,22 @@ impl Token {
     ///
     /// ## Arguments
     ///
-    /// - `transaction` The transaction to use.
+    /// - `executor` - The database pool or transaction to use.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error, or the snowflake exists already.
-    pub async fn insert(&self, transaction: &mut PgTransaction<'_>) -> Result<(), AppError> {
+    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    where
+        E: 'e + PgExecutor<'c>,
+    {
         let paste_id: i64 = self.paste_id.into();
         sqlx::query!(
             "INSERT INTO paste_tokens(paste_id, token) VALUES ($1, $2)",
             paste_id,
             self.token.expose_secret()
         )
-        .execute(transaction.as_mut())
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -95,15 +104,18 @@ impl Token {
     ///
     /// ## Arguments
     ///
-    /// - `db` - The database to make the request to.
+    /// - `executor` - The database pool or transaction to use.
     /// - `token` - The token of the paste.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn delete(db: &Database, token: String) -> Result<(), AppError> {
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, token: String) -> Result<(), AppError>
+    where
+        E: 'e + PgExecutor<'c>,
+    {
         sqlx::query!("DELETE FROM paste_tokens WHERE token = $1", token,)
-            .execute(db.pool())
+            .execute(executor)
             .await?;
 
         Ok(())
@@ -120,7 +132,7 @@ impl FromRequestParts<App> for Token {
             .await
             .map_err(|_| AuthError::MissingCredentials)?;
 
-        let bot = Self::fetch(&state.database, bearer.token().to_string())
+        let bot = Self::fetch(state.database.pool(), bearer.token().to_string())
             .await?
             .ok_or(AuthError::InvalidToken)?;
 
@@ -157,9 +169,16 @@ pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, AppError> {
         .map(|x| ascii.as_bytes()[(*x as usize) % ascii.len()] as char) // This maps the ascii table to the buffer
         .collect::<String>(); // Collect the items into a string.
 
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
+    let timestamp_encrypted = BASE64_URL_SAFE.encode(timestamp.to_string());
+
     let paste_id_encrypted = BASE64_URL_SAFE.encode(paste_id.to_string());
 
     Ok(SecretString::new(
-        format!("{paste_id_encrypted}.{unique_token}").into(),
+        format!("{paste_id_encrypted}.{timestamp_encrypted}.{unique_token}").into(),
     ))
 }
