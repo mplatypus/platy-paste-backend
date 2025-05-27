@@ -25,6 +25,10 @@ pub struct Paste {
     pub edited: Option<OffsetDateTime>,
     /// The time at which the paste will expire.
     pub expiry: Option<OffsetDateTime>,
+    /// The amount of views a paste has.
+    pub views: usize,
+    /// The maximum allowed views for a paste.
+    pub max_views: Option<usize>,
 }
 
 impl Paste {
@@ -36,12 +40,16 @@ impl Paste {
         creation: OffsetDateTime,
         edited: Option<OffsetDateTime>,
         expiry: Option<OffsetDateTime>,
+        views: usize,
+        max_views: Option<usize>,
     ) -> Self {
         Self {
             id,
             creation,
             edited,
             expiry,
+            views,
+            max_views,
         }
     }
 
@@ -57,6 +65,13 @@ impl Paste {
     /// Set or remove the expiry on the paste.
     pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
+    }
+
+    /// Set Max Views.
+    ///
+    /// Set or remove the maximum amount of views for a paste.
+    pub fn set_max_views(&mut self, max_views: Option<usize>) {
+        self.max_views = max_views;
     }
 
     /// Fetch.
@@ -82,14 +97,21 @@ impl Paste {
     {
         let paste_id: i64 = id.into();
         let query = sqlx::query!(
-            "SELECT id, creation, edited, expiry FROM pastes WHERE id = $1",
+            "SELECT id, creation, edited, expiry, views, max_views FROM pastes WHERE id = $1",
             paste_id
         )
         .fetch_optional(executor)
         .await?;
 
         if let Some(q) = query {
-            return Ok(Some(Self::new(q.id.into(), q.creation, q.edited, q.expiry)));
+            return Ok(Some(Self::new(
+                q.id.into(),
+                q.creation,
+                q.edited,
+                q.expiry,
+                q.views as usize,
+                q.max_views.map(|v| v as usize),
+            )));
         }
 
         Ok(None)
@@ -121,7 +143,7 @@ impl Paste {
         E: 'e + PgExecutor<'c>,
     {
         let records = sqlx::query!(
-            "SELECT id, creation, edited, expiry FROM pastes WHERE expiry >= $1 AND expiry <= $2",
+            "SELECT id, creation, edited, expiry, views, max_views FROM pastes WHERE expiry >= $1 AND expiry <= $2",
             start,
             end
         )
@@ -135,6 +157,8 @@ impl Paste {
                 record.creation,
                 record.edited,
                 record.expiry,
+                record.views as usize,
+                record.max_views.map(|v| v as usize),
             );
 
             pastes.push(paste);
@@ -161,11 +185,13 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, creation, edited, expiry) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO pastes(id, creation, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5, $6)",
             paste_id,
             self.creation,
             self.edited,
-            self.expiry
+            self.expiry,
+            self.views as i64,
+            self.max_views.map(|v| v as i64)
         )
         .execute(executor)
         .await?;
@@ -191,13 +217,43 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, creation, edited, expiry) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET edited = $3, expiry = $4",
+            "INSERT INTO pastes(id, creation, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET edited = $3, expiry = $4, views = $5, max_views = $6",
             paste_id,
             self.creation,
             self.edited,
-            self.expiry
+            self.expiry,
+            self.views as i64,
+            self.max_views.map(|v|v as i64)
         ).execute(executor).await?;
 
+        Ok(())
+    }
+
+    /// Add view.
+    ///
+    /// Create (or update) a document.
+    ///
+    /// ## Arguments
+    ///
+    /// - `executor` - The database pool or transaction to use.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
+    pub async fn add_view<'e, 'c: 'e, E>(&mut self, executor: E) -> Result<(), AppError>
+    where
+        E: 'e + PgExecutor<'c>,
+    {
+        let id: i64 = self.id.into();
+
+        let views = sqlx::query_scalar!(
+            "UPDATE pastes SET views = views + 1 WHERE id = $1 RETURNING views",
+            id,
+        )
+        .fetch_one(executor)
+        .await?;
+
+        self.views = views as usize;
         Ok(())
     }
 
@@ -257,6 +313,15 @@ pub async fn validate_paste(
 
     if let Some(expiry) = paste.expiry {
         if expiry < OffsetDateTime::now_utc() {
+            Paste::delete(db.pool(), paste_id).await?;
+            return Err(AppError::NotFound(
+                "The paste requested could not be found".to_string(),
+            ));
+        }
+    }
+
+    if let Some(max_views) = paste.max_views {
+        if paste.views >= max_views {
             Paste::delete(db.pool(), paste_id).await?;
             return Err(AppError::NotFound(
                 "The paste requested could not be found".to_string(),

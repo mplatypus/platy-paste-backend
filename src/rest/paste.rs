@@ -130,7 +130,7 @@ async fn get_paste(
     Path(paste_id): Path<Snowflake>,
     Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
-    let paste = validate_paste(&app.database, paste_id, None).await?;
+    let mut paste = validate_paste(&app.database, paste_id, None).await?;
 
     let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
@@ -150,6 +150,8 @@ async fn get_paste(
 
         response_documents.push(response_document);
     }
+
+    paste.add_view(app.database.pool()).await?;
 
     let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 
@@ -206,6 +208,14 @@ async fn post_paste(
 
     let expiry = validate_expiry(&app.config, body.expiry)?;
 
+    let max_views = {
+        match body.max_views {
+            UndefinedOption::Undefined => app.config.default_maximum_views(),
+            UndefinedOption::Some(max_views) => Some(max_views),
+            UndefinedOption::None => None,
+        }
+    };
+
     let mut transaction = app.database.pool().begin().await?;
 
     let paste = Paste::new(
@@ -213,6 +223,8 @@ async fn post_paste(
         OffsetDateTime::now_utc(),
         None,
         expiry.to_option(),
+        0,
+        max_views,
     );
 
     paste.insert(transaction.as_mut()).await?;
@@ -502,6 +514,7 @@ mod tests {
             .domain(String::new())
             .maximum_expiry_hours(maximum_expiry_hours)
             .default_expiry_hours(default_expiry_hours)
+            .default_maximum_views(None)
             .global_paste_total_document_count(0)
             .global_paste_total_document_size_limit(0.0)
             .global_paste_document_size_limit(0.0)

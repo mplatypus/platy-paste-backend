@@ -6,7 +6,11 @@ CREATE TABLE IF NOT EXISTS pastes (
     -- Whether the paste has been modified.
     "edited" TIMESTAMPTZ,
     -- The expiry of the paste.
-    "expiry" TIMESTAMPTZ
+    "expiry" TIMESTAMPTZ,
+    -- The total amount of views of the paste.
+    "views" BIGINT NOT NULL,
+    -- The maximum amount of views allowed for the paste.
+    "max_views" BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS paste_tokens (

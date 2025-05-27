@@ -13,13 +13,24 @@ fn test_getters() {
     let edited = OffsetDateTime::from_unix_timestamp(15).expect("failed to generate timestamp.");
     let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
 
-    let paste = Paste::new(paste_id, creation, Some(edited), Some(expiry));
+    let paste = Paste::new(
+        paste_id,
+        creation,
+        Some(edited),
+        Some(expiry),
+        567,
+        Some(1000),
+    );
 
     assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
 
     assert_eq!(paste.edited, Some(edited), "Mismatched edited.");
 
     assert!(paste.expiry == Some(expiry), "Mismatched expiry.");
+
+    assert_eq!(paste.views, 567, "Mismatched views.");
+
+    assert_eq!(paste.max_views, Some(1000), "Mismatched max views.");
 }
 
 #[test]
@@ -28,7 +39,7 @@ fn test_set_edited() {
     let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
     let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
 
-    let mut paste = Paste::new(paste_id, creation, None, Some(expiry));
+    let mut paste = Paste::new(paste_id, creation, None, Some(expiry), 567, Some(1000));
 
     assert_eq!(paste.edited, None, "Mismatched edited.");
 
@@ -51,6 +62,10 @@ fn test_set_edited() {
     );
 
     assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
+
+    assert_eq!(paste.views, 567, "Mismatched views.");
+
+    assert_eq!(paste.max_views, Some(1000), "Mismatched max views.");
 }
 
 #[test]
@@ -59,7 +74,7 @@ fn test_set_expiry() {
     let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
     let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
 
-    let mut paste = Paste::new(paste_id, creation, None, Some(expiry));
+    let mut paste = Paste::new(paste_id, creation, None, Some(expiry), 567, Some(1000));
 
     assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry.");
 
@@ -70,6 +85,10 @@ fn test_set_expiry() {
     assert_eq!(paste.edited, None, "Mismatched edited.");
 
     assert!(paste.expiry.is_none(), "Mismatched expiry.");
+
+    assert_eq!(paste.views, 567, "Mismatched views.");
+
+    assert_eq!(paste.max_views, Some(1000), "Mismatched max views.");
 }
 
 #[sqlx::test(fixtures("pastes"))]
@@ -96,6 +115,10 @@ fn test_fetch(pool: PgPool) {
     assert_eq!(paste.edited, Some(edited), "Mismatched edited time.");
 
     assert_eq!(paste.expiry, Some(expiry), "Mismatched expiry time.");
+
+    assert_eq!(paste.views, 567, "Mismatched views.");
+
+    assert_eq!(paste.max_views, Some(1000), "Mismatched max views.");
 }
 
 #[sqlx::test]
@@ -178,7 +201,14 @@ fn test_insert(pool: PgPool) {
     let edited = OffsetDateTime::from_unix_timestamp(15).expect("failed to generate timestamp.");
     let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
 
-    let paste = Paste::new(paste_id, creation, Some(edited), Some(expiry));
+    let paste = Paste::new(
+        paste_id,
+        creation,
+        Some(edited),
+        Some(expiry),
+        53489,
+        Some(100_000),
+    );
 
     paste
         .insert(db.pool())
@@ -197,6 +227,10 @@ fn test_insert(pool: PgPool) {
     assert_eq!(result.edited, Some(edited), "Mismatched edited time.");
 
     assert_eq!(result.expiry, Some(expiry), "Mismatched expiry time.");
+
+    assert_eq!(paste.views, 53489, "Mismatched views.");
+
+    assert_eq!(paste.max_views, Some(100_000), "Mismatched max views.");
 }
 
 #[sqlx::test(fixtures("pastes"))]
@@ -256,6 +290,33 @@ fn test_update(pool: PgPool) {
     );
 
     assert!(result.expiry.is_none(), "Mismatched expiry time.");
+}
+
+#[sqlx::test(fixtures("pastes"))]
+fn test_add_view(pool: PgPool) {
+    let db = Database::from_pool(pool);
+
+    let paste_id = Snowflake::new(517_815_304_354_284_601);
+    let mut paste = Paste::fetch(db.pool(), paste_id)
+        .await
+        .expect("Failed to fetch value from database.")
+        .expect("No paste was found.");
+
+    assert_eq!(paste.id, paste_id, "Mismatched paste ID.");
+
+    assert_eq!(paste.views, 567, "Mismatched views count.");
+
+    paste
+        .add_view(db.pool())
+        .await
+        .expect("Failed to add view to paste.");
+
+    let result = Paste::fetch(db.pool(), paste_id)
+        .await
+        .expect("Failed to fetch value from database.")
+        .expect("No paste was found.");
+
+    assert_eq!(result.views, 568, "Mismatched views count.");
 }
 
 #[sqlx::test(fixtures("pastes"))]

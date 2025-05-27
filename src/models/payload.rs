@@ -31,8 +31,11 @@ pub type PatchDocumentQuery = IncludeContentQuery;
 #[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
-    #[serde(default, skip_serializing_if = "UndefinedOption::is_undefined")]
+    #[serde(default)]
     pub expiry: UndefinedOption<usize>,
+    /// The maximum allowed views for the paste.
+    #[serde(default)]
+    pub max_views: UndefinedOption<usize>,
 }
 
 pub type PostPasteBody = PasteBody;
@@ -100,6 +103,10 @@ pub struct ResponsePaste {
     /// The expiry time of the paste.
     #[serde(rename = "expiry_timestamp")]
     pub expiry: Option<usize>,
+    /// The view count for the paste.
+    pub views: usize,
+    /// The maximum amount of views the paste can have.
+    pub max_views: Option<usize>,
     /// The documents attached to the paste.
     pub documents: Vec<ResponseDocument>,
 }
@@ -114,6 +121,8 @@ impl ResponsePaste {
         creation: OffsetDateTime,
         edited: Option<OffsetDateTime>,
         expiry: Option<OffsetDateTime>,
+        views: usize,
+        max_views: Option<usize>,
         documents: Vec<ResponseDocument>,
     ) -> Self {
         Self {
@@ -122,6 +131,8 @@ impl ResponsePaste {
             creation: creation.unix_timestamp() as usize,
             edited: edited.map(|t| t.unix_timestamp() as usize),
             expiry: expiry.map(|t| t.unix_timestamp() as usize),
+            views,
+            max_views,
             documents,
         }
     }
@@ -152,6 +163,8 @@ impl ResponsePaste {
             paste.creation,
             paste.edited,
             paste.expiry,
+            paste.views,
+            paste.max_views,
             documents,
         )
     }

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pastes SET views = views + 1 WHERE id = $1 RETURNING views",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "views",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b1d729bfcdd06616da6c1f2a62dd66d0ac4208d5bee62f80f0aff6f68e4111ce"
+}
