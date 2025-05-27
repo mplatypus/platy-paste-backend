@@ -151,7 +151,9 @@ async fn get_paste(
         response_documents.push(response_document);
     }
 
-    paste.add_view(app.database.pool()).await?;
+    let view_count = Paste::add_view(app.database.pool(), paste_id).await?;
+
+    paste.set_views(view_count);
 
     let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 
@@ -352,9 +354,15 @@ async fn patch_paste(
         paste.set_expiry(new_expiry.to_option());
     }
 
-    paste.update(app.database.pool()).await?;
+    if !body.max_views.is_undefined() {
+        paste.set_max_views(body.max_views.to_option());
+    }
 
-    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
+    let mut transaction = app.database.pool().begin().await?;
+
+    paste.update(transaction.as_mut()).await?;
+
+    let documents = Document::fetch_all(transaction.as_mut(), paste.id).await?;
 
     let mut response_documents = Vec::new();
     for document in documents {
@@ -372,6 +380,8 @@ async fn patch_paste(
 
         response_documents.push(response_document);
     }
+
+    transaction.commit().await?;
 
     let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
 

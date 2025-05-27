@@ -74,6 +74,13 @@ impl Paste {
         self.max_views = max_views;
     }
 
+    /// Set views.
+    ///
+    /// Allows for setting the view count of a paste, or updating it.
+    pub fn set_views(&mut self, views: usize) {
+        self.views = views;
+    }
+
     /// Fetch.
     ///
     /// Fetch a paste via its ID.
@@ -231,20 +238,21 @@ impl Paste {
 
     /// Add view.
     ///
-    /// Create (or update) a document.
+    /// Increment a pastes view count by 1.
     ///
     /// ## Arguments
     ///
     /// - `executor` - The database pool or transaction to use.
+    /// - `id` - The ID of the paste to add the view to.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn add_view<'e, 'c: 'e, E>(&mut self, executor: E) -> Result<(), AppError>
+    pub async fn add_view<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<usize, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let id: i64 = self.id.into();
+        let id: i64 = id.into();
 
         let views = sqlx::query_scalar!(
             "UPDATE pastes SET views = views + 1 WHERE id = $1 RETURNING views",
@@ -253,8 +261,7 @@ impl Paste {
         .fetch_one(executor)
         .await?;
 
-        self.views = views as usize;
-        Ok(())
+        Ok(views as usize)
     }
 
     /// Delete.

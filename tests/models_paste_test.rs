@@ -297,7 +297,7 @@ fn test_add_view(pool: PgPool) {
     let db = Database::from_pool(pool);
 
     let paste_id = Snowflake::new(517_815_304_354_284_601);
-    let mut paste = Paste::fetch(db.pool(), paste_id)
+    let paste = Paste::fetch(db.pool(), paste_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste was found.");
@@ -306,10 +306,11 @@ fn test_add_view(pool: PgPool) {
 
     assert_eq!(paste.views, 567, "Mismatched views count.");
 
-    paste
-        .add_view(db.pool())
+    let value = Paste::add_view(db.pool(), paste_id)
         .await
         .expect("Failed to add view to paste.");
+
+    assert_eq!(value, 568, "Mismatched view count.");
 
     let result = Paste::fetch(db.pool(), paste_id)
         .await

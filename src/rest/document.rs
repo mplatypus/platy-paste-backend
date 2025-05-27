@@ -20,7 +20,7 @@ use crate::{
         authentication::Token,
         document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
         error::{AppError, AuthError},
-        paste::validate_paste,
+        paste::{Paste, validate_paste},
         payload::{PatchDocumentQuery, PostDocumentQuery, ResponseDocument},
         snowflake::Snowflake,
     },
@@ -139,6 +139,8 @@ async fn get_document(
 
     let data = app.s3.fetch_document(document.generate_path()).await?;
     let d: &str = &String::from_utf8_lossy(&data);
+
+    Paste::add_view(app.database.pool(), paste_id).await?;
 
     let response_document = ResponseDocument::from_document(document, Some(d.to_string()));
 
