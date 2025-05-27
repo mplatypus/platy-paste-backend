@@ -63,21 +63,21 @@ impl Paste {
     /// Set Expiry.
     ///
     /// Set or remove the expiry on the paste.
-    pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
+    pub const fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
     }
 
     /// Set Max Views.
     ///
     /// Set or remove the maximum amount of views for a paste.
-    pub fn set_max_views(&mut self, max_views: Option<usize>) {
+    pub const fn set_max_views(&mut self, max_views: Option<usize>) {
         self.max_views = max_views;
     }
 
     /// Set views.
     ///
     /// Allows for setting the view count of a paste, or updating it.
-    pub fn set_views(&mut self, views: usize) {
+    pub const fn set_views(&mut self, views: usize) {
         self.views = views;
     }
 
