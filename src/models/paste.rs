@@ -63,15 +63,22 @@ impl Paste {
     /// Set Expiry.
     ///
     /// Set or remove the expiry on the paste.
-    pub fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
+    pub const fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
     }
 
     /// Set Max Views.
     ///
     /// Set or remove the maximum amount of views for a paste.
-    pub fn set_max_views(&mut self, max_views: Option<usize>) {
+    pub const fn set_max_views(&mut self, max_views: Option<usize>) {
         self.max_views = max_views;
+    }
+
+    /// Set views.
+    ///
+    /// Allows for setting the view count of a paste, or updating it.
+    pub const fn set_views(&mut self, views: usize) {
+        self.views = views;
     }
 
     /// Fetch.
@@ -231,20 +238,21 @@ impl Paste {
 
     /// Add view.
     ///
-    /// Create (or update) a document.
+    /// Increment a pastes view count by 1.
     ///
     /// ## Arguments
     ///
     /// - `executor` - The database pool or transaction to use.
+    /// - `id` - The ID of the paste to add the view to.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn add_view<'e, 'c: 'e, E>(&mut self, executor: E) -> Result<(), AppError>
+    pub async fn add_view<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<usize, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let id: i64 = self.id.into();
+        let id: i64 = id.into();
 
         let views = sqlx::query_scalar!(
             "UPDATE pastes SET views = views + 1 WHERE id = $1 RETURNING views",
@@ -253,8 +261,7 @@ impl Paste {
         .fetch_one(executor)
         .await?;
 
-        self.views = views as usize;
-        Ok(())
+        Ok(views as usize)
     }
 
     /// Delete.
