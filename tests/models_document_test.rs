@@ -1,8 +1,12 @@
 use platy_paste::{
-    app::database::Database,
-    models::{document::*, snowflake::Snowflake},
+    app::{
+        config::{Config, RateLimitConfigBuilder, SizeLimitConfigBuilder},
+        database::Database,
+    },
+    models::{document::*, error::AppError, snowflake::Snowflake},
 };
 
+use rstest::*;
 use sqlx::PgPool;
 
 #[test]
@@ -424,22 +428,201 @@ fn test_delete(pool: PgPool) {
     assert!(paste_token.is_none(), "Found paste_token in db.");
 }
 
+#[rstest]
+#[case(&["application/json", "text/*"], "application/json", true)]
+#[case(&["application/json", "text/*"], "text/plain", true)]
+#[case(&["application/json", "text/*"], "image/png", false)]
+fn test_contains_mime(#[case] mimes: &[&str], #[case] mime: &str, #[case] expected: bool) {
+    assert!(
+        contains_mime(mimes, mime) == expected,
+        "Did not find {mime} in {mimes:?}."
+    );
+}
+
+fn make_document_limits_config(
+    minimum_document_size: usize,
+    minimum_document_name_size: usize,
+    maximum_document_size: usize,
+    maximum_document_name_size: usize,
+) -> Config {
+    Config::builder()
+        .host(String::new())
+        .port(5454)
+        .database_url(String::new())
+        .s3_url(String::new())
+        .s3_access_key(String::new().into())
+        .s3_secret_key(String::new().into())
+        .minio_root_user(String::new())
+        .minio_root_password(String::new().into())
+        .domain(String::new())
+        .size_limits(
+            SizeLimitConfigBuilder::default()
+                .minimum_document_size(minimum_document_size)
+                .minimum_document_name_size(minimum_document_name_size)
+                .maximum_document_size(maximum_document_size)
+                .maximum_document_name_size(maximum_document_name_size)
+                .build()
+                .expect("Failed to build rate limits"),
+        )
+        .rate_limits(
+            RateLimitConfigBuilder::default()
+                .build()
+                .expect("Failed to build rate limits"),
+        )
+        .build()
+        .expect("Failed to build config.")
+}
+
 #[test]
-fn test_contains_mime() {
-    let mimes: &[&str] = &["application/json", "text/*"];
-
-    assert!(
-        contains_mime(mimes, "application/json"),
-        "Did not find application/json in mimes."
+fn test_document_limits() {
+    let document = Document::new(
+        Snowflake::new(456),
+        Snowflake::new(123),
+        "text/plain".to_string(),
+        "test_doc.txt".to_string(),
+        489,
     );
 
-    assert!(
-        contains_mime(mimes, "text/plain"),
-        "Did not find text/plain in mimes."
+    document_limits(&make_document_limits_config(1, 3, 1_000_000, 50), &document)
+        .expect("An error occurred.");
+}
+
+#[rstest]
+#[case(
+    make_document_limits_config(1, 50, 1_000_000, 50),
+    "The document name: `test_doc.txt` is too small."
+)]
+#[case(
+    make_document_limits_config(1, 3, 1_000_000, 10),
+    "The document name: `test_doc.txt...` is too large."
+)]
+#[case(
+    make_document_limits_config(500, 3, 1_000_000, 50),
+    "The document: `test_doc.txt` is too small."
+)]
+#[case(
+    make_document_limits_config(1, 3, 250, 50),
+    "The document: `test_doc.txt` is too large."
+)]
+fn test_document_limits_errors(#[case] config: Config, #[case] expected: &str) {
+    let document = Document::new(
+        Snowflake::new(456),
+        Snowflake::new(123),
+        "text/plain".to_string(),
+        "test_doc.txt".to_string(),
+        489,
     );
 
-    assert!(
-        !contains_mime(mimes, "image/png"),
-        "Found image/png in mimes."
-    );
+    let error = document_limits(&config, &document).expect_err("No error received.");
+
+    if let AppError::BadRequest(bad_request) = error {
+        assert_eq!(
+            bad_request, expected,
+            "The bad request message received was unexpected."
+        );
+    } else {
+        panic!("The error received, was not expected.");
+    }
+}
+
+fn make_total_document_limits_config(
+    minimum_total_document_count: usize,
+    minimum_total_document_size: usize,
+    maximum_total_document_count: usize,
+    maximum_total_document_size: usize,
+) -> Config {
+    Config::builder()
+        .host(String::new())
+        .port(5454)
+        .database_url(String::new())
+        .s3_url(String::new())
+        .s3_access_key(String::new().into())
+        .s3_secret_key(String::new().into())
+        .minio_root_user(String::new())
+        .minio_root_password(String::new().into())
+        .domain(String::new())
+        .size_limits(
+            SizeLimitConfigBuilder::default()
+                .minimum_total_document_count(minimum_total_document_count)
+                .minimum_total_document_size(minimum_total_document_size)
+                .maximum_total_document_count(maximum_total_document_count)
+                .maximum_total_document_size(maximum_total_document_size)
+                .build()
+                .expect("Failed to build rate limits"),
+        )
+        .rate_limits(
+            RateLimitConfigBuilder::default()
+                .build()
+                .expect("Failed to build rate limits"),
+        )
+        .build()
+        .expect("Failed to build config.")
+}
+
+#[sqlx::test(fixtures("pastes", "documents"))]
+async fn test_total_document_limits(pool: PgPool) {
+    let db = Database::from_pool(pool);
+
+    let mut transaction = db
+        .pool()
+        .begin()
+        .await
+        .expect("Failed to generate a transaction.");
+
+    total_document_limits(
+        &mut transaction,
+        &make_total_document_limits_config(1, 1, 10, 10_000_000),
+        Snowflake::new(517_815_304_354_284_601),
+    )
+    .await
+    .expect("An error occurred.");
+}
+
+#[rstest]
+#[case(
+    make_total_document_limits_config(5, 1, 5, 5000),
+    "One or more documents is below the minimum total document count."
+)]
+#[case(
+    make_total_document_limits_config(1, 1, 1, 5000),
+    "One or more documents exceed the maximum total document count."
+)]
+#[case(
+    make_total_document_limits_config(1, 2500, 5, 5000),
+    "One or more documents is below the minimum individual document size."
+)]
+#[case(
+    make_total_document_limits_config(1, 1, 5, 2000),
+    "One or more documents exceed the maximum individual document size."
+)]
+#[sqlx::test(fixtures("pastes", "documents"))]
+async fn test_total_document_limits_errors(
+    #[ignore] pool: PgPool,
+    #[case] config: Config,
+    #[case] expected: &str,
+) {
+    let db = Database::from_pool(pool);
+
+    let mut transaction = db
+        .pool()
+        .begin()
+        .await
+        .expect("Failed to generate a transaction.");
+
+    let error = total_document_limits(
+        &mut transaction,
+        &config,
+        Snowflake::new(517_815_304_354_284_602),
+    )
+    .await
+    .expect_err("No error received.");
+
+    if let AppError::BadRequest(bad_request) = error {
+        assert_eq!(
+            bad_request, expected,
+            "The bad request message received was unexpected."
+        );
+    } else {
+        panic!("The error received, was not expected.");
+    }
 }
