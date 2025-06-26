@@ -43,7 +43,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         .route("/config", get(get_config).layer(get_config_limiter))
         .layer(global_limiter)
         .layer(DefaultBodyLimit::max(
-            (config.global_paste_total_document_size_limit() * 1024.0 * 1024.0) as usize,
+            config.size_limits().maximum_total_document_size(),
         ))
 }
 

@@ -1,6 +1,8 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::PgExecutor;
+use sqlx::{PgExecutor, PgTransaction};
+
+use crate::app::config::Config;
 
 use super::{error::AppError, snowflake::Snowflake};
 
@@ -439,4 +441,103 @@ pub fn contains_mime(mimes: &[&str], value: &str) -> bool {
     }
 
     false
+}
+
+/// Document Limits.
+///
+/// Validate that a document is within the requirements.
+///
+/// ## Arguments
+///
+/// - `config` - The config to check again.
+/// - `document` - The document to check.
+///
+/// ## Errors
+///
+/// - [`AppError`] - Returned when the documents are outside of the limits.
+pub fn document_limits(config: &Config, document: &Document) -> Result<(), AppError> {
+    let size_limits = config.size_limits();
+
+    if size_limits.minimum_document_size() > document.size {
+        return Err(AppError::BadRequest(format!(
+            "The document: `{}` is too small.",
+            document.name
+        )));
+    }
+
+    if size_limits.maximum_document_size() < document.size {
+        return Err(AppError::BadRequest(format!(
+            "The document: `{}` is too large.",
+            document.name
+        )));
+    }
+
+    if size_limits.minimum_document_name_size() > document.name.len() {
+        return Err(AppError::BadRequest(format!(
+            "The document name: `{}` is too small.",
+            document.name
+        )));
+    }
+
+    if size_limits.maximum_document_name_size() < document.name.len() {
+        return Err(AppError::BadRequest(format!(
+            "The document name: `{:.25}...` is too large.",
+            document.name
+        )));
+    }
+
+    Ok(())
+}
+
+/// Total Document Size Limit.
+///
+/// Validate that all documents attached to a paste are within the limits.
+///
+/// ## Arguments
+///
+/// - `transaction` - The transaction to use.
+/// - `config` - The config to check again.
+/// - `paste_id` - The Paste ID the document(s) are attached to.
+///
+/// ## Errors
+///
+/// - [`AppError`] - Returned when the documents are outside of the limits.
+pub async fn total_document_limits(
+    transaction: &mut PgTransaction<'_>,
+    config: &Config,
+    paste_id: Snowflake,
+) -> Result<(), AppError> {
+    let size_limits = config.size_limits();
+
+    let total_document_count =
+        Document::fetch_total_document_count(transaction.as_mut(), paste_id).await?;
+
+    if size_limits.minimum_total_document_count() > total_document_count {
+        return Err(AppError::BadRequest(
+            "One or more documents is below the minimum total document count.".to_string(),
+        ));
+    }
+
+    if size_limits.maximum_total_document_count() < total_document_count {
+        return Err(AppError::BadRequest(
+            "One or more documents exceed the maximum total document count.".to_string(),
+        ));
+    }
+
+    let total_document_size =
+        Document::fetch_total_document_size(transaction.as_mut(), paste_id).await?;
+
+    if size_limits.minimum_total_document_size() > total_document_size {
+        return Err(AppError::BadRequest(
+            "One or more documents is below the minimum individual document size.".to_string(),
+        ));
+    }
+
+    if size_limits.maximum_total_document_size() < total_document_size {
+        return Err(AppError::BadRequest(
+            "One or more documents exceed the maximum individual document size.".to_string(),
+        ));
+    }
+
+    Ok(())
 }

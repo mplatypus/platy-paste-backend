@@ -18,7 +18,10 @@ use crate::{
     app::{application::App, config::Config},
     models::{
         authentication::Token,
-        document::{DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime},
+        document::{
+            DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime, document_limits,
+            total_document_limits,
+        },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
         payload::{PatchDocumentQuery, PostDocumentQuery, ResponseDocument},
@@ -106,7 +109,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         )
         .layer(global_limiter)
         .layer(DefaultBodyLimit::max(
-            (config.global_paste_total_document_size_limit() * 1024.0 * 1024.0) as usize,
+            config.size_limits().maximum_total_document_size(),
         ))
 }
 
@@ -192,26 +195,6 @@ async fn post_document(
         }
     };
 
-    let total_document_count =
-        Document::fetch_total_document_count(app.database.pool(), paste.id).await?;
-
-    if app.config.global_paste_total_document_count() < (total_document_count + 1) {
-        return Err(AppError::BadRequest(
-            "The new document exceeds the pastes total document limit.".to_string(),
-        ));
-    }
-
-    let total_document_size =
-        Document::fetch_total_document_size(app.database.pool(), paste_id).await?;
-
-    if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
-        < (total_document_size + body.len()) as f64
-    {
-        return Err(AppError::BadRequest(
-            "The new content exceeds the total document limit.".to_string(),
-        ));
-    }
-
     let document = Document::new(
         Snowflake::generate()?,
         paste.id,
@@ -222,6 +205,8 @@ async fn post_document(
         body.len(),
     );
 
+    document_limits(&app.config, &document)?;
+
     let mut transaction = app.database.pool().begin().await?;
 
     paste.set_edited();
@@ -229,6 +214,8 @@ async fn post_document(
     paste.update(transaction.as_mut()).await?;
 
     document.insert(transaction.as_mut()).await?;
+
+    total_document_limits(&mut transaction, &app.config, paste_id).await?;
 
     app.s3.create_document(&document, body.clone()).await?;
 
@@ -298,17 +285,6 @@ async fn patch_document(
         }
     };
 
-    let total_document_size =
-        Document::fetch_total_document_size(app.database.pool(), paste_id).await?;
-
-    if (app.config.global_paste_total_document_size_limit() * 1024.0 * 1024.0)
-        >= (total_document_size + body.len()) as f64
-    {
-        return Err(AppError::BadRequest(
-            "The new content exceeds the total document limit.".to_string(),
-        ));
-    }
-
     let mut document = Document::fetch(app.database.pool(), document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
@@ -327,7 +303,11 @@ async fn patch_document(
         document.set_name(filename);
     }
 
+    document_limits(&app.config, &document)?;
+
     document.update(transaction.as_mut()).await?;
+
+    total_document_limits(&mut transaction, &app.config, paste_id).await?;
 
     app.s3.delete_document(document.generate_path()).await?;
 

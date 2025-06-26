@@ -44,16 +44,10 @@ pub type PatchPasteBody = PasteBody;
 
 #[derive(Serialize)]
 pub struct ResponseConfig {
-    /// The default expiry in hours.
-    pub default_expiry: Option<usize>,
-    /// The maximum expiry in hours.
-    pub maximum_expiry: Option<usize>,
-    /// The maximum document count.
-    pub maximum_document_count: usize,
-    /// The maximum individual document size in mb.
-    pub maximum_document_size: f64,
-    /// The maximum total size of all documents in mb. (includes payload)
-    pub maximum_total_document_size: f64,
+    /// Defaults.
+    pub defaults: ResponseDefaultsConfig,
+    /// Size limits.
+    pub size_limits: ResponseSizeLimitsConfig,
 }
 
 impl ResponseConfig {
@@ -61,28 +55,129 @@ impl ResponseConfig {
     ///
     /// Create a new [`ResponseConfig`] object.
     pub const fn new(
-        default_expiry: Option<usize>,
-        maximum_expiry: Option<usize>,
-        maximum_document_count: usize,
-        maximum_document_size: f64,
-        maximum_total_document_size: f64,
+        defaults: ResponseDefaultsConfig,
+        size_limits: ResponseSizeLimitsConfig,
     ) -> Self {
         Self {
-            default_expiry,
-            maximum_expiry,
-            maximum_document_count,
-            maximum_document_size,
-            maximum_total_document_size,
+            defaults,
+            size_limits,
         }
     }
 
-    pub const fn from_config(config: &Config) -> Self {
+    /// From config.
+    ///
+    /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
+    pub fn from_config(config: &Config) -> Self {
         Self::new(
-            config.default_expiry_hours(),
-            config.maximum_expiry_hours(),
-            config.global_paste_total_document_count(),
-            config.global_paste_document_size_limit(),
-            config.global_paste_total_document_size_limit(),
+            ResponseDefaultsConfig::from_config(config),
+            ResponseSizeLimitsConfig::from_config(config),
+        )
+    }
+}
+
+#[derive(Serialize)]
+pub struct ResponseDefaultsConfig {
+    /// The default expiry for pastes.
+    expiry_hours: Option<usize>,
+    /// The default value for maximum views.
+    maximum_views: Option<usize>,
+}
+
+impl ResponseDefaultsConfig {
+    /// New.
+    ///
+    /// Create a new [`ResponseConfig`] object.
+    pub const fn new(expiry_hours: Option<usize>, maximum_views: Option<usize>) -> Self {
+        Self {
+            expiry_hours,
+            maximum_views,
+        }
+    }
+
+    /// From config.
+    ///
+    /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
+    pub fn from_config(config: &Config) -> Self {
+        let size_limits = config.size_limits();
+
+        Self::new(
+            size_limits.default_expiry_hours(),
+            size_limits.default_maximum_views(),
+        )
+    }
+}
+
+#[derive(Serialize)]
+pub struct ResponseSizeLimitsConfig {
+    /// The minimum expiry hours for pastes.
+    minimum_expiry_hours: Option<usize>,
+    /// The minimum allowed documents in a paste.
+    minimum_total_document_count: usize,
+    /// The minimum document size.
+    minimum_document_size: usize,
+    /// The minimum total document size.
+    minimum_total_document_size: usize,
+    /// The minimum size of a document name.
+    minimum_document_name_size: usize,
+    /// The maximum expiry for pastes.
+    maximum_expiry_hours: Option<usize>,
+    /// The maximum allowed documents in a paste.
+    maximum_total_document_count: usize,
+    /// The individual paste document size.
+    maximum_document_size: usize,
+    /// The maximum paste body size, including all documents.
+    maximum_total_document_size: usize,
+    /// The maximum size of a document name.
+    maximum_document_name_size: usize,
+}
+
+impl ResponseSizeLimitsConfig {
+    /// New.
+    ///
+    /// Create a new [`ResponseConfig`] object.
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        minimum_expiry_hours: Option<usize>,
+        minimum_total_document_count: usize,
+        minimum_document_size: usize,
+        minimum_total_document_size: usize,
+        minimum_document_name_size: usize,
+        maximum_expiry_hours: Option<usize>,
+        maximum_total_document_count: usize,
+        maximum_document_size: usize,
+        maximum_total_document_size: usize,
+        maximum_document_name_size: usize,
+    ) -> Self {
+        Self {
+            minimum_expiry_hours,
+            minimum_total_document_count,
+            minimum_document_size,
+            minimum_total_document_size,
+            minimum_document_name_size,
+            maximum_expiry_hours,
+            maximum_total_document_count,
+            maximum_document_size,
+            maximum_total_document_size,
+            maximum_document_name_size,
+        }
+    }
+
+    /// From config.
+    ///
+    /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
+    pub fn from_config(config: &Config) -> Self {
+        let size_limits = config.size_limits();
+        Self::new(
+            size_limits.minimum_expiry_hours(),
+            size_limits.minimum_total_document_count(),
+            size_limits.minimum_document_size(),
+            size_limits.minimum_total_document_size(),
+            size_limits.minimum_document_name_size(),
+            size_limits.maximum_expiry_hours(),
+            size_limits.maximum_total_document_count(),
+            size_limits.maximum_document_size(),
+            size_limits.maximum_total_document_size(),
+            size_limits.maximum_document_name_size(),
         )
     }
 }
@@ -115,6 +210,7 @@ impl ResponsePaste {
     /// New.
     ///
     /// Create a new [`ResponsePaste`] object.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: Snowflake,
         token: Option<String>,
