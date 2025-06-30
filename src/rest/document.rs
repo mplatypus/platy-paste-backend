@@ -1,5 +1,3 @@
-use std::{sync::Arc, time::Duration};
-
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, Query, State},
@@ -12,7 +10,6 @@ use axum_extra::{
 };
 use bytes::Bytes;
 use http::{HeaderName, HeaderValue, StatusCode};
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
 use crate::{
     app::{application::App, config::Config},
@@ -30,84 +27,23 @@ use crate::{
 };
 
 pub fn generate_router(config: &Config) -> Router<App> {
-    let global_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().global_document())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build global document limiter."),
-        ),
-    };
-
-    let get_document_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().get_document())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build get document limiter."),
-        ),
-    };
-
-    let post_document_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().post_document())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build post document limiter."),
-        ),
-    };
-
-    let patch_document_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().patch_document())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build patch document limiter."),
-        ),
-    };
-
-    let delete_document_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().delete_document())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build delete document limiter."),
-        ),
-    };
-
     Router::new()
         .route(
             "/pastes/{paste_id}/documents/{document_id}",
-            get(get_document).layer(get_document_limiter),
+            get(get_document),
         )
         .route(
             "/pastes/{paste_id}/documents",
-            post(post_document).layer(post_document_limiter),
+            post(post_document),
         )
         .route(
             "/pastes/{paste_id}/documents/{document_id}",
-            patch(patch_document).layer(patch_document_limiter),
+            patch(patch_document),
         )
         .route(
             "/pastes/{paste_id}/documents/{document_id}",
-            delete(delete_document).layer(delete_document_limiter),
+            delete(delete_document),
         )
-        .layer(global_limiter)
         .layer(DefaultBodyLimit::max(
             config.size_limits().maximum_total_document_size(),
         ))

@@ -26,8 +26,6 @@ pub struct Config {
     domain: String,
     /// Size limits.
     size_limits: SizeLimitConfig,
-    /// Rate limits.
-    rate_limits: RateLimitConfig,
 }
 
 impl Config {
@@ -72,7 +70,6 @@ impl Config {
             )
             .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
             .size_limits(SizeLimitConfig::from_env(false))
-            .rate_limits(RateLimitConfig::from_env(false))
             .build()
             .expect("Failed to create application configuration.")
     }
@@ -115,10 +112,6 @@ impl Config {
 
     pub fn size_limits(&self) -> SizeLimitConfig {
         self.size_limits.clone()
-    }
-
-    pub fn rate_limits(&self) -> RateLimitConfig {
-        self.rate_limits.clone()
     }
 }
 
@@ -398,214 +391,6 @@ impl Default for SizeLimitConfig {
             maximum_document_size: 5_000_000,
             maximum_total_document_size: 10_000_000,
             maximum_document_name_size: 50,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Builder)]
-#[builder(default)]
-pub struct RateLimitConfig {
-    /// Global rate limiter.
-    global: u32,
-    /// Global paste rate limiter.
-    global_paste: u32,
-    /// Get paste rate limiter.
-    get_paste: u32,
-    /// Post paste rate limiter.
-    post_paste: u32,
-    /// Patch paste rate limiter.
-    patch_paste: u32,
-    /// Delete paste rate limiter.
-    delete_paste: u32,
-    /// Global paste rate limiter.
-    global_document: u32,
-    /// Get paste rate limiter.
-    get_document: u32,
-    /// Post paste rate limiter.
-    post_document: u32,
-    /// Patch paste rate limiter.
-    patch_document: u32,
-    /// Delete paste rate limiter.
-    delete_document: u32,
-    /// Global config rate limiter.
-    global_config: u32,
-    /// Get config rate limiter.
-    get_config: u32,
-}
-
-impl RateLimitConfig {
-    pub fn builder() -> RateLimitConfigBuilder {
-        RateLimitConfigBuilder::default()
-    }
-
-    #[allow(clippy::too_many_lines)]
-    pub fn from_env(fetch_env: bool) -> Self {
-        if fetch_env {
-            from_filename(".env").ok();
-        }
-
-        let defaults = Self::default();
-
-        Self::builder()
-            .global(
-                std::env::var("RATE_LIMIT_GLOBAL").map_or(defaults.global, |v| {
-                    v.parse().expect("RATE_LIMIT_GLOBAL requires an integer.")
-                }),
-            )
-            .global_paste(std::env::var("RATE_LIMIT_GLOBAL_PASTE").map_or(
-                defaults.global_paste,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_GLOBAL_PASTE requires an integer.")
-                },
-            ))
-            .get_paste(
-                std::env::var("RATE_LIMIT_GET_PASTE").map_or(defaults.get_paste, |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_GET_PASTE requires an integer.")
-                }),
-            )
-            .post_paste(
-                std::env::var("RATE_LIMIT_POST_PASTE").map_or(defaults.post_paste, |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_POST_PASTE requires an integer.")
-                }),
-            )
-            .patch_paste(std::env::var("RATE_LIMIT_PATCH_PASTE").map_or(
-                defaults.patch_paste,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_PATCH_PASTE requires an integer.")
-                },
-            ))
-            .delete_paste(std::env::var("RATE_LIMIT_DELETE_PASTE").map_or(
-                defaults.delete_paste,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_DELETE_PASTE requires an integer.")
-                },
-            ))
-            .global_document(std::env::var("RATE_LIMIT_GLOBAL_DOCUMENT").map_or(
-                defaults.global_document,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_GLOBAL_DOCUMENT requires an integer.")
-                },
-            ))
-            .get_document(std::env::var("RATE_LIMIT_GET_DOCUMENT").map_or(
-                defaults.get_document,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_GET_DOCUMENT requires an integer.")
-                },
-            ))
-            .post_document(std::env::var("RATE_LIMIT_POST_DOCUMENT").map_or(
-                defaults.post_document,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_POST_DOCUMENT requires an integer.")
-                },
-            ))
-            .patch_document(std::env::var("RATE_LIMIT_PATCH_DOCUMENT").map_or(
-                defaults.patch_document,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_PATCH_DOCUMENT requires an integer.")
-                },
-            ))
-            .delete_document(std::env::var("RATE_LIMIT_DELETE_DOCUMENT").map_or(
-                defaults.delete_document,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_DELETE_DOCUMENT requires an integer.")
-                },
-            ))
-            .global_config(std::env::var("RATE_LIMIT_GLOBAL_CONFIG").map_or(
-                defaults.global_config,
-                |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_GLOBAL_CONFIG requires an integer.")
-                },
-            ))
-            .get_config(
-                std::env::var("RATE_LIMIT_GET_CONFIG").map_or(defaults.get_config, |v| {
-                    v.parse()
-                        .expect("RATE_LIMIT_GET_CONFIG requires an integer.")
-                }),
-            )
-            .build()
-            .expect("Failed to create application rate limit configuration.")
-    }
-
-    pub const fn global(&self) -> u32 {
-        self.global
-    }
-
-    pub const fn global_paste(&self) -> u32 {
-        self.global_paste
-    }
-
-    pub const fn get_paste(&self) -> u32 {
-        self.get_paste
-    }
-
-    pub const fn post_paste(&self) -> u32 {
-        self.post_paste
-    }
-
-    pub const fn patch_paste(&self) -> u32 {
-        self.patch_paste
-    }
-
-    pub const fn delete_paste(&self) -> u32 {
-        self.delete_paste
-    }
-
-    pub const fn global_document(&self) -> u32 {
-        self.global_document
-    }
-
-    pub const fn get_document(&self) -> u32 {
-        self.get_document
-    }
-
-    pub const fn post_document(&self) -> u32 {
-        self.post_document
-    }
-
-    pub const fn patch_document(&self) -> u32 {
-        self.patch_document
-    }
-
-    pub const fn delete_document(&self) -> u32 {
-        self.delete_document
-    }
-
-    pub const fn global_config(&self) -> u32 {
-        self.global_config
-    }
-
-    pub const fn get_config(&self) -> u32 {
-        self.get_config
-    }
-}
-
-impl Default for RateLimitConfig {
-    fn default() -> Self {
-        Self {
-            global: 800,
-            global_paste: 500,
-            get_paste: 200,
-            post_paste: 100,
-            patch_paste: 120,
-            delete_paste: 200,
-            global_document: 500,
-            get_document: 200,
-            post_document: 100,
-            patch_document: 120,
-            delete_document: 200,
-            global_config: 200,
-            get_config: 200,
         }
     }
 }
