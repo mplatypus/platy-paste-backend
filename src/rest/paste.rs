@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
@@ -20,10 +20,7 @@ use crate::{
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
-        payload::{
-            GetPasteQuery, PatchPasteBody, PatchPasteQuery, PostPasteBody, PostPasteQuery,
-            ResponseDocument, ResponsePaste,
-        },
+        payload::{PatchPasteBody, PostPasteBody, ResponsePaste},
         snowflake::Snowflake,
         undefined::UndefinedOption,
     },
@@ -118,12 +115,6 @@ pub fn generate_router(config: &Config) -> Router<App> {
 ///
 /// - `paste_id` - The pastes ID.
 ///
-/// ## Query
-///
-/// References: [`GetPasteQuery`]
-///
-/// - `content` - Whether to include the content or not.
-///
 /// ## Returns
 ///
 /// - `404` - The paste was not found.
@@ -131,34 +122,16 @@ pub fn generate_router(config: &Config) -> Router<App> {
 async fn get_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
-    Query(query): Query<GetPasteQuery>,
 ) -> Result<Response, AppError> {
     let mut paste = validate_paste(&app.database, paste_id, None).await?;
 
     let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
-    let mut response_documents = Vec::new();
-    for document in documents {
-        let content = {
-            if query.include_content {
-                let data = app.s3.fetch_document(document.generate_path()).await?;
-                let d: &str = &String::from_utf8_lossy(&data);
-                Some(d.to_string())
-            } else {
-                None
-            }
-        };
-
-        let response_document = ResponseDocument::from_document(document, content);
-
-        response_documents.push(response_document);
-    }
-
     let view_count = Paste::add_view(app.database.pool(), paste_id).await?;
 
     paste.set_views(view_count);
 
-    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
+    let paste_response = ResponsePaste::from_paste(&paste, None, documents);
 
     Ok((StatusCode::OK, Json(paste_response)).into_response())
 }
@@ -170,12 +143,6 @@ async fn get_paste(
 /// The first object in the multipart must be the body object.
 ///
 /// The following items will be the documents.
-///
-/// ## Query
-///
-/// References: [`PostPasteQuery`]
-///
-/// - `content` - Whether to include the content or not.
 ///
 /// ## Body
 ///
@@ -189,7 +156,6 @@ async fn get_paste(
 /// - `200` - The [`ResponsePaste`] object.
 async fn post_paste(
     State(app): State<App>,
-    Query(query): Query<PostPasteQuery>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
     let body: PostPasteBody = {
@@ -273,25 +239,13 @@ async fn post_paste(
         documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
 
-    let final_documents: Vec<ResponseDocument> = documents
-        .iter()
-        .map(|(d, c)| {
-            let content = {
-                if query.include_content {
-                    Some(c.clone())
-                } else {
-                    None
-                }
-            };
-
-            ResponseDocument::from_document(d.clone(), content)
-        })
-        .collect();
-
+    let mut response_documents = Vec::new();
     for (document, content) in documents {
-        app.s3.create_document(&document, content.into()).await?;
+        app.s3.create_document(&document, content).await?;
 
         document.insert(transaction.as_mut()).await?;
+
+        response_documents.push(document);
     }
 
     total_document_limits(&mut transaction, &app.config, paste.id).await?;
@@ -302,7 +256,7 @@ async fn post_paste(
 
     transaction.commit().await?;
 
-    let response = ResponsePaste::from_paste(&paste, Some(paste_token), final_documents);
+    let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
 
     Ok((StatusCode::OK, Json(response)).into_response())
 }
@@ -316,12 +270,6 @@ async fn post_paste(
 /// ## Path
 ///
 /// - `paste_id` - The paste ID to edit.
-///
-/// ## Query
-///
-/// References: [`PatchPasteQuery`]
-///
-/// - `content` - Whether to include the content or not.
 ///
 /// ## Body
 ///
@@ -337,7 +285,6 @@ async fn post_paste(
 async fn patch_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
-    Query(query): Query<PatchPasteQuery>,
     token: Token,
     Json(body): Json<PatchPasteBody>,
 ) -> Result<Response, AppError> {
@@ -359,26 +306,9 @@ async fn patch_paste(
 
     let documents = Document::fetch_all(transaction.as_mut(), paste.id).await?;
 
-    let mut response_documents = Vec::new();
-    for document in documents {
-        let content = {
-            if query.include_content {
-                let data = app.s3.fetch_document(document.generate_path()).await?;
-                let d: &str = &String::from_utf8_lossy(&data);
-                Some(d.to_string())
-            } else {
-                None
-            }
-        };
-
-        let response_document = ResponseDocument::from_document(document, content);
-
-        response_documents.push(response_document);
-    }
-
     transaction.commit().await?;
 
-    let paste_response = ResponsePaste::from_paste(&paste, None, response_documents);
+    let paste_response = ResponsePaste::from_paste(&paste, None, documents);
 
     Ok((StatusCode::OK, Json(paste_response)).into_response())
 }

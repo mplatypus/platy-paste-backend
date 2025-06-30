@@ -1,4 +1,6 @@
-use aws_sdk_s3::{error::SdkError, operation::head_bucket::HeadBucketError};
+use aws_sdk_s3::{
+    error::SdkError, operation::head_bucket::HeadBucketError, primitives::ByteStream,
+};
 use bytes::{Bytes, BytesMut};
 
 use crate::models::{document::Document, error::AppError};
@@ -12,6 +14,20 @@ pub struct S3Service {
     app: Weak<ApplicationState>,
     client: S3Client,
 }
+
+const POLICY: &str = r#"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::{name}/*"
+    }
+  ]
+}
+"#;
 
 impl S3Service {
     /// New.
@@ -83,6 +99,14 @@ impl S3Service {
                     .bucket(self.document_bucket_name())
                     .send()
                     .await?;
+
+                self.client
+                    .put_bucket_policy()
+                    .bucket(self.document_bucket_name())
+                    .policy(POLICY.replace("{name}", self.document_bucket_name()))
+                    .send()
+                    .await?;
+
                 tracing::info!("Created S3 bucket: {}", self.document_bucket_name());
             }
             Err(e) => return Err(e.into()),
@@ -138,14 +162,14 @@ impl S3Service {
     pub async fn create_document(
         &self,
         document: &Document,
-        content: Bytes,
+        content: impl Into<Bytes>,
     ) -> Result<(), AppError> {
         self.client
             .put_object()
             .bucket(self.document_bucket_name())
             .content_type(document.document_type.clone())
             .key(document.generate_path())
-            .body(content.into())
+            .body(ByteStream::from(content.into()))
             .send()
             .await?;
 

@@ -40,12 +40,12 @@ fn test_getters() {
 
     assert!(
         document.generate_url("http://example.com")
-            == format!("http://example.com/documents/{paste_id}/{document_id}-{name}"),
+            == format!("http://example.com/documents/{paste_id}/{document_id}/{name}"),
         "Mismatched URL."
     );
 
     assert!(
-        document.generate_path() == format!("{paste_id}/{document_id}-{name}"),
+        document.generate_path() == format!("{paste_id}/{document_id}/{name}"),
         "Mismatched path."
     );
 }
