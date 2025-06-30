@@ -39,6 +39,7 @@ pub struct Document {
     /// The paste that owns the document.
     pub paste_id: Snowflake,
     /// The type of document.
+    #[serde(rename = "type")]
     pub document_type: String,
     /// The name of the document.
     pub name: String,
@@ -89,7 +90,7 @@ impl Document {
     ///
     /// The path generated.
     pub fn generate_path(&self) -> String {
-        format!("{}/{}-{}", self.paste_id, self.id, self.name)
+        format!("{}/{}/{}", self.paste_id, self.id, self.name)
     }
 
     /// Set Document Type.

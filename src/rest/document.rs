@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Path, Query, State},
+    extract::{DefaultBodyLimit, Path, State},
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
@@ -24,7 +24,6 @@ use crate::{
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
-        payload::{PatchDocumentQuery, PostDocumentQuery, ResponseDocument},
         snowflake::Snowflake,
     },
 };
@@ -140,25 +139,14 @@ async fn get_document(
         ));
     }
 
-    let data = app.s3.fetch_document(document.generate_path()).await?;
-    let d: &str = &String::from_utf8_lossy(&data);
-
     Paste::add_view(app.database.pool(), paste_id).await?;
 
-    let response_document = ResponseDocument::from_document(document, Some(d.to_string()));
-
-    Ok((StatusCode::OK, Json(response_document)).into_response())
+    Ok((StatusCode::OK, Json(document)).into_response())
 }
 
 /// Post Document.
 ///
 /// Adds a document to an existing paste.
-///
-/// ## Query
-///
-/// References: [`PostDocumentQuery`]
-///
-/// - `content` - Whether to return the content.
 ///
 /// ## Body
 ///
@@ -175,7 +163,6 @@ async fn post_document(
     Path(paste_id): Path<Snowflake>,
     TypedHeader(content_disposition): TypedHeader<ContentDisposition>,
     content_type: Option<TypedHeader<ContentType>>,
-    Query(query): Query<PostDocumentQuery>,
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
@@ -221,18 +208,7 @@ async fn post_document(
 
     transaction.commit().await?;
 
-    let content = {
-        if query.include_content {
-            let d: &str = &String::from_utf8_lossy(&body);
-            Some(d.to_string())
-        } else {
-            None
-        }
-    };
-
-    let document_response = ResponseDocument::from_document(document, content);
-
-    Ok((StatusCode::OK, Json(document_response)).into_response())
+    Ok((StatusCode::OK, Json(document)).into_response())
 }
 
 /// Patch Document.
@@ -243,12 +219,6 @@ async fn post_document(
 ///
 /// - `paste_id` - The paste ID of the document.
 /// - `document_id` - The document ID to edit.
-///
-/// ## Query
-///
-/// References: [`PatchDocumentQuery`]
-///
-/// - `content` - Whether to return the content.
 ///
 /// ## Body
 ///
@@ -265,7 +235,6 @@ async fn patch_document(
     Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
     TypedHeader(content_disposition): TypedHeader<ContentDisposition>,
     content_type: Option<TypedHeader<ContentType>>,
-    Query(query): Query<PatchDocumentQuery>,
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
@@ -315,18 +284,7 @@ async fn patch_document(
 
     transaction.commit().await?;
 
-    let content = {
-        if query.include_content {
-            let d: &str = &String::from_utf8_lossy(&body);
-            Some(d.to_string())
-        } else {
-            None
-        }
-    };
-
-    let paste_response = ResponseDocument::from_document(document, content);
-
-    Ok((StatusCode::OK, Json(paste_response)).into_response())
+    Ok((StatusCode::OK, Json(document)).into_response())
 }
 
 /// Patch Document.

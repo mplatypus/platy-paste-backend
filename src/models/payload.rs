@@ -10,25 +10,6 @@ use super::{
 };
 
 #[derive(Deserialize)]
-pub struct IncludeContentQuery {
-    /// Whether to return the content(s) of the document(s).
-    ///
-    /// Defaults to False.
-    #[serde(default, rename = "content")]
-    pub include_content: bool,
-}
-
-pub type GetPasteQuery = IncludeContentQuery;
-
-pub type PostPasteQuery = IncludeContentQuery;
-
-pub type PatchPasteQuery = IncludeContentQuery;
-
-pub type PostDocumentQuery = IncludeContentQuery;
-
-pub type PatchDocumentQuery = IncludeContentQuery;
-
-#[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
@@ -203,7 +184,7 @@ pub struct ResponsePaste {
     /// The maximum amount of views the paste can have.
     pub max_views: Option<usize>,
     /// The documents attached to the paste.
-    pub documents: Vec<ResponseDocument>,
+    pub documents: Vec<Document>,
 }
 
 impl ResponsePaste {
@@ -219,7 +200,7 @@ impl ResponsePaste {
         expiry: Option<OffsetDateTime>,
         views: usize,
         max_views: Option<usize>,
-        documents: Vec<ResponseDocument>,
+        documents: Vec<Document>,
     ) -> Self {
         Self {
             id,
@@ -246,11 +227,7 @@ impl ResponsePaste {
     /// ## Returns
     ///
     /// The [`ResponsePaste`].
-    pub fn from_paste(
-        paste: &Paste,
-        token: Option<Token>,
-        documents: Vec<ResponseDocument>,
-    ) -> Self {
+    pub fn from_paste(paste: &Paste, token: Option<Token>, documents: Vec<Document>) -> Self {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
         Self::new(
@@ -262,64 +239,6 @@ impl ResponsePaste {
             paste.views,
             paste.max_views,
             documents,
-        )
-    }
-}
-
-#[derive(Serialize)]
-pub struct ResponseDocument {
-    /// The ID for the document.
-    pub id: Snowflake,
-    /// The paste ID the document is attached too.
-    pub paste_id: Snowflake,
-    /// The type of document.
-    #[serde(rename = "type")]
-    pub document_type: String,
-    /// The name of the document.
-    pub name: String,
-    /// The content of the document.
-    pub content: Option<String>,
-}
-
-impl ResponseDocument {
-    /// New.
-    ///
-    /// Create a new [`ResponseDocument`] object.
-    pub const fn new(
-        id: Snowflake,
-        paste_id: Snowflake,
-        document_type: String,
-        name: String,
-        content: Option<String>,
-    ) -> Self {
-        Self {
-            id,
-            paste_id,
-            document_type,
-            name,
-            content,
-        }
-    }
-
-    /// From Document.
-    ///
-    /// Create a new [`ResponseDocument`] from a [`Document`] and its content.
-    ///
-    /// ## Arguments
-    ///
-    /// - `document` - The document to extract from.
-    /// - `content` - The content to use (if provided).
-    ///
-    /// ## Returns
-    ///
-    /// The [`ResponseDocument`].
-    pub fn from_document(document: Document, content: Option<String>) -> Self {
-        Self::new(
-            document.id,
-            document.paste_id,
-            document.document_type,
-            document.name,
-            content,
         )
     }
 }
