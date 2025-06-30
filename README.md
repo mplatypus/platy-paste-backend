@@ -1,11 +1,6 @@
 # Platy Paste (backend)
 
-The back end that that is used to store, edit and delete pastes!
-
-You can view a live version of platy paste [here](https://paste.mplaty.com/)
-
-You can interact with the live backend with: `https://paste-api.mplaty.com/`
-
+The back end that is used by platy paste to run the site!
 
 ## Features
 
