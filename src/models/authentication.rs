@@ -32,13 +32,15 @@ impl Token {
     }
 
     /// The owning paste ID.
+    #[inline]
     pub const fn paste_id(&self) -> Snowflake {
         self.paste_id
     }
 
     /// The authentication token.
-    pub fn token(&self) -> SecretString {
-        self.token.clone()
+    #[inline]
+    pub const fn token(&self) -> &SecretString {
+        &self.token
     }
 
     /// Fetch.
@@ -58,7 +60,7 @@ impl Token {
     ///
     /// - [`Option::Some`] - The [`Token`] object.
     /// - [`Option::None`] - No token was found.
-    pub async fn fetch<'e, 'c: 'e, E>(executor: E, token: String) -> Result<Option<Self>, AppError>
+    pub async fn fetch<'e, 'c: 'e, E>(executor: E, token: &str) -> Result<Option<Self>, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -110,7 +112,7 @@ impl Token {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn delete<'e, 'c: 'e, E>(executor: E, token: String) -> Result<(), AppError>
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, token: &str) -> Result<(), AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -132,7 +134,7 @@ impl FromRequestParts<App> for Token {
             .await
             .map_err(|_| AuthError::MissingCredentials)?;
 
-        let bot = Self::fetch(state.database.pool(), bearer.token().to_string())
+        let bot = Self::fetch(state.database().pool(), bearer.token())
             .await?
             .ok_or(AuthError::InvalidToken)?;
 

@@ -77,48 +77,48 @@ impl Config {
             .expect("Failed to create application configuration.")
     }
 
-    pub fn host(&self) -> String {
-        self.host.clone()
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     pub const fn port(&self) -> u16 {
         self.port
     }
 
-    pub fn database_url(&self) -> String {
-        self.database_url.clone()
+    pub fn database_url(&self) -> &str {
+        &self.database_url
     }
 
-    pub fn s3_url(&self) -> String {
-        self.s3_url.clone()
+    pub fn s3_url(&self) -> &str {
+        &self.s3_url
     }
 
-    pub fn s3_access_key(&self) -> SecretString {
-        self.s3_access_key.clone()
+    pub const fn s3_access_key(&self) -> &SecretString {
+        &self.s3_access_key
     }
 
-    pub fn s3_secret_key(&self) -> SecretString {
-        self.s3_secret_key.clone()
+    pub const fn s3_secret_key(&self) -> &SecretString {
+        &self.s3_secret_key
     }
 
-    pub fn minio_root_user(&self) -> String {
-        self.minio_root_user.clone()
+    pub fn minio_root_user(&self) -> &str {
+        &self.minio_root_user
     }
 
-    pub fn minio_root_password(&self) -> SecretString {
-        self.minio_root_password.clone()
+    pub const fn minio_root_password(&self) -> &SecretString {
+        &self.minio_root_password
     }
 
-    pub fn domain(&self) -> String {
-        self.domain.clone()
+    pub fn domain(&self) -> &str {
+        &self.domain
     }
 
-    pub fn size_limits(&self) -> SizeLimitConfig {
-        self.size_limits.clone()
+    pub const fn size_limits(&self) -> &SizeLimitConfig {
+        &self.size_limits
     }
 
-    pub fn rate_limits(&self) -> RateLimitConfig {
-        self.rate_limits.clone()
+    pub const fn rate_limits(&self) -> &RateLimitConfig {
+        &self.rate_limits
     }
 }
 

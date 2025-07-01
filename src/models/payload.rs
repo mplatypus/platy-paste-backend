@@ -48,7 +48,7 @@ impl ResponseConfig {
     /// From config.
     ///
     /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
-    pub fn from_config(config: &Config) -> Self {
+    pub const fn from_config(config: &Config) -> Self {
         Self::new(
             ResponseDefaultsConfig::from_config(config),
             ResponseSizeLimitsConfig::from_config(config),
@@ -78,7 +78,7 @@ impl ResponseDefaultsConfig {
     /// From config.
     ///
     /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
-    pub fn from_config(config: &Config) -> Self {
+    pub const fn from_config(config: &Config) -> Self {
         let size_limits = config.size_limits();
 
         Self::new(
@@ -146,7 +146,7 @@ impl ResponseSizeLimitsConfig {
     /// From config.
     ///
     /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
-    pub fn from_config(config: &Config) -> Self {
+    pub const fn from_config(config: &Config) -> Self {
         let size_limits = config.size_limits();
         Self::new(
             size_limits.minimum_expiry_hours(),
@@ -231,13 +231,13 @@ impl ResponsePaste {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
         Self::new(
-            paste.id,
+            *paste.id(),
             token_value,
-            paste.creation,
-            paste.edited,
-            paste.expiry,
-            paste.views,
-            paste.max_views,
+            *paste.creation(),
+            paste.edited().copied(),
+            paste.expiry().copied(),
+            paste.views(),
+            paste.max_views(),
             documents,
         )
     }

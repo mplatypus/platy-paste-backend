@@ -35,32 +35,30 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, reason, trace): (StatusCode, &str, String) = match self {
+        let (status, reason, trace): (StatusCode, &str, &str) = match self {
             Self::Authentication(e) => return e.into_response(),
-            Self::Database(ref e) => (StatusCode::BAD_REQUEST, "Database Error", e.to_string()),
+            Self::Database(e) => (StatusCode::BAD_REQUEST, "Database Error", &e.to_string()),
             Self::Multipart(e) => return e.into_response(),
-            Self::Json(ref e) => (StatusCode::BAD_REQUEST, "Json Error", e.to_string()),
-            Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error", e.clone()),
-            Self::ParseInt(ref e) => (
+            Self::Json(e) => (StatusCode::BAD_REQUEST, "Json Error", &e.to_string()),
+            Self::S3Client(ref e) => (StatusCode::INTERNAL_SERVER_ERROR, "S3 Error", e),
+            Self::ParseInt(e) => (
                 StatusCode::BAD_REQUEST,
                 "Failed to parse integer",
-                e.to_string(),
+                &e.to_string(),
             ),
             Self::InternalServer(ref e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error",
-                e.clone(),
+                e,
             ),
-            Self::BadRequest(ref e) => (StatusCode::BAD_REQUEST, "Bad Request", e.clone()),
-            Self::NotFound(ref e) => (StatusCode::NOT_FOUND, "Not Found", e.clone()),
+            Self::BadRequest(ref e) => (StatusCode::BAD_REQUEST, "Bad Request", e),
+            Self::NotFound(ref e) => (StatusCode::NOT_FOUND, "Not Found", e),
         };
-        if status == StatusCode::INTERNAL_SERVER_ERROR {
-            tracing::error!(error = %self);
-        }
+
         let body = Json(ErrorResponse {
             timestamp: OffsetDateTime::now_utc().unix_timestamp() as u64,
             reason: String::from(reason),
-            trace: Some(trace), // This should only appear if the trace is requested (the query contains trace=True)
+            trace: Some(trace.to_string()), // This should only appear if the trace is requested (the query contains trace=True)
         });
         (status, body).into_response()
     }

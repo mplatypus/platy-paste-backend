@@ -18,17 +18,17 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct Paste {
     /// The ID of the paste.
-    pub id: Snowflake,
+    id: Snowflake,
     /// When the paste was created.
-    pub creation: OffsetDateTime,
+    creation: OffsetDateTime,
     /// When the paste was last modified.
-    pub edited: Option<OffsetDateTime>,
+    edited: Option<OffsetDateTime>,
     /// The time at which the paste will expire.
-    pub expiry: Option<OffsetDateTime>,
+    expiry: Option<OffsetDateTime>,
     /// The amount of views a paste has.
-    pub views: usize,
+    views: usize,
     /// The maximum allowed views for a paste.
-    pub max_views: Option<usize>,
+    max_views: Option<usize>,
 }
 
 impl Paste {
@@ -53,9 +53,46 @@ impl Paste {
         }
     }
 
+    /// The pastes ID.
+    #[inline]
+    pub const fn id(&self) -> &Snowflake {
+        &self.id
+    }
+
+    /// The pastes creation time.
+    #[inline]
+    pub const fn creation(&self) -> &OffsetDateTime {
+        &self.creation
+    }
+
+    /// The pastes last edited time.
+    #[inline]
+    pub const fn edited(&self) -> Option<&OffsetDateTime> {
+        self.edited.as_ref()
+    }
+
+    /// The pastes expiry time.
+    #[inline]
+    pub const fn expiry(&self) -> Option<&OffsetDateTime> {
+        self.expiry.as_ref()
+    }
+
+    /// The pastes total view count.
+    #[inline]
+    pub const fn views(&self) -> usize {
+        self.views
+    }
+
+    /// The pastes maximum allowed views.
+    #[inline]
+    pub const fn max_views(&self) -> Option<usize> {
+        self.max_views
+    }
+
     /// Set Edited.
     ///
     /// Update the edited timestamp to the current time.
+    #[inline]
     pub fn set_edited(&mut self) {
         self.edited = Some(OffsetDateTime::now_utc());
     }
@@ -63,6 +100,7 @@ impl Paste {
     /// Set Expiry.
     ///
     /// Set or remove the expiry on the paste.
+    #[inline]
     pub const fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
         self.expiry = expiry;
     }
@@ -70,6 +108,7 @@ impl Paste {
     /// Set Max Views.
     ///
     /// Set or remove the maximum amount of views for a paste.
+    #[inline]
     pub const fn set_max_views(&mut self, max_views: Option<usize>) {
         self.max_views = max_views;
     }
@@ -77,6 +116,7 @@ impl Paste {
     /// Set views.
     ///
     /// Allows for setting the view count of a paste, or updating it.
+    #[inline]
     pub const fn set_views(&mut self, views: usize) {
         self.views = views;
     }
@@ -98,11 +138,11 @@ impl Paste {
     ///
     /// - [`Option::Some`] - The [`Paste`] object.
     /// - [`Option::None`] - No paste was found.
-    pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<Option<Self>, AppError>
+    pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<Option<Self>, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let paste_id: i64 = id.into();
+        let paste_id: i64 = (*id).into();
         let query = sqlx::query!(
             "SELECT id, creation, edited, expiry, views, max_views FROM pastes WHERE id = $1",
             paste_id
@@ -143,8 +183,8 @@ impl Paste {
     /// A [`Vec`] of [`Paste`]'s.
     pub async fn fetch_between<'e, 'c: 'e, E>(
         executor: E,
-        start: OffsetDateTime,
-        end: OffsetDateTime,
+        start: &OffsetDateTime,
+        end: &OffsetDateTime,
     ) -> Result<Vec<Self>, AppError>
     where
         E: 'e + PgExecutor<'c>,
@@ -248,11 +288,11 @@ impl Paste {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn add_view<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<usize, AppError>
+    pub async fn add_view<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<usize, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let id: i64 = id.into();
+        let id: i64 = (*id).into();
 
         let views = sqlx::query_scalar!(
             "UPDATE pastes SET views = views + 1 WHERE id = $1 RETURNING views",
@@ -276,11 +316,11 @@ impl Paste {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<bool, AppError>
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<bool, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let paste_id: i64 = id.into();
+        let paste_id: i64 = (*id).into();
         let result = sqlx::query!("DELETE FROM pastes WHERE id = $1", paste_id,)
             .execute(executor)
             .await?;
@@ -309,7 +349,7 @@ impl Paste {
 /// The paste that was checked and found.
 pub async fn validate_paste(
     db: &Database,
-    paste_id: Snowflake,
+    paste_id: &Snowflake,
     token: Option<Token>,
 ) -> Result<Paste, AppError> {
     let Some(paste) = Paste::fetch(db.pool(), paste_id).await? else {
@@ -362,7 +402,7 @@ pub enum ExpiryTaskMessage {
 pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
     const MINUTES: u64 = 50;
 
-    let pastes = match collect_nearby_expired_tasks(&app.database).await {
+    let pastes = match collect_nearby_expired_tasks(app.database()).await {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("Failed to collect all pastes to expire. Reason: {e}");
@@ -371,7 +411,7 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
     };
 
     for paste in pastes {
-        let documents = match Document::fetch_all(app.database.pool(), paste.id).await {
+        let documents = match Document::fetch_all(app.database().pool(), &paste.id).await {
             Ok(documents) => documents,
             Err(e) => {
                 tracing::warn!(
@@ -384,20 +424,20 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
         };
 
         for document in documents {
-            match app.s3.delete_document(document.generate_path()).await {
+            match app.s3().delete_document(document.generate_path()).await {
                 Ok(()) => tracing::trace!(
                     "Successfully deleted paste document (minio): {}",
-                    document.id
+                    document.id()
                 ),
                 Err(e) => tracing::trace!(
                     "Failed to delete paste document: {} (minio). Reason: {}",
-                    document.id,
+                    document.id(),
                     e
                 ),
             }
         }
 
-        match Paste::delete(app.database.pool(), paste.id).await {
+        match Paste::delete(app.database().pool(), &paste.id).await {
             Ok(_) => tracing::trace!("Successfully deleted paste: {}", paste.id),
             Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e),
         }
@@ -422,7 +462,7 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
                 }
             }
             () = &mut sleep => {
-                let pastes = match collect_nearby_expired_tasks(&app.database).await {
+                let pastes = match collect_nearby_expired_tasks(app.database()).await {
                     Ok(v) => v,
                     Err(e) => {
                         tracing::error!("Failed to collect all pastes to expire. Reason: {e}");
@@ -432,7 +472,7 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
 
                 // FIXME: Please tell me there is a cleaner way of doing this.
                 for paste in pastes {
-                    let documents = match Document::fetch_all(app.database.pool(), paste.id).await {
+                    let documents = match Document::fetch_all(app.database().pool(), &paste.id).await {
                         Ok(documents) => documents,
                         Err(e) => {
                             tracing::warn!("Failed to fetch documents for paste {}. Reason: {}", paste.id, e);
@@ -441,13 +481,13 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
                     };
 
                     for document in documents {
-                        match app.s3.delete_document(document.generate_path()).await {
-                            Ok(()) => tracing::trace!("Successfully deleted paste document (minio): {}", document.id),
-                            Err(e) => tracing::trace!("Failed to delete paste document: {} (minio). Reason: {}", document.id, e)
+                        match app.s3().delete_document(document.generate_path()).await {
+                            Ok(()) => tracing::trace!("Successfully deleted paste document (minio): {}", document.id()),
+                            Err(e) => tracing::trace!("Failed to delete paste document: {} (minio). Reason: {}", document.id(), e)
                         }
                     }
 
-                    match Paste::delete(app.database.pool(), paste.id).await {
+                    match Paste::delete(app.database().pool(), &paste.id).await {
                         Ok(_) => tracing::trace!("Successfully deleted paste: {}", paste.id),
                         Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e)
                     }
@@ -477,5 +517,5 @@ async fn collect_nearby_expired_tasks(db: &Database) -> Result<Vec<Paste>, AppEr
         .expect("Failed to make a timestamp with the time of 0.");
     let end = OffsetDateTime::now_utc();
 
-    Paste::fetch_between(db.pool(), start, end).await
+    Paste::fetch_between(db.pool(), &start, &end).await
 }
