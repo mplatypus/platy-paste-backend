@@ -24,6 +24,7 @@ use crate::{
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
+        payload::{DeleteDocumentPath, GetDocumentPath, PatchDocumentPath, PostDocumentPath},
         snowflake::Snowflake,
     },
 };
@@ -127,19 +128,19 @@ pub fn generate_router(config: &Config) -> Router<App> {
 /// - `200` - The [`ResponseDocument`] object.
 async fn get_document(
     State(app): State<App>,
-    Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
+    Path(path): Path<GetDocumentPath>,
 ) -> Result<Response, AppError> {
-    let document = Document::fetch(app.database.pool(), document_id)
+    let document = Document::fetch(app.database.pool(), path.document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
-    if document.paste_id != paste_id {
+    if document.paste_id != path.paste_id {
         return Err(AppError::BadRequest(
             "The document ID does not belong to that paste.".to_string(),
         ));
     }
 
-    Paste::add_view(app.database.pool(), paste_id).await?;
+    Paste::add_view(app.database.pool(), path.paste_id).await?;
 
     Ok((StatusCode::OK, Json(document)).into_response())
 }
@@ -160,13 +161,13 @@ async fn get_document(
 /// - `204` - If content is set to false.
 async fn post_document(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>,
+    Path(path): Path<PostDocumentPath>,
     TypedHeader(content_disposition): TypedHeader<ContentDisposition>,
     content_type: Option<TypedHeader<ContentType>>,
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
+    let mut paste = validate_paste(&app.database, path.paste_id, Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
@@ -202,7 +203,7 @@ async fn post_document(
 
     document.insert(transaction.as_mut()).await?;
 
-    total_document_limits(&mut transaction, &app.config, paste_id).await?;
+    total_document_limits(&mut transaction, &app.config, path.paste_id).await?;
 
     app.s3.create_document(&document, body.clone()).await?;
 
@@ -232,13 +233,13 @@ async fn post_document(
 /// - `204` - If content is set to false.
 async fn patch_document(
     State(app): State<App>,
-    Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
+    Path(path): Path<PatchDocumentPath>,
     TypedHeader(content_disposition): TypedHeader<ContentDisposition>,
     content_type: Option<TypedHeader<ContentType>>,
     token: Token,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
+    let mut paste = validate_paste(&app.database, path.paste_id, Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
@@ -254,7 +255,7 @@ async fn patch_document(
         }
     };
 
-    let mut document = Document::fetch(app.database.pool(), document_id)
+    let mut document = Document::fetch(app.database.pool(), path.document_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
 
@@ -276,7 +277,7 @@ async fn patch_document(
 
     document.update(transaction.as_mut()).await?;
 
-    total_document_limits(&mut transaction, &app.config, paste_id).await?;
+    total_document_limits(&mut transaction, &app.config, path.paste_id).await?;
 
     app.s3.delete_document(document.generate_path()).await?;
 
@@ -303,15 +304,15 @@ async fn patch_document(
 /// - `204` - Successful deletion of the document.
 async fn delete_document(
     State(app): State<App>,
-    Path((paste_id, document_id)): Path<(Snowflake, Snowflake)>,
+    Path(path): Path<DeleteDocumentPath>,
     token: Token,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
+    if token.paste_id() != path.paste_id {
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
     let total_document_count =
-        Document::fetch_total_document_count(app.database.pool(), paste_id).await?;
+        Document::fetch_total_document_count(app.database.pool(), path.paste_id).await?;
 
     if total_document_count <= 1 {
         return Err(AppError::BadRequest(
@@ -319,7 +320,7 @@ async fn delete_document(
         ));
     }
 
-    if !Document::delete(app.database.pool(), document_id).await? {
+    if !Document::delete(app.database.pool(), path.document_id).await? {
         return Err(AppError::NotFound(
             "The document was not found.".to_string(),
         ));

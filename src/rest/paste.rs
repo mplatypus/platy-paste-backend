@@ -20,7 +20,10 @@ use crate::{
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
-        payload::{PatchPasteBody, PostPasteBody, ResponsePaste},
+        payload::{
+            DeletePastePath, GetPastePath, PatchPasteBody, PatchPastePath, PostPasteBody,
+            ResponsePaste,
+        },
         snowflake::Snowflake,
         undefined::UndefinedOption,
     },
@@ -121,13 +124,13 @@ pub fn generate_router(config: &Config) -> Router<App> {
 /// - `200` - The [`ResponsePaste`] object.
 async fn get_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>,
+    Path(path): Path<GetPastePath>,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(&app.database, paste_id, None).await?;
+    let mut paste = validate_paste(&app.database, path.paste_id, None).await?;
 
     let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
 
-    let view_count = Paste::add_view(app.database.pool(), paste_id).await?;
+    let view_count = Paste::add_view(app.database.pool(), path.paste_id).await?;
 
     paste.set_views(view_count);
 
@@ -284,11 +287,11 @@ async fn post_paste(
 /// - `200` - The [`ResponsePaste`] object.
 async fn patch_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>,
+    Path(path): Path<PatchPastePath>,
     token: Token,
     Json(body): Json<PatchPasteBody>,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
+    let mut paste = validate_paste(&app.database, path.paste_id, Some(token)).await?;
 
     let new_expiry = validate_expiry(&app.config, body.expiry)?;
 
@@ -335,14 +338,14 @@ async fn patch_paste(
 /// - `204` - Successful deletion of the paste.
 async fn delete_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>,
+    Path(path): Path<DeletePastePath>,
     token: Token,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
+    if token.paste_id() != path.paste_id {
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    if !Paste::delete(app.database.pool(), paste_id).await? {
+    if !Paste::delete(app.database.pool(), path.paste_id).await? {
         return Err(AppError::NotFound("The paste was not found.".to_string()));
     }
 

@@ -10,6 +10,34 @@ use super::{
 };
 
 #[derive(Deserialize)]
+pub struct PastePath {
+    /// The paste ID.
+    pub paste_id: Snowflake,
+}
+
+pub type GetPastePath = PastePath;
+
+pub type PatchPastePath = PastePath;
+
+pub type DeletePastePath = PastePath;
+
+pub type PostDocumentPath = PastePath;
+
+#[derive(Deserialize)]
+pub struct DocumentPath {
+    /// The paste ID.
+    pub paste_id: Snowflake,
+    /// The document ID.
+    pub document_id: Snowflake,
+}
+
+pub type GetDocumentPath = DocumentPath;
+
+pub type PatchDocumentPath = DocumentPath;
+
+pub type DeleteDocumentPath = DocumentPath;
+
+#[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
