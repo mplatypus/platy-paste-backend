@@ -1,5 +1,5 @@
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::{PgExecutor, PgTransaction};
 
 use crate::app::config::Config;
@@ -32,7 +32,7 @@ pub const UNSUPPORTED_MIMES: &[&str] =
 
 pub const DEFAULT_MIME: &str = "text/plain";
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug)]
 pub struct Document {
     /// The ID of the document.
     id: Snowflake,

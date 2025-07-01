@@ -74,7 +74,7 @@ where
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Serialize, Debug)]
 pub struct Error {
     reason: String,
     trace: Option<String>,
