@@ -123,11 +123,11 @@ async fn get_paste(
     State(app): State<App>,
     Path(paste_id): Path<Snowflake>,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(&app.database, paste_id, None).await?;
+    let mut paste = validate_paste(app.database(), &paste_id, None).await?;
 
-    let documents = Document::fetch_all(app.database.pool(), paste.id).await?;
+    let documents = Document::fetch_all(app.database().pool(), paste.id()).await?;
 
-    let view_count = Paste::add_view(app.database.pool(), paste_id).await?;
+    let view_count = Paste::add_view(app.database().pool(), &paste_id).await?;
 
     paste.set_views(view_count);
 
@@ -177,17 +177,17 @@ async fn post_paste(
         }
     };
 
-    let expiry = validate_expiry(&app.config, body.expiry)?;
+    let expiry = validate_expiry(app.config(), body.expiry)?;
 
     let max_views = {
         match body.max_views {
-            UndefinedOption::Undefined => app.config.size_limits().default_maximum_views(),
+            UndefinedOption::Undefined => app.config().size_limits().default_maximum_views(),
             UndefinedOption::Some(max_views) => Some(max_views),
             UndefinedOption::None => None,
         }
     };
 
-    let mut transaction = app.database.pool().begin().await?;
+    let mut transaction = app.database().pool().begin().await?;
 
     let paste = Paste::new(
         Snowflake::generate()?,
@@ -228,29 +228,29 @@ async fn post_paste(
 
         let document = Document::new(
             Snowflake::generate()?,
-            paste.id,
-            document_type,
-            name,
+            *paste.id(),
+            &document_type,
+            &name,
             data.len(),
         );
 
-        document_limits(&app.config, &document)?;
+        document_limits(app.config(), &document)?;
 
         documents.push((document, String::from_utf8_lossy(&data).to_string()));
     }
 
     let mut response_documents = Vec::new();
     for (document, content) in documents {
-        app.s3.create_document(&document, content).await?;
+        app.s3().create_document(&document, content).await?;
 
         document.insert(transaction.as_mut()).await?;
 
         response_documents.push(document);
     }
 
-    total_document_limits(&mut transaction, &app.config, paste.id).await?;
+    total_document_limits(&mut transaction, app.config(), paste.id()).await?;
 
-    let paste_token = Token::new(paste.id, generate_token(paste.id)?);
+    let paste_token = Token::new(*paste.id(), generate_token(*paste.id())?);
 
     paste_token.insert(transaction.as_mut()).await?;
 
@@ -288,9 +288,9 @@ async fn patch_paste(
     token: Token,
     Json(body): Json<PatchPasteBody>,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(&app.database, paste_id, Some(token)).await?;
+    let mut paste = validate_paste(app.database(), &paste_id, Some(token)).await?;
 
-    let new_expiry = validate_expiry(&app.config, body.expiry)?;
+    let new_expiry = validate_expiry(app.config(), body.expiry)?;
 
     if !new_expiry.is_undefined() {
         paste.set_expiry(new_expiry.to_option());
@@ -300,11 +300,11 @@ async fn patch_paste(
         paste.set_max_views(body.max_views.to_option());
     }
 
-    let mut transaction = app.database.pool().begin().await?;
+    let mut transaction = app.database().pool().begin().await?;
 
     paste.update(transaction.as_mut()).await?;
 
-    let documents = Document::fetch_all(transaction.as_mut(), paste.id).await?;
+    let documents = Document::fetch_all(transaction.as_mut(), paste.id()).await?;
 
     transaction.commit().await?;
 
@@ -342,7 +342,7 @@ async fn delete_paste(
         return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
     }
 
-    if !Paste::delete(app.database.pool(), paste_id).await? {
+    if !Paste::delete(app.database().pool(), &paste_id).await? {
         return Err(AppError::NotFound("The paste was not found.".to_string()));
     }
 

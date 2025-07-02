@@ -61,10 +61,13 @@ async fn main() {
             Err(err) => panic!("Failed to build state: {err}"),
         };
 
+    let expiry_state = state.clone();
+
+    let config = state.config().clone();
+
     let cors = CorsLayer::new()
         .allow_origin(
-            state
-                .config
+            config
                 .domain()
                 .parse::<HeaderValue>()
                 .expect("Failed to parse CORS domain."),
@@ -83,7 +86,7 @@ async fn main() {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(state.config.rate_limits().global())
+                .burst_size(config.rate_limits().global())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -92,18 +95,18 @@ async fn main() {
     };
 
     let app = Router::new()
-        .nest("/v1", rest::paste::generate_router(&state.config))
-        .nest("/v1", rest::document::generate_router(&state.config))
-        .nest("/v1", rest::config::generate_router(&state.config))
+        .nest("/v1", rest::paste::generate_router(&config))
+        .nest("/v1", rest::document::generate_router(&config))
+        .nest("/v1", rest::config::generate_router(&config))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)
         .layer(limiter)
         .fallback(fallback)
-        .with_state(state.clone());
+        .with_state(state);
 
-    let host = state.config.host();
-    let port = state.config.port();
+    let host = config.host();
+    let port = config.port();
 
     let version = env!("CARGO_PKG_VERSION");
 
@@ -114,7 +117,7 @@ async fn main() {
         port
     );
 
-    let expiry_task = tokio::task::spawn(expiry_tasks(state));
+    let expiry_task = tokio::task::spawn(expiry_tasks(expiry_state));
 
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}"))
         .await

@@ -167,7 +167,7 @@ impl S3Service {
         self.client
             .put_object()
             .bucket(self.document_bucket_name())
-            .content_type(document.document_type.clone())
+            .content_type(document.doc_type())
             .key(document.generate_path())
             .body(ByteStream::from(content.into()))
             .send()

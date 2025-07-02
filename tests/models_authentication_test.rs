@@ -33,7 +33,7 @@ fn test_fetch(pool: PgPool) {
     let token_string =
         "NTE3ODE1MzA0MzU0Mjg0NjAx.MTc0NzgxNjA1NA==.zYXUmCXIcnlvtAxJNJsUaDvRD".to_string();
 
-    let token = Token::fetch(db.pool(), token_string.clone())
+    let token = Token::fetch(db.pool(), &token_string)
         .await
         .expect("Could not fetch a token.")
         .expect("No token found.");
@@ -54,7 +54,7 @@ fn test_fetch(pool: PgPool) {
 fn test_fetch_missing(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let token = Token::fetch(db.pool(), "missing.token".to_string())
+    let token = Token::fetch(db.pool(), "missing.token")
         .await
         .expect("Could not fetch a token.");
 
@@ -75,7 +75,7 @@ fn test_insert(pool: PgPool) {
         .await
         .expect("Failed to insert paste token");
 
-    let result_token = Token::fetch(db.pool(), token.expose_secret().to_string())
+    let result_token = Token::fetch(db.pool(), token.expose_secret())
         .await
         .expect("Failed to fetch value from database.")
         .expect("No paste token was found.");
@@ -92,19 +92,18 @@ fn test_insert(pool: PgPool) {
 fn test_delete(pool: PgPool) {
     let db = Database::from_pool(pool);
 
-    let token_string =
-        "NTE3ODE1MzA0MzU0Mjg0NjAx.MTc0NzgxNjA1NA==.zYXUmCXIcnlvtAxJNJsUaDvRD".to_string();
+    let token_string = "NTE3ODE1MzA0MzU0Mjg0NjAx.MTc0NzgxNjA1NA==.zYXUmCXIcnlvtAxJNJsUaDvRD";
 
-    Token::fetch(db.pool(), token_string.clone())
+    Token::fetch(db.pool(), token_string)
         .await
         .expect("Could not fetch a token.")
         .expect("No token found.");
 
-    Token::delete(db.pool(), token_string.clone())
+    Token::delete(db.pool(), token_string)
         .await
         .expect("Failed to delete value from database.");
 
-    let paste_token = Token::fetch(db.pool(), token_string.clone())
+    let paste_token = Token::fetch(db.pool(), token_string)
         .await
         .expect("Could not fetch a token.");
 
