@@ -2,7 +2,6 @@ use sqlx::PgExecutor;
 use std::time::Duration;
 
 use time::OffsetDateTime;
-use tokio::{sync::mpsc::Receiver, time::sleep};
 
 use crate::{
     app::{application::App, database::Database},
@@ -399,7 +398,7 @@ pub enum ExpiryTaskMessage {
 ///
 /// - `app` - The application to use.
 /// - `rx` - The [`Receiver`] to listen for messages.
-pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
+pub async fn expiry_tasks(app: App) {
     const MINUTES: u64 = 50;
 
     let pastes = match collect_nearby_expired_tasks(app.database()).await {
@@ -443,25 +442,11 @@ pub async fn expiry_tasks(app: App, mut rx: Receiver<ExpiryTaskMessage>) {
         }
     }
 
-    loop {
-        let sleep = sleep(Duration::from_secs(MINUTES * 60));
-        tokio::pin!(sleep);
-        tokio::select! {
-            biased;
+    let mut interval = tokio::time::interval(Duration::from_secs(MINUTES * 60));
 
-            msg = rx.recv() => {
-                match msg {
-                    Some(ExpiryTaskMessage::Cancel) => {
-                        println!("Received cancel message, shutting down.");
-                        break;
-                    }
-                    None => {
-                        println!("Channel closed, shutting down.");
-                        break;
-                    }
-                }
-            }
-            () = &mut sleep => {
+    loop {
+        tokio::select! {
+            _ = interval.tick() => {
                 let pastes = match collect_nearby_expired_tasks(app.database()).await {
                     Ok(v) => v,
                     Err(e) => {
