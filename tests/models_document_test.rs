@@ -13,152 +13,117 @@ use sqlx::PgPool;
 fn test_getters() {
     let paste_id = Snowflake::new(123);
     let document_id = Snowflake::new(456);
-    let document_type = String::from("example/document");
-    let name = String::from("test.document");
+    let doc_type = "example/document";
+    let name = "test.document";
     let size = 329;
 
-    let document = Document::new(
-        document_id,
-        paste_id,
-        document_type.clone(),
-        name.clone(),
-        size,
-    );
+    let document = Document::new(document_id, paste_id, doc_type, name, size);
 
-    assert!(document.id == document_id, "Mismatched document ID.");
+    assert!(document.id() == &document_id, "Mismatched document ID.");
 
-    assert!(document.paste_id == paste_id, "Mismatched paste ID.");
+    assert!(document.paste_id() == &paste_id, "Mismatched paste ID.");
 
-    assert!(
-        document.document_type == document_type,
-        "Mismatched document type."
-    );
+    assert!(document.doc_type() == doc_type, "Mismatched document type.");
 
-    assert!(document.name == name, "Mismatched name.");
+    assert!(document.name() == name, "Mismatched name.");
 
-    assert!(document.size == size, "Mismatched size.");
+    assert!(document.size() == size, "Mismatched size.");
 
     assert!(
         document.generate_url("http://example.com")
-            == format!("http://example.com/documents/{paste_id}/{document_id}-{name}"),
+            == format!("http://example.com/documents/{paste_id}/{document_id}/{name}"),
         "Mismatched URL."
     );
 
     assert!(
-        document.generate_path() == format!("{paste_id}/{document_id}-{name}"),
+        document.generate_path() == format!("{paste_id}/{document_id}/{name}"),
         "Mismatched path."
     );
 }
 
 #[test]
-fn test_set_document_type() {
+fn test_set_doc_type() {
     let paste_id = Snowflake::new(123);
     let document_id = Snowflake::new(456);
-    let document_type = String::from("example/document");
-    let name = String::from("test.document");
+    let doc_type = "example/document";
+    let name = "test.document";
     let size = 6908;
 
-    let mut document = Document::new(
-        document_id,
-        paste_id,
-        document_type.clone(),
-        name.clone(),
-        size,
-    );
+    let mut document = Document::new(document_id, paste_id, doc_type, name, size);
+
+    assert_eq!(document.doc_type(), doc_type, "Mismatched document type.");
+
+    let new_doc_type = String::from("new/document");
+
+    document.set_doc_type(&new_doc_type);
+
+    assert_eq!(document.id(), &document_id, "Mismatched document ID.");
+
+    assert_eq!(document.paste_id(), &paste_id, "Mismatched paste ID.");
 
     assert_eq!(
-        document.document_type, document_type,
+        document.doc_type(),
+        new_doc_type,
         "Mismatched document type."
     );
 
-    let new_document_type = String::from("new/document");
+    assert_eq!(document.name(), name, "Mismatched name.");
 
-    document.set_document_type(new_document_type.clone());
-
-    assert_eq!(document.id, document_id, "Mismatched document ID.");
-
-    assert_eq!(document.paste_id, paste_id, "Mismatched paste ID.");
-
-    assert_eq!(
-        document.document_type, new_document_type,
-        "Mismatched document type."
-    );
-
-    assert_eq!(document.name, name, "Mismatched name.");
-
-    assert_eq!(document.size, size, "Mismatched size.");
+    assert_eq!(document.size(), size, "Mismatched size.");
 }
 
 #[test]
 fn test_set_name() {
     let paste_id = Snowflake::new(123);
     let document_id = Snowflake::new(456);
-    let document_type = String::from("example/document");
-    let name = String::from("test.document");
+    let doc_type = "example/document";
+    let name = "test.document";
     let size = 6908;
 
-    let mut document = Document::new(
-        document_id,
-        paste_id,
-        document_type.clone(),
-        name.clone(),
-        size,
-    );
+    let mut document = Document::new(document_id, paste_id, doc_type, name, size);
 
-    assert_eq!(document.name, name, "Mismatched name.");
+    assert_eq!(document.name(), name, "Mismatched name.");
 
     let new_name = String::from("cool.new");
 
-    document.set_name(new_name.clone());
+    document.set_name(&new_name);
 
-    assert_eq!(document.id, document_id, "Mismatched document ID.");
+    assert_eq!(document.id(), &document_id, "Mismatched document ID.");
 
-    assert_eq!(document.paste_id, paste_id, "Mismatched paste ID.");
+    assert_eq!(document.paste_id(), &paste_id, "Mismatched paste ID.");
 
-    assert_eq!(
-        document.document_type, document_type,
-        "Mismatched document type."
-    );
+    assert_eq!(document.doc_type(), doc_type, "Mismatched document type.");
 
-    assert_eq!(document.name, new_name, "Mismatched name.");
+    assert_eq!(document.name(), new_name, "Mismatched name.");
 
-    assert_eq!(document.size, size, "Mismatched size.");
+    assert_eq!(document.size(), size, "Mismatched size.");
 }
 
 #[test]
 fn test_set_size() {
     let paste_id = Snowflake::new(123);
     let document_id = Snowflake::new(456);
-    let document_type = String::from("example/document");
-    let name = String::from("test.document");
+    let doc_type = "example/document";
+    let name = "test.document";
     let size = 6908;
 
-    let mut document = Document::new(
-        document_id,
-        paste_id,
-        document_type.clone(),
-        name.clone(),
-        size,
-    );
+    let mut document = Document::new(document_id, paste_id, doc_type, name, size);
 
-    assert_eq!(document.size, size, "Mismatched size.");
+    assert_eq!(document.size(), size, "Mismatched size.");
 
     let new_size = 39485;
 
     document.set_size(new_size);
 
-    assert_eq!(document.id, document_id, "Mismatched document ID.");
+    assert_eq!(document.id(), &document_id, "Mismatched document ID.");
 
-    assert_eq!(document.paste_id, paste_id, "Mismatched paste ID.");
+    assert_eq!(document.paste_id(), &paste_id, "Mismatched paste ID.");
 
-    assert_eq!(
-        document.document_type, document_type,
-        "Mismatched document type."
-    );
+    assert_eq!(document.doc_type(), doc_type, "Mismatched document type.");
 
-    assert_eq!(document.name, name, "Mismatched name.");
+    assert_eq!(document.name(), name, "Mismatched name.");
 
-    assert_eq!(document.size, new_size, "Mismatched size.");
+    assert_eq!(document.size(), new_size, "Mismatched size.");
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
@@ -167,27 +132,28 @@ fn test_fetch(pool: PgPool) {
 
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    let document = Document::fetch(db.pool(), document_id)
+    let document = Document::fetch(db.pool(), &document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No document was found.");
 
-    assert_eq!(document.id, document_id, "Mismatched document ID.");
+    assert_eq!(document.id(), &document_id, "Mismatched document ID.");
 
     assert_eq!(
-        document.paste_id,
-        Snowflake::new(517_815_304_354_284_601),
+        document.paste_id(),
+        &Snowflake::new(517_815_304_354_284_601),
         "Mismatched paste ID."
     );
 
     assert_eq!(
-        document.document_type, "plain/text",
+        document.doc_type(),
+        "plain/text",
         "Mismatched document type."
     );
 
-    assert_eq!(document.name, "cool.txt", "Mismatched document type.");
+    assert_eq!(document.name(), "cool.txt", "Mismatched document type.");
 
-    assert_eq!(document.size, 811, "Mismatched document size.");
+    assert_eq!(document.size(), 811, "Mismatched document size.");
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
@@ -197,7 +163,7 @@ fn test_fetch_missing(pool: PgPool) {
     let document_id = Snowflake::new(456);
 
     assert!(
-        Document::fetch(db.pool(), document_id)
+        Document::fetch(db.pool(), &document_id)
             .await
             .expect("Failed to fetch value from database.")
             .is_none()
@@ -211,23 +177,24 @@ fn test_fetch_with_paste(pool: PgPool) {
     let paste_id = Snowflake::new(517_815_304_354_284_601);
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    let document = Document::fetch_with_paste(db.pool(), paste_id, document_id)
+    let document = Document::fetch_with_paste(db.pool(), &paste_id, &document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No document was found.");
 
-    assert_eq!(document.id, document_id, "Mismatched document ID.");
+    assert_eq!(document.id(), &document_id, "Mismatched document ID.");
 
-    assert_eq!(document.paste_id, paste_id, "Mismatched paste ID.");
+    assert_eq!(document.paste_id(), &paste_id, "Mismatched paste ID.");
 
     assert_eq!(
-        document.document_type, "plain/text",
+        document.doc_type(),
+        "plain/text",
         "Mismatched document type."
     );
 
-    assert_eq!(document.name, "cool.txt", "Mismatched document type.");
+    assert_eq!(document.name(), "cool.txt", "Mismatched document type.");
 
-    assert_eq!(document.size, 811, "Mismatched document size.");
+    assert_eq!(document.size(), 811, "Mismatched document size.");
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
@@ -238,7 +205,7 @@ fn test_fetch_with_paste_missing(pool: PgPool) {
     let document_id = Snowflake::new(456);
 
     assert!(
-        Document::fetch_with_paste(db.pool(), paste_id, document_id)
+        Document::fetch_with_paste(db.pool(), &paste_id, &document_id)
             .await
             .expect("Failed to fetch value from database.")
             .is_none()
@@ -251,7 +218,7 @@ fn test_fetch_all(pool: PgPool) {
 
     let paste_id = Snowflake::new(517_815_304_354_284_603);
 
-    let documents = Document::fetch_all(db.pool(), paste_id)
+    let documents = Document::fetch_all(db.pool(), &paste_id)
         .await
         .expect("Failed to fetch value from database.");
 
@@ -261,25 +228,34 @@ fn test_fetch_all(pool: PgPool) {
     );
 
     assert!(
-        documents[0].id == Snowflake::new(517_815_304_354_284_704),
+        documents[0].id() == &Snowflake::new(517_815_304_354_284_704),
         "Mismatched document ID 1."
     );
 
-    assert!(documents[0].paste_id == paste_id, "Mismatched paste ID 1.");
+    assert!(
+        documents[0].paste_id() == &paste_id,
+        "Mismatched paste ID 1."
+    );
 
     assert!(
-        documents[1].id == Snowflake::new(517_815_304_354_284_705),
+        documents[1].id() == &Snowflake::new(517_815_304_354_284_705),
         "Mismatched document ID 2."
     );
 
-    assert!(documents[1].paste_id == paste_id, "Mismatched paste ID 2.");
+    assert!(
+        documents[1].paste_id() == &paste_id,
+        "Mismatched paste ID 2."
+    );
 
     assert!(
-        documents[2].id == Snowflake::new(517_815_304_354_284_706),
+        documents[2].id() == &Snowflake::new(517_815_304_354_284_706),
         "Mismatched document ID 3."
     );
 
-    assert!(documents[2].paste_id == paste_id, "Mismatched paste ID 3.");
+    assert!(
+        documents[2].paste_id() == &paste_id,
+        "Mismatched paste ID 3."
+    );
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
@@ -289,7 +265,7 @@ fn test_fetch_all_missing(pool: PgPool) {
     let paste_id = Snowflake::new(456);
 
     assert!(
-        Document::fetch_all(db.pool(), paste_id)
+        Document::fetch_all(db.pool(), &paste_id)
             .await
             .expect("Failed to fetch value from database.")
             .is_empty()
@@ -302,40 +278,31 @@ fn test_insert(pool: PgPool) {
 
     let paste_id = Snowflake::new(517_815_304_354_284_601);
     let document_id = Snowflake::new(456);
-    let document_type = String::from("example/document");
-    let name = String::from("test.document");
+    let doc_type = "example/document";
+    let name = "test.document";
     let size = 475;
 
-    let document = Document::new(
-        document_id,
-        paste_id,
-        document_type.clone(),
-        name.clone(),
-        size,
-    );
+    let document = Document::new(document_id, paste_id, doc_type, name, size);
 
     document
         .insert(db.pool())
         .await
         .expect("Failed to insert paste");
 
-    let result = Document::fetch(db.pool(), document_id)
+    let result = Document::fetch(db.pool(), &document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("No document was found.");
 
-    assert_eq!(result.id, document_id, "Mismatched document ID.");
+    assert_eq!(result.id(), &document_id, "Mismatched document ID.");
 
-    assert_eq!(result.paste_id, paste_id, "Mismatched paste ID.");
+    assert_eq!(result.paste_id(), &paste_id, "Mismatched paste ID.");
 
-    assert_eq!(
-        result.document_type, document_type,
-        "Mismatched document type."
-    );
+    assert_eq!(result.doc_type(), doc_type, "Mismatched document type.");
 
-    assert_eq!(result.name, name, "Mismatched document type.");
+    assert_eq!(result.name(), name, "Mismatched document type.");
 
-    assert_eq!(result.size, size);
+    assert_eq!(result.size(), size);
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
@@ -344,37 +311,38 @@ fn test_update(pool: PgPool) {
 
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    let mut document = Document::fetch(db.pool(), document_id)
+    let mut document = Document::fetch(db.pool(), &document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("Document was not found.");
 
-    assert_eq!(document.id, document_id, "Mismatched document ID.");
+    assert_eq!(document.id(), &document_id, "Mismatched document ID.");
 
     assert_eq!(
-        document.paste_id,
-        Snowflake::new(517_815_304_354_284_601),
+        document.paste_id(),
+        &Snowflake::new(517_815_304_354_284_601),
         "Mismatched paste ID."
     );
 
     assert_eq!(
-        document.document_type, "plain/text",
+        document.doc_type(),
+        "plain/text",
         "Mismatched document type."
     );
 
-    assert_eq!(document.name, "cool.txt", "Mismatched document type.");
+    assert_eq!(document.name(), "cool.txt", "Mismatched document type.");
 
-    assert_eq!(document.size, 811, "Mismatched document size.");
+    assert_eq!(document.size(), 811, "Mismatched document size.");
 
-    let new_document_type = String::from("example/new");
+    let new_doc_type = String::from("example/new");
 
     let new_name = String::from("test_new_name");
 
     let new_size = 83247;
 
-    document.set_document_type(new_document_type.clone());
+    document.set_doc_type(&new_doc_type);
 
-    document.set_name(new_name.clone());
+    document.set_name(&new_name);
 
     document.set_size(new_size);
 
@@ -383,27 +351,40 @@ fn test_update(pool: PgPool) {
         .await
         .expect("Failed to update paste.");
 
-    let result_document = Document::fetch(db.pool(), document_id)
+    let result_document = Document::fetch(db.pool(), &document_id)
         .await
         .expect("Failed to fetch value from database.")
         .expect("Document was not found.");
 
-    assert_eq!(result_document.id, document_id, "Mismatched document ID.");
+    assert_eq!(
+        result_document.id(),
+        &document_id,
+        "Mismatched document ID."
+    );
 
     assert_eq!(
-        result_document.paste_id,
-        Snowflake::new(517_815_304_354_284_601),
+        result_document.paste_id(),
+        &Snowflake::new(517_815_304_354_284_601),
         "Mismatched paste ID."
     );
 
     assert_eq!(
-        document.document_type, new_document_type,
+        document.doc_type(),
+        new_doc_type,
         "Mismatched document type."
     );
 
-    assert_eq!(result_document.name, new_name, "Mismatched document type.");
+    assert_eq!(
+        result_document.name(),
+        new_name,
+        "Mismatched document type."
+    );
 
-    assert_eq!(result_document.size, new_size, "Mismatched document size.");
+    assert_eq!(
+        result_document.size(),
+        new_size,
+        "Mismatched document size."
+    );
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
@@ -412,16 +393,16 @@ fn test_delete(pool: PgPool) {
 
     let document_id = Snowflake::new(517_815_304_354_284_701);
 
-    Document::fetch(db.pool(), document_id)
+    Document::fetch(db.pool(), &document_id)
         .await
         .expect("Could not fetch a document.")
         .expect("No token found.");
 
-    Document::delete(db.pool(), document_id)
+    Document::delete(db.pool(), &document_id)
         .await
         .expect("Failed to delete value from database.");
 
-    let paste_token = Document::fetch(db.pool(), document_id)
+    let paste_token = Document::fetch(db.pool(), &document_id)
         .await
         .expect("Could not fetch a token.");
 
@@ -473,8 +454,8 @@ fn test_document_limits() {
     let document = Document::new(
         Snowflake::new(456),
         Snowflake::new(123),
-        "text/plain".to_string(),
-        "test_doc.txt".to_string(),
+        "text/plain",
+        "test_doc.txt",
         489,
     );
 
@@ -503,8 +484,8 @@ fn test_document_limits_errors(#[case] config: Config, #[case] expected: &str) {
     let document = Document::new(
         Snowflake::new(456),
         Snowflake::new(123),
-        "text/plain".to_string(),
-        "test_doc.txt".to_string(),
+        "text/plain",
+        "test_doc.txt",
         489,
     );
 
@@ -562,7 +543,7 @@ async fn test_total_document_limits(pool: PgPool) {
     total_document_limits(
         &mut transaction,
         &make_total_document_limits_config(1, 1, 10, 10_000_000),
-        Snowflake::new(517_815_304_354_284_601),
+        &Snowflake::new(517_815_304_354_284_601),
     )
     .await
     .expect("An error occurred.");
@@ -602,7 +583,7 @@ async fn test_total_document_limits_errors(
     let error = total_document_limits(
         &mut transaction,
         &config,
-        Snowflake::new(517_815_304_354_284_602),
+        &Snowflake::new(517_815_304_354_284_602),
     )
     .await
     .expect_err("No error received.");

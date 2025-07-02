@@ -11,9 +11,9 @@ pub type App = Arc<ApplicationState>;
 pub type S3Client = Client;
 
 pub struct ApplicationState {
-    pub config: Config,
-    pub database: Database,
-    pub s3: S3Service,
+    config: Config,
+    database: Database,
+    s3: S3Service,
 }
 
 impl ApplicationState {
@@ -64,10 +64,23 @@ impl ApplicationState {
         }))
     }
 
+    #[inline]
+    pub const fn config(&self) -> &Config {
+        &self.config
+    }
+
+    #[inline]
+    pub const fn database(&self) -> &Database {
+        &self.database
+    }
+
+    #[inline]
+    pub const fn s3(&self) -> &S3Service {
+        &self.s3
+    }
+
     async fn init(&mut self) -> Result<(), AppError> {
-        self.database
-            .connect(self.config.database_url().as_str())
-            .await?;
+        self.database.connect(self.config.database_url()).await?;
 
         self.s3.create_buckets().await?;
 

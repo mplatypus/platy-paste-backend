@@ -20,7 +20,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
 }
 
 async fn get_config(State(app): State<App>) -> Result<Response, AppError> {
-    let response_config = ResponseConfig::from_config(&app.config);
+    let response_config = ResponseConfig::from_config(app.config());
 
     Ok((StatusCode::OK, Json(response_config)).into_response())
 }

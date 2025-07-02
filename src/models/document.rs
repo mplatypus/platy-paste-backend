@@ -1,5 +1,5 @@
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::{PgExecutor, PgTransaction};
 
 use crate::app::config::Config;
@@ -32,38 +32,69 @@ pub const UNSUPPORTED_MIMES: &[&str] =
 
 pub const DEFAULT_MIME: &str = "text/plain";
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug)]
 pub struct Document {
     /// The ID of the document.
-    pub id: Snowflake,
+    id: Snowflake,
     /// The paste that owns the document.
-    pub paste_id: Snowflake,
+    paste_id: Snowflake,
     /// The type of document.
-    pub document_type: String,
+    #[serde(rename = "type")]
+    doc_type: String,
     /// The name of the document.
-    pub name: String,
+    name: String,
     /// The size of the document.
-    pub size: usize,
+    size: usize,
 }
 
 impl Document {
     /// New.
     ///
     /// Create a new [`Document`] object.
-    pub const fn new(
+    pub fn new(
         id: Snowflake,
         paste_id: Snowflake,
-        document_type: String,
-        name: String,
+        doc_type: &str,
+        name: &str,
         size: usize,
     ) -> Self {
         Self {
             id,
             paste_id,
-            document_type,
-            name,
+            doc_type: doc_type.to_string(),
+            name: name.to_string(),
             size,
         }
+    }
+
+    /// The documents ID.
+    #[inline]
+    pub const fn id(&self) -> &Snowflake {
+        &self.id
+    }
+
+    /// The paste ID this document belongs too.
+    #[inline]
+    pub const fn paste_id(&self) -> &Snowflake {
+        &self.paste_id
+    }
+
+    /// The documents type.
+    #[inline]
+    pub fn doc_type(&self) -> &str {
+        &self.doc_type
+    }
+
+    /// The documents name.
+    #[inline]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The documents size.
+    #[inline]
+    pub const fn size(&self) -> usize {
+        self.size
     }
 
     /// Generate URL.
@@ -77,6 +108,7 @@ impl Document {
     /// ## Returns
     ///
     /// The URL generated.
+    #[inline]
     pub fn generate_url(&self, base_url: &str) -> String {
         format!("{}/documents/{}", base_url, self.generate_path())
     }
@@ -88,28 +120,32 @@ impl Document {
     /// ## Returns
     ///
     /// The path generated.
+    #[inline]
     pub fn generate_path(&self) -> String {
-        format!("{}/{}-{}", self.paste_id, self.id, self.name)
+        format!("{}/{}/{}", self.paste_id, self.id, self.name)
     }
 
     /// Set Document Type.
     ///
     /// Set the document type.
-    pub fn set_document_type(&mut self, document_type: String) {
-        self.document_type = document_type;
+    #[inline]
+    pub fn set_doc_type(&mut self, document_type: &str) {
+        self.doc_type = document_type.to_string();
     }
 
     /// Set Name.
     ///
     /// Set the document name.
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
+    #[inline]
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
     }
 
     /// Set Size.
     ///
     /// Set the document size.
-    pub fn set_size(&mut self, size: usize) {
+    #[inline]
+    pub const fn set_size(&mut self, size: usize) {
         self.size = size;
     }
 
@@ -130,11 +166,11 @@ impl Document {
     ///
     /// - [`Option::Some`] - The [`Document`] object.
     /// - [`Option::None`] - No document was found.
-    pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<Option<Self>, AppError>
+    pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<Option<Self>, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let paste_id: i64 = id.into();
+        let paste_id: i64 = (*id).into();
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name, size FROM documents WHERE id = $1",
             paste_id
@@ -146,8 +182,8 @@ impl Document {
             return Ok(Some(Self::new(
                 q.id.into(),
                 q.paste_id.into(),
-                q.r#type,
-                q.name,
+                &q.r#type,
+                &q.name,
                 q.size as usize,
             )));
         }
@@ -175,14 +211,14 @@ impl Document {
     /// - [`Option::None`] - No document was found.
     pub async fn fetch_with_paste<'e, 'c: 'e, E>(
         executor: E,
-        paste_id: Snowflake,
-        id: Snowflake,
+        paste_id: &Snowflake,
+        id: &Snowflake,
     ) -> Result<Option<Self>, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let paste_id: i64 = paste_id.into();
-        let id: i64 = id.into();
+        let paste_id: i64 = (*paste_id).into();
+        let id: i64 = (*id).into();
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name, size FROM documents WHERE paste_id = $1 AND id = $2",
             paste_id,
@@ -195,8 +231,8 @@ impl Document {
             return Ok(Some(Self::new(
                 q.id.into(),
                 q.paste_id.into(),
-                q.r#type,
-                q.name,
+                &q.r#type,
+                &q.name,
                 q.size as usize,
             )));
         }
@@ -220,11 +256,14 @@ impl Document {
     /// ## Returns
     ///
     /// A [`Vec`] of [`Document`]'s.
-    pub async fn fetch_all<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<Vec<Self>, AppError>
+    pub async fn fetch_all<'e, 'c: 'e, E>(
+        executor: E,
+        id: &Snowflake,
+    ) -> Result<Vec<Self>, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let paste_id: i64 = id.into();
+        let paste_id: i64 = (*id).into();
         let query = sqlx::query!(
             "SELECT id, paste_id, type, name, size FROM documents WHERE paste_id = $1",
             paste_id
@@ -237,8 +276,8 @@ impl Document {
             documents.push(Self::new(
                 record.id.into(),
                 record.paste_id.into(),
-                record.r#type,
-                record.name,
+                &record.r#type,
+                &record.name,
                 record.size as usize,
             ));
         }
@@ -263,12 +302,12 @@ impl Document {
     /// The size of the total documents.
     pub async fn fetch_total_document_size<'e, 'c: 'e, E>(
         executor: E,
-        id: Snowflake,
+        id: &Snowflake,
     ) -> Result<usize, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let id: i64 = id.into();
+        let id: i64 = (*id).into();
         let size = sqlx::query_scalar!(
             "SELECT SUM(size)::BIGINT FROM documents WHERE paste_id = $1",
             id
@@ -298,12 +337,12 @@ impl Document {
     /// The total count of documents.
     pub async fn fetch_total_document_count<'e, 'c: 'e, E>(
         executor: E,
-        id: Snowflake,
+        id: &Snowflake,
     ) -> Result<usize, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let id: i64 = id.into();
+        let id: i64 = (*id).into();
         let size = sqlx::query_scalar!("SELECT COUNT(*) FROM documents WHERE paste_id = $1", id)
             .fetch_one(executor)
             .await?
@@ -334,7 +373,7 @@ impl Document {
             "INSERT INTO documents(id, paste_id, type, name, size) VALUES ($1, $2, $3, $4, $5)",
             document_id,
             paste_id,
-            self.document_type,
+            self.doc_type,
             self.name,
             self.size as i64
         )
@@ -366,7 +405,7 @@ impl Document {
             "INSERT INTO documents(id, paste_id, type, name, size) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET type = $3, name = $4, size = $5",
             document_id,
             paste_id,
-            self.document_type,
+            self.doc_type,
             self.name,
             self.size as i64
         ).execute(executor).await?;
@@ -386,11 +425,11 @@ impl Document {
     /// ## Errors
     ///
     /// - [`AppError`] - The database had an error.
-    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: Snowflake) -> Result<bool, AppError>
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<bool, AppError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let paste_id: i64 = id.into();
+        let paste_id: i64 = (*id).into();
         let result = sqlx::query!("DELETE FROM documents WHERE id = $1", paste_id,)
             .execute(executor)
             .await?;
@@ -505,7 +544,7 @@ pub fn document_limits(config: &Config, document: &Document) -> Result<(), AppEr
 pub async fn total_document_limits(
     transaction: &mut PgTransaction<'_>,
     config: &Config,
-    paste_id: Snowflake,
+    paste_id: &Snowflake,
 ) -> Result<(), AppError> {
     let size_limits = config.size_limits();
 
