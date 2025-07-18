@@ -19,8 +19,7 @@ use crate::{
     models::{
         authentication::Token,
         document::{
-            DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime, document_limits,
-            total_document_limits,
+            Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
@@ -179,11 +178,15 @@ async fn post_document(
 
             content_type.to_string()
         } else {
-            DEFAULT_MIME.to_string()
+            return Err(AppError::BadRequest(
+                "The document must have a type.".to_string(),
+            ));
         }
     };
 
-    let name = content_disposition.filename().unwrap_or("unknown");
+    let name = content_disposition.filename().ok_or_else(|| {
+        AppError::BadRequest("The document provided requires a name.".to_string())
+    })?;
 
     let document = Document::new(
         Snowflake::generate()?,
@@ -251,7 +254,9 @@ async fn patch_document(
 
             content_type.to_string()
         } else {
-            DEFAULT_MIME.to_string()
+            return Err(AppError::BadRequest(
+                "The document must have a type.".to_string(),
+            ));
         }
     };
 

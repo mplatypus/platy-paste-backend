@@ -15,8 +15,7 @@ use crate::{
     models::{
         authentication::{Token, generate_token},
         document::{
-            DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime, document_limits,
-            total_document_limits,
+            Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
@@ -216,14 +215,18 @@ async fn post_paste(
 
                     content_type.to_string()
                 }
-                None => DEFAULT_MIME.to_string(),
+                None => {
+                    return Err(AppError::BadRequest(
+                        "The document must have a type.".to_string(),
+                    ));
+                }
             }
         };
 
         let name = field
             .file_name()
             .ok_or(AppError::BadRequest(
-                "The filename of the document is required".to_string(),
+                "One or more of the documents provided require a name.".to_string(),
             ))?
             .to_string();
 
