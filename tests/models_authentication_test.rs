@@ -18,10 +18,11 @@ fn test_getters() {
 
     let paste_token = Token::new(paste_id, token.clone());
 
-    assert!(paste_token.paste_id() == &paste_id, "Mismatched paste ID.");
+    assert_eq!(paste_token.paste_id(), &paste_id, "Mismatched paste ID.");
 
-    assert!(
-        paste_token.token().expose_secret() == token.expose_secret(),
+    assert_eq!(
+        paste_token.token().expose_secret(),
+        token.expose_secret(),
         "Mismatched token."
     );
 }
@@ -186,8 +187,9 @@ fn test_generate_token_uniqueness() {
 
     let set: HashSet<_> = tokens.iter().collect();
 
-    assert!(
-        set.len() == tokens.len(),
+    assert_eq!(
+        set.len(),
+        tokens.len(),
         "Non-unique snowflake(s) found: {tokens:?}"
     );
 }
