@@ -8,12 +8,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use http::{Method, header};
-use models::{
-    error::AppError,
-    paste::{ExpiryTaskMessage, expiry_tasks},
-};
+use models::{error::AppError, paste::expiry_tasks};
 use time::{UtcOffset, format_description};
-use tokio::sync::mpsc;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
@@ -65,10 +61,13 @@ async fn main() {
             Err(err) => panic!("Failed to build state: {err}"),
         };
 
+    let expiry_state = state.clone();
+
+    let config = state.config().clone();
+
     let cors = CorsLayer::new()
         .allow_origin(
-            state
-                .config
+            config
                 .domain()
                 .parse::<HeaderValue>()
                 .expect("Failed to parse CORS domain."),
@@ -87,7 +86,7 @@ async fn main() {
         config: Arc::new(
             GovernorConfigBuilder::default()
                 .per_second(60)
-                .burst_size(state.config.rate_limits().global())
+                .burst_size(config.rate_limits().global())
                 .period(Duration::from_secs(5))
                 .use_headers()
                 .finish()
@@ -96,18 +95,18 @@ async fn main() {
     };
 
     let app = Router::new()
-        .nest("/v1", rest::paste::generate_router(&state.config))
-        .nest("/v1", rest::document::generate_router(&state.config))
-        .nest("/v1", rest::config::generate_router(&state.config))
+        .nest("/v1", rest::paste::generate_router(&config))
+        .nest("/v1", rest::document::generate_router(&config))
+        .nest("/v1", rest::config::generate_router(&config))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(cors)
         .layer(limiter)
         .fallback(fallback)
-        .with_state(state.clone());
+        .with_state(state);
 
-    let host = state.config.host();
-    let port = state.config.port();
+    let host = config.host();
+    let port = config.port();
 
     let version = env!("CARGO_PKG_VERSION");
 
@@ -118,30 +117,28 @@ async fn main() {
         port
     );
 
-    let (expire_sender, expire_receiver) = mpsc::channel::<ExpiryTaskMessage>(10);
-
-    let expiry_task = tokio::task::spawn(expiry_tasks(state, expire_receiver));
+    let expiry_task = tokio::task::spawn(expiry_tasks(expiry_state));
 
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}"))
         .await
         .expect("Failed to bind to address");
 
-    axum::serve(
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for shutdown signal");
+    };
+
+    let server = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await
-    .expect("Failed creating server");
+    );
 
-    match expire_sender.blocking_send(ExpiryTaskMessage::Cancel) {
-        Ok(()) => {
-            expiry_task
-                .await
-                .expect("Failed to cleanly shut down expiry task.");
-        }
-        Err(e) => {
-            tracing::error!("Failed to cleanly shutdown message task! Reason: {e}");
-        }
+    tokio::select! {
+        _ = server.with_graceful_shutdown(shutdown_signal) => {
+            expiry_task.abort();
+            tracing::info!("Successfully shutdown expiry task and server.");
+        },
     }
 }
 

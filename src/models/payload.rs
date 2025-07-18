@@ -12,7 +12,14 @@ use super::{
 #[derive(Deserialize)]
 pub struct PastePath {
     /// The paste ID.
-    pub paste_id: Snowflake,
+    paste_id: Snowflake,
+}
+
+impl PastePath {
+    #[inline]
+    pub const fn paste_id(&self) -> &Snowflake {
+        &self.paste_id
+    }
 }
 
 pub type GetPastePath = PastePath;
@@ -26,9 +33,21 @@ pub type PostDocumentPath = PastePath;
 #[derive(Deserialize)]
 pub struct DocumentPath {
     /// The paste ID.
-    pub paste_id: Snowflake,
+    paste_id: Snowflake,
     /// The document ID.
-    pub document_id: Snowflake,
+    document_id: Snowflake,
+}
+
+impl DocumentPath {
+    #[inline]
+    pub const fn paste_id(&self) -> &Snowflake {
+        &self.paste_id
+    }
+
+    #[inline]
+    pub const fn document_id(&self) -> &Snowflake {
+        &self.document_id
+    }
 }
 
 pub type GetDocumentPath = DocumentPath;
@@ -41,10 +60,22 @@ pub type DeleteDocumentPath = DocumentPath;
 pub struct PasteBody {
     /// The expiry time for the paste.
     #[serde(default)]
-    pub expiry: UndefinedOption<usize>,
+    expiry: UndefinedOption<usize>,
     /// The maximum allowed views for the paste.
     #[serde(default)]
-    pub max_views: UndefinedOption<usize>,
+    max_views: UndefinedOption<usize>,
+}
+
+impl PasteBody {
+    #[inline]
+    pub const fn expiry(&self) -> UndefinedOption<usize> {
+        self.expiry
+    }
+
+    #[inline]
+    pub const fn max_views(&self) -> UndefinedOption<usize> {
+        self.max_views
+    }
 }
 
 pub type PostPasteBody = PasteBody;
@@ -54,9 +85,9 @@ pub type PatchPasteBody = PasteBody;
 #[derive(Serialize)]
 pub struct ResponseConfig {
     /// Defaults.
-    pub defaults: ResponseDefaultsConfig,
+    defaults: ResponseDefaultsConfig,
     /// Size limits.
-    pub size_limits: ResponseSizeLimitsConfig,
+    size_limits: ResponseSizeLimitsConfig,
 }
 
 impl ResponseConfig {
@@ -76,7 +107,7 @@ impl ResponseConfig {
     /// From config.
     ///
     /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
-    pub fn from_config(config: &Config) -> Self {
+    pub const fn from_config(config: &Config) -> Self {
         Self::new(
             ResponseDefaultsConfig::from_config(config),
             ResponseSizeLimitsConfig::from_config(config),
@@ -106,7 +137,7 @@ impl ResponseDefaultsConfig {
     /// From config.
     ///
     /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
-    pub fn from_config(config: &Config) -> Self {
+    pub const fn from_config(config: &Config) -> Self {
         let size_limits = config.size_limits();
 
         Self::new(
@@ -174,7 +205,7 @@ impl ResponseSizeLimitsConfig {
     /// From config.
     ///
     /// Create a new [`ResponseDefaultsConfig`] object, with a [`Config`] object.
-    pub fn from_config(config: &Config) -> Self {
+    pub const fn from_config(config: &Config) -> Self {
         let size_limits = config.size_limits();
         Self::new(
             size_limits.minimum_expiry_hours(),
@@ -194,25 +225,25 @@ impl ResponseSizeLimitsConfig {
 #[derive(Serialize)]
 pub struct ResponsePaste {
     /// The ID for the paste.
-    pub id: Snowflake,
+    id: Snowflake,
     /// The token attached to the paste.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
+    token: Option<String>,
     /// The time at which the paste was created.
     #[serde(rename = "timestamp")]
-    pub creation: usize,
+    creation: usize,
     /// Whether the paste has been edited.
     #[serde(rename = "edited_timestamp")]
-    pub edited: Option<usize>,
+    edited: Option<usize>,
     /// The expiry time of the paste.
     #[serde(rename = "expiry_timestamp")]
-    pub expiry: Option<usize>,
+    expiry: Option<usize>,
     /// The view count for the paste.
-    pub views: usize,
+    views: usize,
     /// The maximum amount of views the paste can have.
-    pub max_views: Option<usize>,
+    max_views: Option<usize>,
     /// The documents attached to the paste.
-    pub documents: Vec<Document>,
+    documents: Vec<Document>,
 }
 
 impl ResponsePaste {
@@ -259,13 +290,13 @@ impl ResponsePaste {
         let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
 
         Self::new(
-            paste.id,
+            *paste.id(),
             token_value,
-            paste.creation,
-            paste.edited,
-            paste.expiry,
-            paste.views,
-            paste.max_views,
+            *paste.creation(),
+            paste.edited().copied(),
+            paste.expiry().copied(),
+            paste.views(),
+            paste.max_views(),
             documents,
         )
     }
