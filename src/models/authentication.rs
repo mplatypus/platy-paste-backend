@@ -136,7 +136,7 @@ impl FromRequestParts<App> for Token {
 
         let bot = Self::fetch(state.database().pool(), bearer.token())
             .await?
-            .ok_or(AuthError::InvalidToken)?;
+            .ok_or(AuthError::InvalidCredentials)?;
 
         Ok(bot)
     }

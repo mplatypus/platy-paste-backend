@@ -87,21 +87,18 @@ pub struct Error {
 pub enum AuthError {
     #[error("Credentials are invalid and/or missing")]
     MissingCredentials,
-    #[error("Permissions are invalid and/or missing")]
-    MissingPermissions,
-    #[error("The token provided does not exist")]
-    InvalidToken,
-    #[error("The token was valid, but the paste ID did not match")]
-    ForbiddenPasteId,
+    #[error("Invalid Token and/or mismatched paste ID")]
+    InvalidCredentials,
 }
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, reason): (StatusCode, &str) = match self {
             Self::MissingCredentials => (StatusCode::UNAUTHORIZED, "Missing Credentials"),
-            Self::MissingPermissions => (StatusCode::UNAUTHORIZED, "Missing Permissions"),
-            Self::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid Token"),
-            Self::ForbiddenPasteId => (StatusCode::FORBIDDEN, "Invalid Paste ID"),
+            Self::InvalidCredentials => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid Token and/or mismatched paste ID",
+            ),
         };
 
         let body = Json(ErrorResponse {
@@ -109,6 +106,7 @@ impl IntoResponse for AuthError {
             reason: String::from(reason),
             trace: None,
         });
+
         (status, body).into_response()
     }
 }

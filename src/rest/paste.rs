@@ -345,7 +345,7 @@ async fn delete_paste(
     token: Token,
 ) -> Result<Response, AppError> {
     if token.paste_id() != path.paste_id() {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
+        return Err(AppError::Authentication(AuthError::InvalidCredentials));
     }
 
     if !Paste::delete(app.database().pool(), path.paste_id()).await? {

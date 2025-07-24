@@ -313,7 +313,7 @@ async fn delete_document(
     token: Token,
 ) -> Result<Response, AppError> {
     if token.paste_id() != path.paste_id() {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
+        return Err(AppError::Authentication(AuthError::InvalidCredentials));
     }
 
     let total_document_count =
