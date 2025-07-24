@@ -302,8 +302,16 @@ async fn patch_paste(
         paste.set_expiry(new_expiry.to_option());
     }
 
-    if !body.max_views().is_undefined() {
-        paste.set_max_views(body.max_views().to_option());
+    match body.max_views() {
+        UndefinedOption::Some(max_views) => {
+            if paste.views() >= max_views {
+                return Err(AppError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
+            }
+
+            paste.set_max_views(Some(max_views));
+        }
+        UndefinedOption::None => paste.set_max_views(None),
+        UndefinedOption::Undefined => (),
     }
 
     let mut transaction = app.database().pool().begin().await?;
