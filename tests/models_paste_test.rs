@@ -26,7 +26,7 @@ fn test_getters() {
 
     assert_eq!(paste.edited(), Some(&edited), "Mismatched edited.");
 
-    assert!(paste.expiry() == Some(&expiry), "Mismatched expiry.");
+    assert_eq!(paste.expiry(), Some(&expiry), "Mismatched expiry.");
 
     assert_eq!(paste.views(), 567, "Mismatched views.");
 

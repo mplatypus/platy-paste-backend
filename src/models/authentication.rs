@@ -33,8 +33,8 @@ impl Token {
 
     /// The owning paste ID.
     #[inline]
-    pub const fn paste_id(&self) -> Snowflake {
-        self.paste_id
+    pub const fn paste_id(&self) -> &Snowflake {
+        &self.paste_id
     }
 
     /// The authentication token.
@@ -136,7 +136,7 @@ impl FromRequestParts<App> for Token {
 
         let bot = Self::fetch(state.database().pool(), bearer.token())
             .await?
-            .ok_or(AuthError::InvalidToken)?;
+            .ok_or(AuthError::InvalidCredentials)?;
 
         Ok(bot)
     }

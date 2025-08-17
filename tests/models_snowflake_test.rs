@@ -19,8 +19,9 @@ fn test_uniqueness() {
 
     let set: HashSet<_> = snowflakes.iter().collect();
 
-    assert!(
-        set.len() == snowflakes.len(),
+    assert_eq!(
+        set.len(),
+        snowflakes.len(),
         "Non-unique snowflake(s) found: {snowflakes:?}"
     );
 }
