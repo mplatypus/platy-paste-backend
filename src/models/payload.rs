@@ -59,8 +59,8 @@ pub type DeleteDocumentPath = DocumentPath;
 #[derive(Deserialize)]
 pub struct PasteBody {
     /// The expiry time for the paste.
-    #[serde(default)]
-    expiry: UndefinedOption<usize>,
+    #[serde(default, rename = "expiry_timestamp")]
+    pub expiry: UndefinedOption<usize>,
     /// The maximum allowed views for the paste.
     #[serde(default)]
     max_views: UndefinedOption<usize>,
