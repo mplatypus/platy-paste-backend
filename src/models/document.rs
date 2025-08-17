@@ -30,8 +30,6 @@ const SUPPORTED_MIMES: &[&str] = &[
 pub const UNSUPPORTED_MIMES: &[&str] =
     &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
 
-pub const DEFAULT_MIME: &str = "text/plain";
-
 #[derive(Serialize, Clone, Debug)]
 pub struct Document {
     /// The ID of the document.
