@@ -12,12 +12,14 @@ use crate::{
     models::{
         authentication::{Token, generate_token},
         document::{
-            DEFAULT_MIME, Document, UNSUPPORTED_MIMES, contains_mime, document_limits,
-            total_document_limits,
+            Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
-        payload::{PatchPasteBody, PostPasteBody, ResponsePaste},
+        payload::{
+            DeletePastePath, GetPastePath, PatchPasteBody, PatchPastePath, PostPasteBody,
+            ResponsePaste,
+        },
         snowflake::Snowflake,
         undefined::UndefinedOption,
     },
@@ -48,13 +50,13 @@ pub fn generate_router(config: &Config) -> Router<App> {
 /// - `200` - The [`ResponsePaste`] object.
 async fn get_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>,
+    Path(path): Path<GetPastePath>,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(app.database(), &paste_id, None).await?;
+    let mut paste = validate_paste(app.database(), path.paste_id(), None).await?;
 
     let documents = Document::fetch_all(app.database().pool(), paste.id()).await?;
 
-    let view_count = Paste::add_view(app.database().pool(), &paste_id).await?;
+    let view_count = Paste::add_view(app.database().pool(), path.paste_id()).await?;
 
     paste.set_views(view_count);
 
@@ -104,10 +106,10 @@ async fn post_paste(
         }
     };
 
-    let expiry = validate_expiry(app.config(), body.expiry)?;
+    let expiry = validate_expiry(app.config(), body.expiry())?;
 
     let max_views = {
-        match body.max_views {
+        match body.max_views() {
             UndefinedOption::Undefined => app.config().size_limits().default_maximum_views(),
             UndefinedOption::Some(max_views) => Some(max_views),
             UndefinedOption::None => None,
@@ -140,14 +142,18 @@ async fn post_paste(
 
                     content_type.to_string()
                 }
-                None => DEFAULT_MIME.to_string(),
+                None => {
+                    return Err(AppError::BadRequest(
+                        "The document must have a type.".to_string(),
+                    ));
+                }
             }
         };
 
         let name = field
             .file_name()
             .ok_or(AppError::BadRequest(
-                "The filename of the document is required".to_string(),
+                "One or more of the documents provided require a name.".to_string(),
             ))?
             .to_string();
 
@@ -211,20 +217,28 @@ async fn post_paste(
 /// - `200` - The [`ResponsePaste`] object.
 async fn patch_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>,
+    Path(path): Path<PatchPastePath>,
     token: Token,
     Json(body): Json<PatchPasteBody>,
 ) -> Result<Response, AppError> {
-    let mut paste = validate_paste(app.database(), &paste_id, Some(token)).await?;
+    let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
 
-    let new_expiry = validate_expiry(app.config(), body.expiry)?;
+    let new_expiry = validate_expiry(app.config(), body.expiry())?;
 
     if !new_expiry.is_undefined() {
         paste.set_expiry(new_expiry.to_option());
     }
 
-    if !body.max_views.is_undefined() {
-        paste.set_max_views(body.max_views.to_option());
+    match body.max_views() {
+        UndefinedOption::Some(max_views) => {
+            if paste.views() >= max_views {
+                return Err(AppError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
+            }
+
+            paste.set_max_views(Some(max_views));
+        }
+        UndefinedOption::None => paste.set_max_views(None),
+        UndefinedOption::Undefined => (),
     }
 
     let mut transaction = app.database().pool().begin().await?;
@@ -262,14 +276,14 @@ async fn patch_paste(
 /// - `204` - Successful deletion of the paste.
 async fn delete_paste(
     State(app): State<App>,
-    Path(paste_id): Path<Snowflake>,
+    Path(path): Path<DeletePastePath>,
     token: Token,
 ) -> Result<Response, AppError> {
-    if token.paste_id() != paste_id {
-        return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
+    if token.paste_id() != path.paste_id() {
+        return Err(AppError::Authentication(AuthError::InvalidCredentials));
     }
 
-    if !Paste::delete(app.database().pool(), &paste_id).await? {
+    if !Paste::delete(app.database().pool(), path.paste_id()).await? {
         return Err(AppError::NotFound("The paste was not found.".to_string()));
     }
 

@@ -376,8 +376,8 @@ pub async fn validate_paste(
     }
 
     if let Some(token) = token {
-        if paste.id != token.paste_id() {
-            return Err(AppError::Authentication(AuthError::ForbiddenPasteId));
+        if paste.id != *token.paste_id() {
+            return Err(AppError::Authentication(AuthError::InvalidCredentials));
         }
     }
 

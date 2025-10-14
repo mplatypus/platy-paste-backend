@@ -19,24 +19,25 @@ fn test_getters() {
 
     let document = Document::new(document_id, paste_id, doc_type, name, size);
 
-    assert!(document.id() == &document_id, "Mismatched document ID.");
+    assert_eq!(document.id(), &document_id, "Mismatched document ID.");
 
-    assert!(document.paste_id() == &paste_id, "Mismatched paste ID.");
+    assert_eq!(document.paste_id(), &paste_id, "Mismatched paste ID.");
 
-    assert!(document.doc_type() == doc_type, "Mismatched document type.");
+    assert_eq!(document.doc_type(), doc_type, "Mismatched document type.");
 
-    assert!(document.name() == name, "Mismatched name.");
+    assert_eq!(document.name(), name, "Mismatched name.");
 
-    assert!(document.size() == size, "Mismatched size.");
+    assert_eq!(document.size(), size, "Mismatched size.");
 
-    assert!(
-        document.generate_url("http://example.com")
-            == format!("http://example.com/documents/{paste_id}/{document_id}/{name}"),
+    assert_eq!(
+        document.generate_url("http://example.com"),
+        format!("http://example.com/documents/{paste_id}/{document_id}/{name}"),
         "Mismatched URL."
     );
 
-    assert!(
-        document.generate_path() == format!("{paste_id}/{document_id}/{name}"),
+    assert_eq!(
+        document.generate_path(),
+        format!("{paste_id}/{document_id}/{name}"),
         "Mismatched path."
     );
 }
@@ -222,40 +223,35 @@ fn test_fetch_all(pool: PgPool) {
         .await
         .expect("Failed to fetch value from database.");
 
-    assert!(
-        documents.len() == 3,
+    assert_eq!(
+        documents.len(),
+        3,
         "Not enough or too many results received."
     );
 
-    assert!(
-        documents[0].id() == &Snowflake::new(517_815_304_354_284_704),
+    assert_eq!(
+        documents[0].id(),
+        &Snowflake::new(517_815_304_354_284_704),
         "Mismatched document ID 1."
     );
 
-    assert!(
-        documents[0].paste_id() == &paste_id,
-        "Mismatched paste ID 1."
-    );
+    assert_eq!(documents[0].paste_id(), &paste_id, "Mismatched paste ID 1.");
 
-    assert!(
-        documents[1].id() == &Snowflake::new(517_815_304_354_284_705),
+    assert_eq!(
+        documents[1].id(),
+        &Snowflake::new(517_815_304_354_284_705),
         "Mismatched document ID 2."
     );
 
-    assert!(
-        documents[1].paste_id() == &paste_id,
-        "Mismatched paste ID 2."
-    );
+    assert_eq!(documents[1].paste_id(), &paste_id, "Mismatched paste ID 2.");
 
-    assert!(
-        documents[2].id() == &Snowflake::new(517_815_304_354_284_706),
+    assert_eq!(
+        documents[2].id(),
+        &Snowflake::new(517_815_304_354_284_706),
         "Mismatched document ID 3."
     );
 
-    assert!(
-        documents[2].paste_id() == &paste_id,
-        "Mismatched paste ID 3."
-    );
+    assert_eq!(documents[2].paste_id(), &paste_id, "Mismatched paste ID 3.");
 }
 
 #[sqlx::test(fixtures("pastes", "documents"))]
@@ -414,8 +410,9 @@ fn test_delete(pool: PgPool) {
 #[case(&["application/json", "text/*"], "text/plain", true)]
 #[case(&["application/json", "text/*"], "image/png", false)]
 fn test_contains_mime(#[case] mimes: &[&str], #[case] mime: &str, #[case] expected: bool) {
-    assert!(
-        contains_mime(mimes, mime) == expected,
+    assert_eq!(
+        contains_mime(mimes, mime),
+        expected,
         "Did not find {mime} in {mimes:?}."
     );
 }
