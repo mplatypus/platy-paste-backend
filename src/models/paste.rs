@@ -357,28 +357,28 @@ pub async fn validate_paste(
         ));
     };
 
-    if let Some(expiry) = paste.expiry {
-        if expiry < OffsetDateTime::now_utc() {
-            Paste::delete(db.pool(), paste_id).await?;
-            return Err(AppError::NotFound(
-                "The paste requested could not be found".to_string(),
-            ));
-        }
+    if let Some(expiry) = paste.expiry
+        && expiry < OffsetDateTime::now_utc()
+    {
+        Paste::delete(db.pool(), paste_id).await?;
+        return Err(AppError::NotFound(
+            "The paste requested could not be found".to_string(),
+        ));
     }
 
-    if let Some(max_views) = paste.max_views {
-        if paste.views >= max_views {
-            Paste::delete(db.pool(), paste_id).await?;
-            return Err(AppError::NotFound(
-                "The paste requested could not be found".to_string(),
-            ));
-        }
+    if let Some(max_views) = paste.max_views
+        && paste.views >= max_views
+    {
+        Paste::delete(db.pool(), paste_id).await?;
+        return Err(AppError::NotFound(
+            "The paste requested could not be found".to_string(),
+        ));
     }
 
-    if let Some(token) = token {
-        if paste.id != *token.paste_id() {
-            return Err(AppError::Authentication(AuthError::InvalidCredentials));
-        }
+    if let Some(token) = token
+        && paste.id != *token.paste_id()
+    {
+        return Err(AppError::Authentication(AuthError::InvalidCredentials));
     }
 
     Ok(paste)
@@ -398,6 +398,7 @@ pub enum ExpiryTaskMessage {
 ///
 /// - `app` - The application to use.
 /// - `rx` - The [`Receiver`] to listen for messages.
+#[expect(clippy::cognitive_complexity)]
 pub async fn expiry_tasks(app: App) {
     const MINUTES: u64 = 50;
 

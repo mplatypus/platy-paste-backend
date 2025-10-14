@@ -328,20 +328,20 @@ fn validate_expiry(
                 ));
             }
 
-            if let Some(minimum_expiry_hours) = size_limits.minimum_expiry_hours() {
-                if difference < time::Duration::hours(minimum_expiry_hours as i64) {
-                    return Err(AppError::BadRequest(
-                        "The timestamp provided is below the minimum.".to_string(),
-                    ));
-                }
+            if let Some(minimum_expiry_hours) = size_limits.minimum_expiry_hours()
+                && difference < time::Duration::hours(minimum_expiry_hours as i64)
+            {
+                return Err(AppError::BadRequest(
+                    "The timestamp provided is below the minimum.".to_string(),
+                ));
             }
 
-            if let Some(maximum_expiry_hours) = size_limits.maximum_expiry_hours() {
-                if difference > time::Duration::hours(maximum_expiry_hours as i64) {
-                    return Err(AppError::BadRequest(
-                        "The timestamp provided is above the maximum.".to_string(),
-                    ));
-                }
+            if let Some(maximum_expiry_hours) = size_limits.maximum_expiry_hours()
+                && difference > time::Duration::hours(maximum_expiry_hours as i64)
+            {
+                return Err(AppError::BadRequest(
+                    "The timestamp provided is above the maximum.".to_string(),
+                ));
             }
 
             Ok(UndefinedOption::Some(time))
