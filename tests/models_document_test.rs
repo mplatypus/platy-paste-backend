@@ -1,6 +1,6 @@
 use platy_paste::{
     app::{
-        config::{Config, RateLimitConfigBuilder, SizeLimitConfigBuilder},
+        config::{Config, SizeLimitConfigBuilder},
         database::Database,
     },
     models::{document::*, error::AppError, snowflake::Snowflake},
@@ -442,11 +442,6 @@ fn make_document_limits_config(
                 .build()
                 .expect("Failed to build rate limits"),
         )
-        .rate_limits(
-            RateLimitConfigBuilder::default()
-                .build()
-                .expect("Failed to build rate limits"),
-        )
         .build()
         .expect("Failed to build config.")
 }
@@ -525,11 +520,6 @@ fn make_total_document_limits_config(
                 .minimum_total_document_size(minimum_total_document_size)
                 .maximum_total_document_count(maximum_total_document_count)
                 .maximum_total_document_size(maximum_total_document_size)
-                .build()
-                .expect("Failed to build rate limits"),
-        )
-        .rate_limits(
-            RateLimitConfigBuilder::default()
                 .build()
                 .expect("Failed to build rate limits"),
         )

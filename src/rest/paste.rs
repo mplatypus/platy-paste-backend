@@ -1,5 +1,3 @@
-use std::{sync::Arc, time::Duration};
-
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, State},
@@ -8,7 +6,6 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use time::OffsetDateTime;
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 
 use crate::{
     app::{application::App, config::Config},
@@ -29,81 +26,11 @@ use crate::{
 };
 
 pub fn generate_router(config: &Config) -> Router<App> {
-    let global_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().global_paste())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build global paste limiter."),
-        ),
-    };
-
-    let get_paste_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().get_paste())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build get paste limiter."),
-        ),
-    };
-
-    let post_paste_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().post_paste())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build post paste limiter."),
-        ),
-    };
-
-    let patch_paste_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().patch_paste())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build patch paste limiter."),
-        ),
-    };
-
-    let delete_paste_limiter = GovernorLayer {
-        config: Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(60)
-                .burst_size(config.rate_limits().delete_paste())
-                .period(Duration::from_secs(5))
-                .use_headers()
-                .finish()
-                .expect("Failed to build delete paste limiter."),
-        ),
-    };
-
     Router::new()
-        .route(
-            "/pastes/{paste_id}",
-            get(get_paste).layer(get_paste_limiter),
-        )
-        .route("/pastes", post(post_paste).layer(post_paste_limiter))
-        .route(
-            "/pastes/{paste_id}",
-            patch(patch_paste).layer(patch_paste_limiter),
-        )
-        .route(
-            "/pastes/{paste_id}",
-            delete(delete_paste).layer(delete_paste_limiter),
-        )
-        .layer(global_limiter)
+        .route("/pastes/{paste_id}", get(get_paste))
+        .route("/pastes", post(post_paste))
+        .route("/pastes/{paste_id}", patch(patch_paste))
+        .route("/pastes/{paste_id}", delete(delete_paste))
         .layer(DefaultBodyLimit::max(
             config.size_limits().maximum_total_document_size(),
         ))
@@ -455,7 +382,7 @@ fn validate_expiry(
 mod tests {
     use super::*;
     use crate::{
-        app::config::{Config, RateLimitConfigBuilder, SizeLimitConfigBuilder},
+        app::config::{Config, SizeLimitConfigBuilder},
         models::error::AppError,
     };
     use rstest::*;
@@ -481,11 +408,6 @@ mod tests {
                     .default_expiry_hours(default_expiry_hours)
                     .minimum_expiry_hours(minimum_expiry_hours)
                     .maximum_expiry_hours(maximum_expiry_hours)
-                    .build()
-                    .expect("Failed to build rate limits"),
-            )
-            .rate_limits(
-                RateLimitConfigBuilder::default()
                     .build()
                     .expect("Failed to build rate limits"),
             )
