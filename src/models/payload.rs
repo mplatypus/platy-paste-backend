@@ -1,8 +1,7 @@
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 
-use crate::app::config::Config;
+use crate::{app::config::Config, models::DtUtc};
 
 use super::{
     authentication::Token, document::Document, paste::Paste, snowflake::Snowflake,
@@ -60,7 +59,7 @@ pub type DeleteDocumentPath = DocumentPath;
 pub struct PasteBody {
     /// The expiry time for the paste.
     #[serde(default, rename = "expiry_timestamp")]
-    pub expiry: UndefinedOption<usize>,
+    pub expiry: UndefinedOption<DtUtc>,
     /// The maximum allowed views for the paste.
     #[serde(default)]
     max_views: UndefinedOption<usize>,
@@ -68,7 +67,7 @@ pub struct PasteBody {
 
 impl PasteBody {
     #[inline]
-    pub const fn expiry(&self) -> UndefinedOption<usize> {
+    pub const fn expiry(&self) -> UndefinedOption<DtUtc> {
         self.expiry
     }
 
@@ -231,13 +230,13 @@ pub struct ResponsePaste {
     token: Option<String>,
     /// The time at which the paste was created.
     #[serde(rename = "timestamp")]
-    creation: usize,
+    creation: DtUtc,
     /// Whether the paste has been edited.
     #[serde(rename = "edited_timestamp")]
-    edited: Option<usize>,
+    edited: Option<DtUtc>,
     /// The expiry time of the paste.
     #[serde(rename = "expiry_timestamp")]
-    expiry: Option<usize>,
+    expiry: Option<DtUtc>,
     /// The view count for the paste.
     views: usize,
     /// The maximum amount of views the paste can have.
@@ -251,12 +250,12 @@ impl ResponsePaste {
     ///
     /// Create a new [`ResponsePaste`] object.
     #[expect(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         id: Snowflake,
         token: Option<String>,
-        creation: OffsetDateTime,
-        edited: Option<OffsetDateTime>,
-        expiry: Option<OffsetDateTime>,
+        creation: DtUtc,
+        edited: Option<DtUtc>,
+        expiry: Option<DtUtc>,
         views: usize,
         max_views: Option<usize>,
         documents: Vec<Document>,
@@ -264,9 +263,9 @@ impl ResponsePaste {
         Self {
             id,
             token,
-            creation: creation.unix_timestamp() as usize,
-            edited: edited.map(|t| t.unix_timestamp() as usize),
-            expiry: expiry.map(|t| t.unix_timestamp() as usize),
+            creation,
+            edited,
+            expiry,
             views,
             max_views,
             documents,

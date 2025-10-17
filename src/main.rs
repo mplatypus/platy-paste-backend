@@ -7,25 +7,30 @@ use axum::{
     http::HeaderValue,
     response::{IntoResponse, Response},
 };
+use chrono::Local;
 use http::{Method, header};
 use models::{error::AppError, paste::expiry_tasks};
-use time::{UtcOffset, format_description};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
+use tracing_subscriber::{fmt::time::FormatTime, layer::SubscriberExt};
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 #[tokio::main]
 async fn main() {
-    let offset = UtcOffset::current_local_offset().expect("should get local offset!");
-    let timer = OffsetTime::new(
-        offset,
-        format_description::parse(
-            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]",
-        )
-        .expect("Could not format time."),
-    );
+    #[derive(Clone)]
+    struct LocalTimer;
+
+    impl FormatTime for LocalTimer {
+        fn format_time(
+            &self,
+            w: &mut tracing_subscriber::fmt::format::Writer<'_>,
+        ) -> std::fmt::Result {
+            write!(w, "{}", Local::now().format("%Y-%m-%d %H:%M:%S%.3f"))
+        }
+    }
+
+    let timer = LocalTimer {};
 
     let file_appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)

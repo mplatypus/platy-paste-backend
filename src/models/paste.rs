@@ -1,11 +1,10 @@
+use chrono::{Timelike, Utc};
 use sqlx::PgExecutor;
 use std::time::Duration;
 
-use time::OffsetDateTime;
-
 use crate::{
     app::{application::App, database::Database},
-    models::document::Document,
+    models::{DtUtc, document::Document},
 };
 
 use super::{
@@ -19,11 +18,11 @@ pub struct Paste {
     /// The ID of the paste.
     id: Snowflake,
     /// When the paste was created.
-    creation: OffsetDateTime,
+    creation: DtUtc,
     /// When the paste was last modified.
-    edited: Option<OffsetDateTime>,
+    edited: Option<DtUtc>,
     /// The time at which the paste will expire.
-    expiry: Option<OffsetDateTime>,
+    expiry: Option<DtUtc>,
     /// The amount of views a paste has.
     views: usize,
     /// The maximum allowed views for a paste.
@@ -36,9 +35,9 @@ impl Paste {
     /// Create a new [`Paste`] object.
     pub const fn new(
         id: Snowflake,
-        creation: OffsetDateTime,
-        edited: Option<OffsetDateTime>,
-        expiry: Option<OffsetDateTime>,
+        creation: DtUtc,
+        edited: Option<DtUtc>,
+        expiry: Option<DtUtc>,
         views: usize,
         max_views: Option<usize>,
     ) -> Self {
@@ -60,19 +59,19 @@ impl Paste {
 
     /// The pastes creation time.
     #[inline]
-    pub const fn creation(&self) -> &OffsetDateTime {
+    pub const fn creation(&self) -> &DtUtc {
         &self.creation
     }
 
     /// The pastes last edited time.
     #[inline]
-    pub const fn edited(&self) -> Option<&OffsetDateTime> {
+    pub const fn edited(&self) -> Option<&DtUtc> {
         self.edited.as_ref()
     }
 
     /// The pastes expiry time.
     #[inline]
-    pub const fn expiry(&self) -> Option<&OffsetDateTime> {
+    pub const fn expiry(&self) -> Option<&DtUtc> {
         self.expiry.as_ref()
     }
 
@@ -91,16 +90,28 @@ impl Paste {
     /// Set Edited.
     ///
     /// Update the edited timestamp to the current time.
+    ///
+    /// ## Errors
+    ///
+    /// - [`AppError`] - The database had an error.
     #[inline]
-    pub fn set_edited(&mut self) {
-        self.edited = Some(OffsetDateTime::now_utc());
+    pub fn set_edited(&mut self) -> Result<(), AppError> {
+        self.edited = Some(
+            Utc::now()
+                .with_nanosecond(0)
+                .ok_or(AppError::InternalServer(
+                    "Failed to strip nanosecond from date time object.".to_string(),
+                ))?,
+        );
+
+        Ok(())
     }
 
     /// Set Expiry.
     ///
     /// Set or remove the expiry on the paste.
     #[inline]
-    pub const fn set_expiry(&mut self, expiry: Option<OffsetDateTime>) {
+    pub const fn set_expiry(&mut self, expiry: Option<DtUtc>) {
         self.expiry = expiry;
     }
 
@@ -170,8 +181,8 @@ impl Paste {
     /// ## Arguments
     ///
     /// - `executor` - The database pool or transaction to use.
-    /// - `start` - The start [`OffsetDateTime`] (inclusive).
-    /// - `end` - The end [`OffsetDateTime`] (inclusive).
+    /// - `start` - The start [`DtUtc`] (inclusive).
+    /// - `end` - The end [`DtUtc`] (inclusive).
     ///
     /// ## Errors
     ///
@@ -182,8 +193,8 @@ impl Paste {
     /// A [`Vec`] of [`Paste`]'s.
     pub async fn fetch_between<'e, 'c: 'e, E>(
         executor: E,
-        start: &OffsetDateTime,
-        end: &OffsetDateTime,
+        start: &DtUtc,
+        end: &DtUtc,
     ) -> Result<Vec<Self>, AppError>
     where
         E: 'e + PgExecutor<'c>,
@@ -358,7 +369,7 @@ pub async fn validate_paste(
     };
 
     if let Some(expiry) = paste.expiry
-        && expiry < OffsetDateTime::now_utc()
+        && expiry < Utc::now()
     {
         Paste::delete(db.pool(), paste_id).await?;
         return Err(AppError::NotFound(
@@ -499,9 +510,9 @@ pub async fn expiry_tasks(app: App) {
 ///
 /// A [`Vec`] of [`Paste`]'s.
 async fn collect_nearby_expired_tasks(db: &Database) -> Result<Vec<Paste>, AppError> {
-    let start = OffsetDateTime::from_unix_timestamp(0)
+    let start = chrono::DateTime::from_timestamp(0, 0)
         .expect("Failed to make a timestamp with the time of 0.");
-    let end = OffsetDateTime::now_utc();
+    let end = Utc::now();
 
     Paste::fetch_between(db.pool(), &start, &end).await
 }

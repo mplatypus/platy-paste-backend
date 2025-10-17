@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use base64::{Engine, prelude::BASE64_URL_SAFE};
+use chrono::Utc;
 use platy_paste::{
     app::database::Database,
     models::{authentication::*, snowflake::Snowflake},
@@ -9,7 +10,6 @@ use platy_paste::{
 use secrecy::{ExposeSecret, SecretString};
 
 use sqlx::PgPool;
-use time::UtcDateTime;
 
 #[test]
 fn test_getters() {
@@ -113,7 +113,7 @@ fn test_delete(pool: PgPool) {
 
 #[test]
 fn test_generate_token() {
-    let current = UtcDateTime::now();
+    let current = Utc::now();
 
     let token =
         generate_token(Snowflake::new(517_815_304_354_763_650)).expect("Failed to generate token");
@@ -136,7 +136,7 @@ fn test_generate_token() {
     .parse()
     .expect("Failed to convert timestamp string to integer.");
 
-    assert_eq!(timestamp, current.unix_timestamp());
+    assert_eq!(timestamp, current.timestamp());
 }
 
 #[test]

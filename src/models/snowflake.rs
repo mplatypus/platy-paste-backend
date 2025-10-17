@@ -1,10 +1,6 @@
-use std::{
-    fmt,
-    num::ParseIntError,
-    str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fmt, num::ParseIntError, str::FromStr};
 
+use chrono::Utc;
 use serde::{Deserializer, Serialize, Serializer, de::Error as DEError};
 use serde_json::Value;
 use sqlx::{Decode, Encode};
@@ -41,10 +37,7 @@ impl Snowflake {
     ///
     /// A [`Snowflake`].
     pub fn generate() -> Result<Self, AppError> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
-            .as_millis() as u64;
+        let timestamp = Utc::now().timestamp() as u64;
 
         let id = getrandom::u64().map_err(|e| {
             AppError::InternalServer(format!("Failed to obtain a random integer: {e}"))
