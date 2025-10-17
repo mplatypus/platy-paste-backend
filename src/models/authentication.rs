@@ -128,7 +128,6 @@ impl FromRequestParts<App> for Token {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &App) -> Result<Self, Self::Rejection> {
-        #[allow(clippy::manual_let_else)]
         let TypedHeader(Authorization(bearer)) = parts
             .extract::<TypedHeader<Authorization<Bearer>>>()
             .await

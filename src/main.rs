@@ -17,7 +17,6 @@ use tracing_subscriber::{fmt::time::OffsetTime, layer::SubscriberExt};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 #[tokio::main]
-#[allow(clippy::too_many_lines)]
 async fn main() {
     let offset = UtcOffset::current_local_offset().expect("should get local offset!");
     let timer = OffsetTime::new(

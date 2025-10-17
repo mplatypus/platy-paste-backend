@@ -33,7 +33,6 @@ impl Config {
         ConfigBuilder::default()
     }
 
-    #[allow(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         from_filename(".env").ok();
         Self::builder()
@@ -149,7 +148,7 @@ impl SizeLimitConfig {
         SizeLimitConfigBuilder::default()
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     pub fn from_env(fetch_env: bool) -> Self {
         if fetch_env {
             from_filename(".env").ok();

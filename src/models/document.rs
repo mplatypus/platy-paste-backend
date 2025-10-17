@@ -465,14 +465,12 @@ pub fn contains_mime(mimes: &[&str], value: &str) -> bool {
         for mime in mimes {
             if mime == &value {
                 return true;
-            } else if let Some(capture) = match_all_mime.captures(mime) {
-                if let (Some(mime_value_left), Some(capture_value_left)) =
+            } else if let Some(capture) = match_all_mime.captures(mime)
+                && let (Some(mime_value_left), Some(capture_value_left)) =
                     (split_mime_value.name("left"), capture.name("left"))
-                {
-                    if mime_value_left.as_str() == capture_value_left.as_str() {
-                        return true;
-                    }
-                }
+                && mime_value_left.as_str() == capture_value_left.as_str()
+            {
+                return true;
             }
         }
     }

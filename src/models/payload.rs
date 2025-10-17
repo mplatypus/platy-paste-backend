@@ -175,7 +175,7 @@ impl ResponseSizeLimitsConfig {
     /// New.
     ///
     /// Create a new [`ResponseConfig`] object.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub const fn new(
         minimum_expiry_hours: Option<usize>,
         minimum_total_document_count: usize,
@@ -250,7 +250,7 @@ impl ResponsePaste {
     /// New.
     ///
     /// Create a new [`ResponsePaste`] object.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         id: Snowflake,
         token: Option<String>,

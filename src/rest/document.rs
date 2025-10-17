@@ -274,7 +274,7 @@ struct ContentDisposition {
 }
 
 impl ContentDisposition {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn disposition(&self) -> &str {
         &self.disposition
     }
