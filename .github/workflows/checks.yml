@@ -18,7 +18,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    container: rust:1.86-slim-bullseye
+    container: rust:1.90-slim-bullseye
     services:
       postgres:
         image: postgres
@@ -61,7 +61,7 @@ jobs:
 
   sqlx:
     runs-on: ubuntu-latest
-    container: rust:1.86-slim-bullseye
+    container: rust:1.90-slim-bullseye
     services:
       postgres:
         image: postgres
