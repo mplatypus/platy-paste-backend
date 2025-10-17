@@ -5,10 +5,10 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::num::ParseIntError;
 use thiserror::Error;
-use time::OffsetDateTime;
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
@@ -56,7 +56,7 @@ impl IntoResponse for AppError {
         };
 
         let body = Json(ErrorResponse {
-            timestamp: OffsetDateTime::now_utc().unix_timestamp() as u64,
+            timestamp: Utc::now().timestamp() as u64,
             reason: String::from(reason),
             trace: Some(trace.to_string()), // This should only appear if the trace is requested (the query contains trace=True)
         });
@@ -102,7 +102,7 @@ impl IntoResponse for AuthError {
         };
 
         let body = Json(ErrorResponse {
-            timestamp: OffsetDateTime::now_utc().unix_timestamp() as u64,
+            timestamp: Utc::now().timestamp() as u64,
             reason: String::from(reason),
             trace: None,
         });

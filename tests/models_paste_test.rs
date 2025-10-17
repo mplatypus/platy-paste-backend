@@ -1,17 +1,17 @@
+use chrono::{DateTime, TimeZone, Timelike, Utc};
 use platy_paste::{
     app::database::Database,
     models::{paste::*, snowflake::Snowflake},
 };
 
 use sqlx::PgPool;
-use time::{Date, OffsetDateTime, Time};
 
 #[test]
 fn test_getters() {
     let paste_id = Snowflake::new(123);
-    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
-    let edited = OffsetDateTime::from_unix_timestamp(15).expect("failed to generate timestamp.");
-    let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
+    let creation = DateTime::from_timestamp(10, 0).expect("failed to generate timestamp.");
+    let edited = DateTime::from_timestamp(15, 0).expect("failed to generate timestamp.");
+    let expiry = DateTime::from_timestamp(20, 0).expect("failed to generate timestamp.");
 
     let paste = Paste::new(
         paste_id,
@@ -36,28 +36,34 @@ fn test_getters() {
 #[test]
 fn test_set_edited() {
     let paste_id = Snowflake::new(123);
-    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
-    let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
+    let creation = DateTime::from_timestamp(10, 0).expect("failed to generate timestamp.");
+    let expiry = DateTime::from_timestamp(20, 0).expect("failed to generate timestamp.");
 
     let mut paste = Paste::new(paste_id, creation, None, Some(expiry), 567, Some(1000));
 
     assert_eq!(paste.edited(), None, "Mismatched edited.");
 
-    let current = OffsetDateTime::now_utc();
-    paste.set_edited();
+    let current = Utc::now();
+    paste.set_edited().expect("Failed to set edited timestamp.");
 
     assert_eq!(paste.id(), &paste_id, "Mismatched paste ID.");
 
     let paste_edited = paste.edited().expect("Edited was not found.");
 
     assert_eq!(
-        paste_edited.date(),
-        current.date(),
+        paste_edited.date_naive(),
+        current.date_naive(),
         "Mismatched edited Date."
     );
     assert_eq!(
-        paste_edited.to_hms(),
-        current.to_hms(),
+        paste_edited
+            .time()
+            .with_nanosecond(0)
+            .expect("Failed to build current time with reset nanosecond."),
+        current
+            .time()
+            .with_nanosecond(0)
+            .expect("Failed to build current time with reset nanosecond."),
         "Mismatched edited HMS."
     );
 
@@ -71,8 +77,8 @@ fn test_set_edited() {
 #[test]
 fn test_set_expiry() {
     let paste_id = Snowflake::new(123);
-    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
-    let expiry = OffsetDateTime::from_unix_timestamp(0).expect("failed to generate timestamp.");
+    let creation = DateTime::from_timestamp(10, 0).expect("failed to generate timestamp.");
+    let expiry = DateTime::from_timestamp(0, 0).expect("failed to generate timestamp.");
 
     let mut paste = Paste::new(paste_id, creation, None, Some(expiry), 567, Some(1000));
 
@@ -96,12 +102,10 @@ fn test_fetch(pool: PgPool) {
     let db = Database::from_pool(pool);
 
     let paste_id = Snowflake::new(517_815_304_354_284_601);
-    let creation =
-        OffsetDateTime::from_unix_timestamp(0).expect("failed to generate creation timestamp.");
-    let edited =
-        OffsetDateTime::from_unix_timestamp(86400).expect("failed to generate edited timestamp.");
+    let creation = DateTime::from_timestamp(0, 0).expect("failed to generate creation timestamp.");
+    let edited = DateTime::from_timestamp(86400, 0).expect("failed to generate edited timestamp.");
     let expiry =
-        OffsetDateTime::from_unix_timestamp(172_800).expect("failed to generate expiry timestamp.");
+        DateTime::from_timestamp(172_800, 0).expect("failed to generate expiry timestamp.");
 
     let paste = Paste::fetch(db.pool(), &paste_id)
         .await
@@ -141,16 +145,8 @@ fn test_fetch_between(pool: PgPool) {
 
     let results = Paste::fetch_between(
         db.pool(),
-        &OffsetDateTime::new_utc(
-            Date::from_calendar_date(1970, time::Month::January, 2)
-                .expect("Failed to build date start."),
-            Time::from_hms(0, 0, 0).expect("Failed to build time start."),
-        ),
-        &OffsetDateTime::new_utc(
-            Date::from_calendar_date(1970, time::Month::January, 4)
-                .expect("Failed to build date end."),
-            Time::from_hms(0, 0, 0).expect("Failed to build time end."),
-        ),
+        &Utc.with_ymd_and_hms(1970, 1, 2, 0, 0, 0).unwrap(),
+        &Utc.with_ymd_and_hms(1970, 1, 4, 0, 0, 0).unwrap(),
     )
     .await
     .expect("Failed to fetch value from database.");
@@ -159,9 +155,9 @@ fn test_fetch_between(pool: PgPool) {
 
     assert_eq!(
         results[0].expiry(),
-        Some(&OffsetDateTime::from_unix_timestamp(172_800).expect("Failed to build result time.")),
+        Some(&DateTime::from_timestamp(172_800, 0).expect("Failed to build result time.")),
         "Invalid expiry. Expected: {:?}, Received: {:?}",
-        Some(OffsetDateTime::from_unix_timestamp(172_800).expect("Failed to build result time.")),
+        Some(&DateTime::from_timestamp(172_800, 0).expect("Failed to build result time.")),
         results[0].expiry(),
     );
 }
@@ -172,16 +168,8 @@ fn test_fetch_between_missing(pool: PgPool) {
 
     let results = Paste::fetch_between(
         db.pool(),
-        &OffsetDateTime::new_utc(
-            Date::from_calendar_date(2000, time::Month::January, 1)
-                .expect("Failed to build date start."),
-            Time::from_hms(0, 0, 0).expect("Failed to build time start."),
-        ),
-        &OffsetDateTime::new_utc(
-            Date::from_calendar_date(2001, time::Month::January, 1)
-                .expect("Failed to build date end."),
-            Time::from_hms(0, 0, 0).expect("Failed to build time end."),
-        ),
+        &Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap(),
+        &Utc.with_ymd_and_hms(2001, 1, 1, 0, 0, 0).unwrap(),
     )
     .await
     .expect("Failed to fetch value from database.");
@@ -197,9 +185,9 @@ fn test_insert(pool: PgPool) {
     let db = Database::from_pool(pool);
 
     let paste_id = Snowflake::new(123);
-    let creation = OffsetDateTime::from_unix_timestamp(10).expect("failed to generate timestamp.");
-    let edited = OffsetDateTime::from_unix_timestamp(15).expect("failed to generate timestamp.");
-    let expiry = OffsetDateTime::from_unix_timestamp(20).expect("failed to generate timestamp.");
+    let creation = DateTime::from_timestamp(10, 0).expect("failed to generate timestamp.");
+    let edited = DateTime::from_timestamp(15, 0).expect("failed to generate timestamp.");
+    let expiry = DateTime::from_timestamp(20, 0).expect("failed to generate timestamp.");
 
     let paste = Paste::new(
         paste_id,
@@ -247,22 +235,19 @@ fn test_update(pool: PgPool) {
 
     assert_eq!(
         paste.edited(),
-        Some(&OffsetDateTime::from_unix_timestamp(86400).expect("failed to generate timestamp.")),
+        Some(&DateTime::from_timestamp(86400, 0).expect("failed to generate timestamp.")),
         "Mismatched edited time."
     );
 
     assert_eq!(
         paste.expiry(),
-        Some(
-            &OffsetDateTime::from_unix_timestamp(172_800)
-                .expect("Failed to build expected timestamp.")
-        ),
+        Some(&DateTime::from_timestamp(172_800, 0).expect("Failed to build expected timestamp.")),
         "Mismatched expiry time."
     );
 
-    let current = OffsetDateTime::now_utc();
+    let current = Utc::now();
 
-    paste.set_edited();
+    paste.set_edited().expect("Failed to set edited timestamp.");
 
     paste.set_expiry(None);
 
@@ -279,13 +264,19 @@ fn test_update(pool: PgPool) {
     let paste_edited = paste.edited().expect("Edited was not found.");
 
     assert_eq!(
-        paste_edited.date(),
-        current.date(),
+        paste_edited.date_naive(),
+        current.date_naive(),
         "Mismatched edited Date."
     );
     assert_eq!(
-        paste_edited.to_hms(),
-        current.to_hms(),
+        paste_edited
+            .time()
+            .with_nanosecond(0)
+            .expect("Failed to build current time with reset nanosecond."),
+        current
+            .time()
+            .with_nanosecond(0)
+            .expect("Failed to build current time with reset nanosecond."),
         "Mismatched edited HMS."
     );
 

@@ -5,11 +5,12 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
-use time::OffsetDateTime;
+use chrono::{TimeDelta, Timelike, Utc};
 
 use crate::{
     app::{application::App, config::Config},
     models::{
+        DtUtc,
         authentication::{Token, generate_token},
         document::{
             Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
@@ -120,7 +121,11 @@ async fn post_paste(
 
     let paste = Paste::new(
         Snowflake::generate()?,
-        OffsetDateTime::now_utc(),
+        Utc::now()
+            .with_nanosecond(0)
+            .ok_or(AppError::InternalServer(
+                "Failed to strip nanosecond from date time object.".to_string(),
+            ))?,
         None,
         expiry.to_option(),
         0,
@@ -243,6 +248,8 @@ async fn patch_paste(
 
     let mut transaction = app.database().pool().begin().await?;
 
+    paste.set_edited()?;
+
     paste.update(transaction.as_mut()).await?;
 
     let documents = Document::fetch_all(transaction.as_mut(), paste.id()).await?;
@@ -295,6 +302,8 @@ async fn delete_paste(
 /// Checks if the expiry time is valid (if provided)
 /// Otherwise, if not provided, returns the default, or None.
 ///
+/// This will also strip the nanoseconds off the timestamp.
+///
 /// ## Arguments
 ///
 /// - `config` - The config values to use.
@@ -311,25 +320,30 @@ async fn delete_paste(
 /// - [`UndefinedOption::None`] - None was given, and no maximum expiry has been set.
 fn validate_expiry(
     config: &Config,
-    expiry: UndefinedOption<usize>,
-) -> Result<UndefinedOption<OffsetDateTime>, AppError> {
+    expiry: UndefinedOption<DtUtc>,
+) -> Result<UndefinedOption<DtUtc>, AppError> {
     let size_limits = config.size_limits();
     match expiry {
         UndefinedOption::Some(expiry) => {
-            let time = OffsetDateTime::from_unix_timestamp(expiry as i64)
-                .map_err(|e| AppError::BadRequest(format!("Failed to build timestamp: {e}")))?;
-            let now = OffsetDateTime::now_utc();
+            let expiry = expiry.with_nanosecond(0).ok_or(AppError::InternalServer(
+                "Failed to strip nanosecond from date time object.".to_string(),
+            ))?;
+            let now = Utc::now()
+                .with_nanosecond(0)
+                .ok_or(AppError::InternalServer(
+                    "Failed to strip nanosecond from date time object.".to_string(),
+                ))?;
 
-            let difference = time - now;
+            let difference = expiry - now;
 
-            if difference.is_negative() {
+            if difference.num_seconds() <= 0 {
                 return Err(AppError::BadRequest(
                     "The timestamp provided is invalid.".to_string(),
                 ));
             }
 
             if let Some(minimum_expiry_hours) = size_limits.minimum_expiry_hours()
-                && difference < time::Duration::hours(minimum_expiry_hours as i64)
+                && difference < TimeDelta::hours(minimum_expiry_hours as i64)
             {
                 return Err(AppError::BadRequest(
                     "The timestamp provided is below the minimum.".to_string(),
@@ -337,20 +351,24 @@ fn validate_expiry(
             }
 
             if let Some(maximum_expiry_hours) = size_limits.maximum_expiry_hours()
-                && difference > time::Duration::hours(maximum_expiry_hours as i64)
+                && difference > TimeDelta::hours(maximum_expiry_hours as i64)
             {
                 return Err(AppError::BadRequest(
                     "The timestamp provided is above the maximum.".to_string(),
                 ));
             }
 
-            Ok(UndefinedOption::Some(time))
+            Ok(UndefinedOption::Some(expiry))
         }
         UndefinedOption::Undefined => {
             if let Some(default_expiry_hours) = size_limits.default_expiry_hours() {
                 return Ok(UndefinedOption::Some(
-                    OffsetDateTime::now_utc()
-                        .saturating_add(time::Duration::hours(default_expiry_hours as i64)),
+                    Utc::now()
+                        .with_nanosecond(0)
+                        .ok_or(AppError::InternalServer(
+                            "Failed to strip nanosecond from date time object.".to_string(),
+                        ))?
+                        + TimeDelta::hours(default_expiry_hours as i64),
                 ));
             }
 
@@ -385,8 +403,8 @@ mod tests {
         app::config::{Config, SizeLimitConfigBuilder},
         models::error::AppError,
     };
+    use chrono::Timelike;
     use rstest::*;
-    use time::Duration;
 
     fn make_config(
         default_expiry_hours: Option<usize>,
@@ -415,68 +433,60 @@ mod tests {
             .expect("Failed to build config.")
     }
 
-    pub fn valid_time() -> OffsetDateTime {
-        OffsetDateTime::now_utc()
-            .saturating_add(Duration::hours(50))
-            .replace_nanosecond(0)
-            .expect("Failed to remove nanoseconds")
+    pub fn valid_time() -> DtUtc {
+        Utc::now()
+            .with_nanosecond(0)
+            .expect("Failed to build current time with reset nanosecond.")
+            + TimeDelta::hours(50)
     }
 
-    pub fn valid_timestamp() -> usize {
-        valid_time().unix_timestamp() as usize
-    }
-
-    pub fn invalid_time() -> OffsetDateTime {
-        OffsetDateTime::now_utc()
-            .saturating_add(Duration::minutes(10))
-            .replace_nanosecond(0)
-            .expect("Failed to remove nanoseconds")
-    }
-
-    pub fn invalid_timestamp() -> usize {
-        invalid_time().unix_timestamp() as usize
+    pub fn invalid_time() -> DtUtc {
+        Utc::now()
+            .with_nanosecond(0)
+            .expect("Failed to build current time with reset nanosecond.")
+            + TimeDelta::minutes(10)
     }
 
     #[rstest]
     // Expiry cases.
     #[case(
         make_config(None, None, None),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     #[case(
         make_config(Some(10), None, None),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     #[case(
         make_config(None, Some(1), None),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     #[case(
         make_config(None, None, Some(100)),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     #[case(
         make_config(Some(10), Some(1), None),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     #[case(
         make_config(None, Some(1), Some(100)),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     #[case(
         make_config(Some(10), None, Some(100)),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     #[case(
         make_config(Some(10), Some(1), Some(100)),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         UndefinedOption::Some(valid_time())
     )]
     // Missing expiry cases.
@@ -498,8 +508,8 @@ mod tests {
     )]
     fn test_validate_expiry_valid(
         #[case] config: Config,
-        #[case] expiry: UndefinedOption<usize>,
-        #[case] expected: UndefinedOption<OffsetDateTime>,
+        #[case] expiry: UndefinedOption<DtUtc>,
+        #[case] expected: UndefinedOption<DtUtc>,
     ) {
         let returned_expiry =
             validate_expiry(&config, expiry).expect("Expected a undefined option.");
@@ -558,27 +568,27 @@ mod tests {
     // Invalid expiry cases.
     #[case(
         make_config(None, Some(1), None),
-        UndefinedOption::Some(invalid_timestamp()),
+        UndefinedOption::Some(invalid_time()),
         "The timestamp provided is below the minimum."
     )]
     #[case(
         make_config(None, None, Some(10)),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         "The timestamp provided is above the maximum."
     )]
     #[case(
         make_config(None, Some(1), Some(10)),
-        UndefinedOption::Some(invalid_timestamp()),
+        UndefinedOption::Some(invalid_time()),
         "The timestamp provided is below the minimum."
     )]
     #[case(
         make_config(None, Some(1), Some(10)),
-        UndefinedOption::Some(valid_timestamp()),
+        UndefinedOption::Some(valid_time()),
         "The timestamp provided is above the maximum."
     )]
     fn test_validate_expiry_invalid(
         #[case] config: Config,
-        #[case] expiry: UndefinedOption<usize>,
+        #[case] expiry: UndefinedOption<DtUtc>,
         #[case] expected: &str,
     ) {
         let returned_expiry = validate_expiry(&config, expiry).expect_err("Expected an error.");
@@ -602,19 +612,19 @@ mod tests {
             .expect("Expected a undefined option.");
 
         if let UndefinedOption::Some(returned_time) = returned_expiry {
-            let expected = OffsetDateTime::now_utc()
-                .saturating_add(Duration::hours(10))
-                .replace_nanosecond(0)
-                .expect("Failed to remove nanoseconds");
+            let expected = Utc::now()
+                .with_nanosecond(0)
+                .expect("Failed to build current time with reset nanosecond.")
+                + TimeDelta::hours(10);
 
-            assert_eq!(returned_time.date(), expected.date(), "Mismatching date.");
             assert_eq!(
-                returned_time.to_hms(),
-                expected.to_hms(),
-                "Mismatching hms."
+                returned_time.date_naive(),
+                expected.date_naive(),
+                "Mismatching date."
             );
+            assert_eq!(returned_time.time(), expected.time(), "Mismatching hms.");
         } else {
-            panic!("Expected no timestamp to be returned.");
+            panic!("Expected a timestamp to be returned.");
         }
     }
 }

@@ -133,7 +133,7 @@ async fn post_document(
 
     let mut transaction = app.database().pool().begin().await?;
 
-    paste.set_edited();
+    paste.set_edited()?;
 
     paste.update(transaction.as_mut()).await?;
 
@@ -199,7 +199,7 @@ async fn patch_document(
 
     let mut transaction = app.database().pool().begin().await?;
 
-    paste.set_edited();
+    paste.set_edited()?;
 
     paste.update(transaction.as_mut()).await?;
 
