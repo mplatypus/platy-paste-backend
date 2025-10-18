@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.90-bookworm AS chef
 WORKDIR /app
 
 ENV SQLX_OFFLINE=true
