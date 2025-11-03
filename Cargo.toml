@@ -48,7 +48,7 @@ tracing-appender = "0.2"
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "tls-rustls", "chrono"] }
 aws-config = "1.5"
-aws-sdk-s3 = "1.76"
+aws-sdk-s3 = "1.109"
 # Payload
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
