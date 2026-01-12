@@ -117,17 +117,46 @@ async fn post_paste(
         }
     };
 
+    let name = {
+        match body.name() {
+            UndefinedOption::Undefined => app
+                .config()
+                .size_limits()
+                .default_paste_name()
+                .map(ToString::to_string),
+            UndefinedOption::Some(name) => {
+                let name = name.to_string();
+
+                if name.len() > app.config().size_limits().maximum_paste_name_size() {
+                    return Err(AppError::BadRequest(
+                        "The pastes name is too long.".to_string(),
+                    ));
+                }
+
+                if name.len() < app.config().size_limits().minimum_paste_name_size() {
+                    return Err(AppError::BadRequest(
+                        "The pastes name is too short.".to_string(),
+                    ));
+                }
+
+                Some(name)
+            }
+            UndefinedOption::None => None,
+        }
+    };
+
     let mut transaction = app.database().pool().begin().await?;
 
     let paste = Paste::new(
         Snowflake::generate()?,
+        name,
         Utc::now()
             .with_nanosecond(0)
             .ok_or(AppError::InternalServer(
                 "Failed to strip nanosecond from date time object.".to_string(),
             ))?,
         None,
-        expiry.to_option(),
+        expiry.into(),
         0,
         max_views,
     );
@@ -230,8 +259,32 @@ async fn patch_paste(
 
     let new_expiry = validate_expiry(app.config(), body.expiry())?;
 
+    match body.name() {
+        UndefinedOption::Some(name) => {
+            let name = name.to_string();
+
+            if name.len() > app.config().size_limits().maximum_paste_name_size() {
+                return Err(AppError::BadRequest(
+                    "The pastes name is too long.".to_string(),
+                ));
+            }
+
+            if name.len() < app.config().size_limits().minimum_paste_name_size() {
+                return Err(AppError::BadRequest(
+                    "The pastes name is too short.".to_string(),
+                ));
+            }
+
+            paste.set_name(Some(name));
+        }
+        UndefinedOption::None => {
+            paste.set_name(None);
+        }
+        UndefinedOption::Undefined => (),
+    }
+
     if !new_expiry.is_undefined() {
-        paste.set_expiry(new_expiry.to_option());
+        paste.set_expiry(new_expiry.into());
     }
 
     match body.max_views() {

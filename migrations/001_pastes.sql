@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS pastes (
     -- The unique ID for the paste.
     "id" BIGINT NOT NULL PRIMARY KEY,
+    -- The name of the paste.
+    "name" TEXT,
     -- When the paste was created.
     "creation" TIMESTAMPTZ NOT NULL,
     -- Whether the paste has been modified.
