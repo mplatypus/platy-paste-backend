@@ -121,6 +121,8 @@ pub struct SizeLimitConfig {
     default_expiry_hours: Option<usize>,
     /// The default value for maximum views.
     default_maximum_views: Option<usize>,
+    /// The default value for the pastes name.
+    default_paste_name: Option<String>,
     /// The minimum expiry hours for pastes.
     minimum_expiry_hours: Option<usize>,
     /// The minimum allowed documents in a paste.
@@ -131,6 +133,8 @@ pub struct SizeLimitConfig {
     minimum_total_document_size: usize,
     /// The minimum size of a document name (bytes).
     minimum_document_name_size: usize,
+    /// The minimum size of a paste name (bytes).
+    minimum_paste_name_size: usize,
     /// The maximum expiry for pastes.
     maximum_expiry_hours: Option<usize>,
     /// The maximum allowed documents in a paste.
@@ -141,6 +145,8 @@ pub struct SizeLimitConfig {
     maximum_total_document_size: usize,
     /// The maximum size of a document name (bytes).
     maximum_document_name_size: usize,
+    /// The maximum size of the paste name (bytes).
+    maximum_paste_name_size: usize,
 }
 
 impl SizeLimitConfig {
@@ -175,6 +181,11 @@ impl SizeLimitConfig {
                     )
                 },
             ))
+            .default_paste_name(
+                std::env::var("DEFAULT_PASTE_NAME")
+                    .ok()
+                    .map_or(defaults.default_paste_name, |v| Some(v)),
+            )
             .minimum_expiry_hours(std::env::var("MINIMUM_EXPIRY_HOURS").ok().map_or(
                 defaults.minimum_expiry_hours,
                 |v| {
@@ -212,6 +223,13 @@ impl SizeLimitConfig {
                 |v| {
                     v.parse()
                         .expect("MINIMUM_DOCUMENT_NAME_SIZE requires an integer.")
+                },
+            ))
+            .minimum_paste_name_size(std::env::var("MINIMUM_PASTE_NAME_SIZE").ok().map_or(
+                defaults.minimum_paste_name_size,
+                |v| {
+                    v.parse()
+                        .expect("MINIMUM_PASTE_NAME_SIZE requires an integer.")
                 },
             ))
             .maximum_expiry_hours(std::env::var("MAXIMUM_EXPIRY_HOURS").ok().map_or(
@@ -253,6 +271,13 @@ impl SizeLimitConfig {
                         .expect("MAXIMUM_DOCUMENT_NAME_SIZE requires an integer.")
                 },
             ))
+            .maximum_paste_name_size(std::env::var("MAXIMUM_PASTE_NAME_SIZE").ok().map_or(
+                defaults.maximum_paste_name_size,
+                |v| {
+                    v.parse()
+                        .expect("MAXIMUM_PASTE_NAME_SIZE requires an integer.")
+                },
+            ))
             .build()
             .expect("Failed to create application size limit configuration.");
 
@@ -282,6 +307,28 @@ impl SizeLimitConfig {
         }
 
         assert!(
+            builder.minimum_paste_name_size < builder.maximum_paste_name_size,
+            "The MINIMUM_PASTE_NAME_SIZE must be equal to or less than MAXIMUM_PASTE_NAME_SIZE"
+        );
+
+        assert!(
+            builder.minimum_paste_name_size > 0,
+            "The MINIMUM_PASTE_NAME_SIZE must be greater than 0."
+        );
+
+        if let Some(default_paste_name) = &builder.default_paste_name {
+            assert!(
+                default_paste_name.len() > builder.minimum_paste_name_size,
+                "The DEFAULT_PASTE_NAME must be equal to or greater than the MINIMUM_PASTE_NAME_SIZE"
+            );
+
+            assert!(
+                default_paste_name.len() < builder.maximum_paste_name_size,
+                "The DEFAULT_PASTE_NAME must be equal to or less than the MAXIMUM_PASTE_NAME_SIZE"
+            );
+        }
+
+        assert!(
             builder.minimum_total_document_count > 0,
             "The MINIMUM_TOTAL_DOCUMENT_COUNT must be greater than 0."
         );
@@ -290,8 +337,6 @@ impl SizeLimitConfig {
             builder.minimum_total_document_count < builder.maximum_total_document_count,
             "The MINIMUM_TOTAL_DOCUMENT_COUNT must be equal to or less than MAXIMUM_TOTAL_DOCUMENT_COUNT"
         );
-
-        println!("{}", builder.minimum_document_size);
 
         assert!(
             builder.minimum_document_size > 0,
@@ -323,6 +368,11 @@ impl SizeLimitConfig {
             "The MINIMUM_DOCUMENT_NAME_SIZE must be equal to or less than MAXIMUM_DOCUMENT_NAME_SIZE"
         );
 
+        assert!(
+            builder.minimum_document_name_size > 0,
+            "The MINIMUM_DOCUMENT_NAME_SIZE must be greater than 0."
+        );
+
         builder
     }
 
@@ -332,6 +382,10 @@ impl SizeLimitConfig {
 
     pub const fn default_maximum_views(&self) -> Option<usize> {
         self.default_maximum_views
+    }
+
+    pub fn default_paste_name(&self) -> Option<&str> {
+        self.default_paste_name.as_deref()
     }
 
     pub const fn minimum_expiry_hours(&self) -> Option<usize> {
@@ -354,6 +408,10 @@ impl SizeLimitConfig {
         self.minimum_document_name_size
     }
 
+    pub const fn minimum_paste_name_size(&self) -> usize {
+        self.minimum_paste_name_size
+    }
+
     pub const fn maximum_expiry_hours(&self) -> Option<usize> {
         self.maximum_expiry_hours
     }
@@ -373,6 +431,10 @@ impl SizeLimitConfig {
     pub const fn maximum_document_name_size(&self) -> usize {
         self.maximum_document_name_size
     }
+
+    pub const fn maximum_paste_name_size(&self) -> usize {
+        self.maximum_paste_name_size
+    }
 }
 
 impl Default for SizeLimitConfig {
@@ -380,16 +442,19 @@ impl Default for SizeLimitConfig {
         Self {
             default_expiry_hours: None,
             default_maximum_views: None,
+            default_paste_name: None,
             minimum_expiry_hours: None,
             minimum_total_document_count: 1,
             minimum_document_size: 1,
             minimum_total_document_size: 1,
             minimum_document_name_size: 3,
+            minimum_paste_name_size: 3,
             maximum_expiry_hours: None,
             maximum_total_document_count: 10,
             maximum_document_size: 5_000_000,
             maximum_total_document_size: 10_000_000,
             maximum_document_name_size: 50,
+            maximum_paste_name_size: 50,
         }
     }
 }

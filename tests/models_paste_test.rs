@@ -15,6 +15,7 @@ fn test_getters() {
 
     let paste = Paste::new(
         paste_id,
+        Some("beans".to_string()),
         creation,
         Some(edited),
         Some(expiry),
@@ -23,6 +24,8 @@ fn test_getters() {
     );
 
     assert_eq!(paste.id(), &paste_id, "Mismatched paste ID.");
+
+    assert_eq!(paste.name(), Some("beans"));
 
     assert_eq!(paste.edited(), Some(&edited), "Mismatched edited.");
 
@@ -39,7 +42,15 @@ fn test_set_edited() {
     let creation = DateTime::from_timestamp(10, 0).expect("failed to generate timestamp.");
     let expiry = DateTime::from_timestamp(20, 0).expect("failed to generate timestamp.");
 
-    let mut paste = Paste::new(paste_id, creation, None, Some(expiry), 567, Some(1000));
+    let mut paste = Paste::new(
+        paste_id,
+        Some("beans".to_string()),
+        creation,
+        None,
+        Some(expiry),
+        567,
+        Some(1000),
+    );
 
     assert_eq!(paste.edited(), None, "Mismatched edited.");
 
@@ -47,6 +58,8 @@ fn test_set_edited() {
     paste.set_edited().expect("Failed to set edited timestamp.");
 
     assert_eq!(paste.id(), &paste_id, "Mismatched paste ID.");
+
+    assert_eq!(paste.name(), Some("beans"));
 
     let paste_edited = paste.edited().expect("Edited was not found.");
 
@@ -75,18 +88,63 @@ fn test_set_edited() {
 }
 
 #[test]
+fn test_set_name() {
+    let paste_id = Snowflake::new(123);
+    let creation = DateTime::from_timestamp(10, 0).expect("failed to generate timestamp.");
+    let expiry = DateTime::from_timestamp(0, 0).expect("failed to generate timestamp.");
+
+    let mut paste = Paste::new(
+        paste_id,
+        Some("beans".to_string()),
+        creation,
+        None,
+        Some(expiry),
+        567,
+        Some(1000),
+    );
+
+    assert_eq!(paste.expiry(), Some(&expiry), "Mismatched expiry.");
+
+    assert_eq!(paste.id(), &paste_id, "Mismatched paste ID.");
+
+    assert_eq!(paste.name(), Some("beans"));
+
+    paste.set_name(None);
+
+    assert_eq!(paste.name(), None);
+
+    assert_eq!(paste.edited(), None, "Mismatched edited.");
+
+    assert_eq!(paste.expiry(), Some(&expiry), "Mismatched expiry.");
+
+    assert_eq!(paste.views(), 567, "Mismatched views.");
+
+    assert_eq!(paste.max_views(), Some(1000), "Mismatched max views.");
+}
+
+#[test]
 fn test_set_expiry() {
     let paste_id = Snowflake::new(123);
     let creation = DateTime::from_timestamp(10, 0).expect("failed to generate timestamp.");
     let expiry = DateTime::from_timestamp(0, 0).expect("failed to generate timestamp.");
 
-    let mut paste = Paste::new(paste_id, creation, None, Some(expiry), 567, Some(1000));
+    let mut paste = Paste::new(
+        paste_id,
+        Some("beans".to_string()),
+        creation,
+        None,
+        Some(expiry),
+        567,
+        Some(1000),
+    );
 
     assert_eq!(paste.expiry(), Some(&expiry), "Mismatched expiry.");
 
     paste.set_expiry(None);
 
     assert_eq!(paste.id(), &paste_id, "Mismatched paste ID.");
+
+    assert_eq!(paste.name(), Some("beans"));
 
     assert_eq!(paste.edited(), None, "Mismatched edited.");
 
@@ -113,6 +171,8 @@ fn test_fetch(pool: PgPool) {
         .expect("No paste was found.");
 
     assert_eq!(paste.id(), &paste_id, "Mismatched paste ID.");
+
+    assert_eq!(paste.name(), Some("Test 1"), "Mismatched paste name.");
 
     assert_eq!(paste.creation(), &creation, "Mismatched creation time.");
 
@@ -153,6 +213,8 @@ fn test_fetch_between(pool: PgPool) {
 
     assert_eq!(results.len(), 1, "Not enough or too many results received.");
 
+    assert_eq!(results[0].id(), &Snowflake::new(517815304354284601),);
+
     assert_eq!(
         results[0].expiry(),
         Some(&DateTime::from_timestamp(172_800, 0).expect("Failed to build result time.")),
@@ -191,6 +253,7 @@ fn test_insert(pool: PgPool) {
 
     let paste = Paste::new(
         paste_id,
+        Some("Test".to_string()),
         creation,
         Some(edited),
         Some(expiry),
@@ -209,6 +272,8 @@ fn test_insert(pool: PgPool) {
         .expect("No paste was found.");
 
     assert_eq!(result.id(), &paste_id, "Mismatched paste ID.");
+
+    assert_eq!(paste.name(), Some("Test"), "Mismatched paste name.");
 
     assert_eq!(result.creation(), &creation, "Mismatched creation time.");
 
@@ -233,6 +298,8 @@ fn test_update(pool: PgPool) {
 
     assert_eq!(paste.id(), &paste_id, "Mismatched paste ID.");
 
+    assert_eq!(paste.name(), Some("Test 1"), "Mismatched paste name.");
+
     assert_eq!(
         paste.edited(),
         Some(&DateTime::from_timestamp(86400, 0).expect("failed to generate timestamp.")),
@@ -245,11 +312,17 @@ fn test_update(pool: PgPool) {
         "Mismatched expiry time."
     );
 
+    assert_eq!(paste.max_views(), Some(1000), "Mismatched max views.");
+
     let current = Utc::now();
 
     paste.set_edited().expect("Failed to set edited timestamp.");
 
+    paste.set_name(None);
+
     paste.set_expiry(None);
+
+    paste.set_max_views(None);
 
     paste
         .update(db.pool())
@@ -263,11 +336,14 @@ fn test_update(pool: PgPool) {
 
     let paste_edited = paste.edited().expect("Edited was not found.");
 
+    assert_eq!(result.name(), None, "Mismatched paste name.");
+
     assert_eq!(
         paste_edited.date_naive(),
         current.date_naive(),
         "Mismatched edited Date."
     );
+
     assert_eq!(
         paste_edited
             .time()
@@ -281,6 +357,8 @@ fn test_update(pool: PgPool) {
     );
 
     assert!(result.expiry().is_none(), "Mismatched expiry time.");
+
+    assert!(result.max_views().is_none(), "Mismatched max views.");
 }
 
 #[sqlx::test(fixtures("pastes"))]

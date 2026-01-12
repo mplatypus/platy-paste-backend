@@ -1,5 +1,6 @@
 INSERT INTO pastes VALUES (
     517815304354284601,
+    'Test 1',
     '1970-01-01 00:00:00.0+00',
     '1970-01-02 00:00:00.0+00',
     '1970-01-03 00:00:00.0+00',
@@ -8,6 +9,7 @@ INSERT INTO pastes VALUES (
 );
 INSERT INTO pastes VALUES (
     517815304354284602,
+    'Test 2',
     '1970-02-01 00:00:00.0+00',
     '1970-02-02 00:00:00.0+00',
     null,
@@ -16,6 +18,7 @@ INSERT INTO pastes VALUES (
 );
 INSERT INTO pastes VALUES (
     517815304354284603,
+    'Test 3',
     '1970-03-01 00:00:00.0+00',
     null,
     '1970-03-03 00:00:00.0+00',
@@ -24,6 +27,7 @@ INSERT INTO pastes VALUES (
 );
 INSERT INTO pastes VALUES (
     517815304354284604,
+    null,
     '1970-04-01 00:00:00.0+00',
     null,
     null,

@@ -17,6 +17,8 @@ use super::{
 pub struct Paste {
     /// The ID of the paste.
     id: Snowflake,
+    /// The pastes name.
+    name: Option<String>,
     /// When the paste was created.
     creation: DtUtc,
     /// When the paste was last modified.
@@ -35,6 +37,7 @@ impl Paste {
     /// Create a new [`Paste`] object.
     pub const fn new(
         id: Snowflake,
+        name: Option<String>,
         creation: DtUtc,
         edited: Option<DtUtc>,
         expiry: Option<DtUtc>,
@@ -43,6 +46,7 @@ impl Paste {
     ) -> Self {
         Self {
             id,
+            name,
             creation,
             edited,
             expiry,
@@ -55,6 +59,12 @@ impl Paste {
     #[inline]
     pub const fn id(&self) -> &Snowflake {
         &self.id
+    }
+
+    /// The pastes name.
+    #[inline]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     /// The pastes creation time.
@@ -107,6 +117,13 @@ impl Paste {
         Ok(())
     }
 
+    /// Set Name.
+    ///
+    /// Set or remove the name of the paste.
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+
     /// Set Expiry.
     ///
     /// Set or remove the expiry on the paste.
@@ -154,7 +171,7 @@ impl Paste {
     {
         let paste_id: i64 = (*id).into();
         let query = sqlx::query!(
-            "SELECT id, creation, edited, expiry, views, max_views FROM pastes WHERE id = $1",
+            "SELECT id, name, creation, edited, expiry, views, max_views FROM pastes WHERE id = $1",
             paste_id
         )
         .fetch_optional(executor)
@@ -163,6 +180,7 @@ impl Paste {
         if let Some(q) = query {
             return Ok(Some(Self::new(
                 q.id.into(),
+                q.name,
                 q.creation,
                 q.edited,
                 q.expiry,
@@ -200,7 +218,7 @@ impl Paste {
         E: 'e + PgExecutor<'c>,
     {
         let records = sqlx::query!(
-            "SELECT id, creation, edited, expiry, views, max_views FROM pastes WHERE expiry >= $1 AND expiry <= $2",
+            "SELECT id, name, creation, edited, expiry, views, max_views FROM pastes WHERE expiry >= $1 AND expiry <= $2",
             start,
             end
         )
@@ -211,6 +229,7 @@ impl Paste {
         for record in records {
             let paste = Self::new(
                 record.id.into(),
+                record.name,
                 record.creation,
                 record.edited,
                 record.expiry,
@@ -242,8 +261,9 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, creation, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO pastes(id, name, creation, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5, $6, $7)",
             paste_id,
+            self.name,
             self.creation,
             self.edited,
             self.expiry,
@@ -274,8 +294,9 @@ impl Paste {
         let paste_id: i64 = self.id.into();
 
         sqlx::query!(
-            "INSERT INTO pastes(id, creation, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET edited = $3, expiry = $4, views = $5, max_views = $6",
+            "INSERT INTO pastes(id, name, creation, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO UPDATE SET name = $2, edited = $4, expiry = $5, views = $6, max_views = $7",
             paste_id,
+            self.name,
             self.creation,
             self.edited,
             self.expiry,
