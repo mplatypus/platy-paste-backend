@@ -7,7 +7,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::num::ParseIntError;
+use std::{num::ParseIntError, string::FromUtf8Error};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -25,6 +25,10 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("Parse Int Error: {0}")]
     ParseInt(#[from] ParseIntError),
+    #[error("From UTF-8 Error: {0}")]
+    FromUtf8(#[from] FromUtf8Error),
+    #[error("Regex Build Error: {0}")]
+    Regex(#[from] regex::Error),
     #[error("Internal Server Error: {0}")]
     InternalServer(String),
     #[error("Bad Request Error: {0}")]
@@ -44,6 +48,16 @@ impl IntoResponse for AppError {
             Self::ParseInt(e) => (
                 StatusCode::BAD_REQUEST,
                 "Failed to parse integer",
+                &e.to_string(),
+            ),
+            Self::FromUtf8(e) => (
+                StatusCode::BAD_REQUEST,
+                "Failed to parse UTF-8",
+                &e.to_string(),
+            ),
+            Self::Regex(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to build regex",
                 &e.to_string(),
             ),
             Self::InternalServer(ref e) => (

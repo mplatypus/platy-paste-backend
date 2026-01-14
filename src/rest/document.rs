@@ -129,7 +129,9 @@ async fn post_document(
         body.len(),
     );
 
-    document_limits(app.config(), &document)?;
+    let content = String::from_utf8(body.to_vec())?;
+
+    document_limits(app.config(), name, &content)?;
 
     let mut transaction = app.database().pool().begin().await?;
 
@@ -141,7 +143,15 @@ async fn post_document(
 
     total_document_limits(&mut transaction, app.config(), path.paste_id()).await?;
 
-    app.s3().create_document(&document, body).await?;
+    app.s3()
+        .create_document(
+            document.paste_id(),
+            document.id(),
+            document.name(),
+            content,
+            &document_type,
+        )
+        .await?;
 
     transaction.commit().await?;
 
@@ -211,15 +221,27 @@ async fn patch_document(
         document.set_name(filename);
     }
 
-    document_limits(app.config(), &document)?;
+    let content = String::from_utf8(body.to_vec())?;
+
+    document_limits(app.config(), document.name(), &content)?;
 
     document.update(transaction.as_mut()).await?;
 
     total_document_limits(&mut transaction, app.config(), path.paste_id()).await?;
 
-    app.s3().delete_document(document.generate_path()).await?;
+    app.s3()
+        .delete_document(document.paste_id(), document.id(), document.name())
+        .await?;
 
-    app.s3().create_document(&document, body).await?;
+    app.s3()
+        .create_document(
+            document.paste_id(),
+            document.id(),
+            document.name(),
+            content,
+            &document_type,
+        )
+        .await?;
 
     transaction.commit().await?;
 

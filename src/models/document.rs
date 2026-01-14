@@ -490,34 +490,37 @@ pub fn contains_mime(mimes: &[&str], value: &str) -> bool {
 /// ## Errors
 ///
 /// - [`AppError`] - Returned when the documents are outside of the limits.
-pub fn document_limits(config: &Config, document: &Document) -> Result<(), AppError> {
+pub fn document_limits(config: &Config, name: &str, content: &str) -> Result<(), AppError> {
     let size_limits = config.size_limits();
 
-    if size_limits.minimum_document_size() > document.size {
+    let content_length = content.len();
+    let name_length = name.len();
+
+    if size_limits.minimum_document_size() > content_length {
         return Err(AppError::BadRequest(format!(
             "The document: `{}` is too small.",
-            document.name
+            name
         )));
     }
 
-    if size_limits.maximum_document_size() < document.size {
+    if size_limits.maximum_document_size() < content_length {
         return Err(AppError::BadRequest(format!(
             "The document: `{}` is too large.",
-            document.name
+            name
         )));
     }
 
-    if size_limits.minimum_document_name_size() > document.name.len() {
+    if size_limits.minimum_document_name_size() > name_length {
         return Err(AppError::BadRequest(format!(
             "The document name: `{}` is too small.",
-            document.name
+            name
         )));
     }
 
-    if size_limits.maximum_document_name_size() < document.name.len() {
+    if size_limits.maximum_document_name_size() < name_length {
         return Err(AppError::BadRequest(format!(
             "The document name: `{:.25}...` is too large.",
-            document.name
+            name
         )));
     }
 

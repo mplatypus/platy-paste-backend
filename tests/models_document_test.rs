@@ -448,16 +448,12 @@ fn make_document_limits_config(
 
 #[test]
 fn test_document_limits() {
-    let document = Document::new(
-        Snowflake::new(456),
-        Snowflake::new(123),
+    document_limits(
+        &make_document_limits_config(1, 3, 1_000_000, 50),
         "text/plain",
-        "test_doc.txt",
-        489,
-    );
-
-    document_limits(&make_document_limits_config(1, 3, 1_000_000, 50), &document)
-        .expect("An error occurred.");
+        "some random content.",
+    )
+    .expect("An error occurred.");
 }
 
 #[rstest]
@@ -478,15 +474,9 @@ fn test_document_limits() {
     "The document: `test_doc.txt` is too large."
 )]
 fn test_document_limits_errors(#[case] config: Config, #[case] expected: &str) {
-    let document = Document::new(
-        Snowflake::new(456),
-        Snowflake::new(123),
-        "text/plain",
-        "test_doc.txt",
-        489,
-    );
+    let content: String = (0..=489).map(|_| 'a').collect();
 
-    let error = document_limits(&config, &document).expect_err("No error received.");
+    let error = document_limits(&config, "test_doc.txt", &content).expect_err("No error received.");
 
     if let AppError::BadRequest(bad_request) = error {
         assert_eq!(

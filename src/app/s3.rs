@@ -3,7 +3,7 @@ use aws_sdk_s3::{
 };
 use bytes::{Bytes, BytesMut};
 
-use crate::models::{document::Document, error::AppError};
+use crate::models::{error::AppError, snowflake::Snowflake};
 
 use super::application::{ApplicationState, S3Client};
 
@@ -121,7 +121,9 @@ impl S3Service {
     ///
     /// ## Arguments
     ///
-    /// - `document_path` - The built path of the document.
+    /// - `paste_id` - The paste ID of the document.
+    /// - `id` - The ID of the document.
+    /// - `name` - The name of the document.
     ///
     /// ## Errors
     ///
@@ -130,12 +132,17 @@ impl S3Service {
     /// ## Returns
     ///
     /// The [`Bytes`] of the document.
-    pub async fn fetch_document(&self, document_path: String) -> Result<Bytes, AppError> {
+    pub async fn fetch_document(
+        &self,
+        paste_id: &Snowflake,
+        id: &Snowflake,
+        name: &str,
+    ) -> Result<Bytes, AppError> {
         let mut data = self
             .client
             .get_object()
             .bucket(self.document_bucket_name())
-            .key(document_path)
+            .key(format!("{paste_id}/{id}/{name}"))
             .send()
             .await?;
 
@@ -153,22 +160,28 @@ impl S3Service {
     ///
     /// ## Arguments
     ///
-    /// - `document`: The [`Document`].
+    /// - `paste_id` - The paste ID of the document.
+    /// - `id` - The ID of the document.
+    /// - `name` - The name of the document.
     /// - `content`: The content of the document.
+    /// - `mime_type`: The mime type of the document.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - When the document could not be created.
     pub async fn create_document(
         &self,
-        document: &Document,
+        paste_id: &Snowflake,
+        id: &Snowflake,
+        name: &str,
         content: impl Into<Bytes>,
+        mime_type: &str,
     ) -> Result<(), AppError> {
         self.client
             .put_object()
             .bucket(self.document_bucket_name())
-            .content_type(document.doc_type())
-            .key(document.generate_path())
+            .content_type(mime_type)
+            .key(format!("{paste_id}/{id}/{name}"))
             .body(ByteStream::from(content.into()))
             .send()
             .await?;
@@ -182,16 +195,23 @@ impl S3Service {
     ///
     /// ## Arguments
     ///
-    /// - `document_path`: The built path of the document.
+    /// - `paste_id` - The paste ID of the document.
+    /// - `id` - The ID of the document.
+    /// - `name` - The name of the document.
     ///
     /// ## Errors
     ///
     /// - [`AppError`] - When the document could not be deleted.
-    pub async fn delete_document(&self, document_path: String) -> Result<(), AppError> {
+    pub async fn delete_document(
+        &self,
+        paste_id: &Snowflake,
+        id: &Snowflake,
+        name: &str,
+    ) -> Result<(), AppError> {
         self.client
             .delete_object()
             .bucket(self.document_bucket_name())
-            .key(document_path)
+            .key(format!("{paste_id}/{id}/{name}"))
             .send()
             .await?;
 

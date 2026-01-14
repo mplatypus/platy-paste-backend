@@ -6,6 +6,7 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use chrono::{TimeDelta, Timelike, Utc};
+use regex::Regex;
 
 use crate::{
     app::{application::App, config::Config},
@@ -163,7 +164,10 @@ async fn post_paste(
 
     paste.insert(transaction.as_mut()).await?;
 
-    let mut documents: Vec<(Document, String)> = Vec::new();
+    let name_regex = Regex::new(r"^files\[(?P<id>[0-9]+)\]$")?;
+
+    let mut documents: Vec<(Snowflake, String, String, String)> = Vec::new();
+    let mut response_documents: Vec<Document> = Vec::new();
     while let Some(field) = multipart.next_field().await? {
         let document_type = {
             match field.content_type() {
@@ -184,35 +188,56 @@ async fn post_paste(
             }
         };
 
-        let name = field
-            .file_name()
-            .ok_or(AppError::BadRequest(
+        let id: usize = {
+            let name = field.name().ok_or(AppError::BadRequest(
                 "One or more of the documents provided require a name.".to_string(),
-            ))?
-            .to_string();
+            ))?;
+
+            let Some(captures) = name_regex.captures(name) else {
+                return Err(AppError::BadRequest(format!(
+                    "The document name `{name}` does not match the expected format"
+                )));
+            };
+
+            (&captures["id"]).parse()?
+        };
+
+        let Some(document_payload) = body.documents().iter().find(|v| v.id() == id) else {
+            return Err(AppError::BadRequest(format!(
+                "A document with the ID `{id}` was not found in the payload"
+            )));
+        };
 
         let data = field.bytes().await?;
+
+        let content = String::from_utf8(data.to_vec())?;
+
+        document_limits(app.config(), document_payload.name(), &content)?;
 
         let document = Document::new(
             Snowflake::generate()?,
             *paste.id(),
             &document_type,
-            &name,
-            data.len(),
+            document_payload.name(),
+            content.len(),
         );
-
-        document_limits(app.config(), &document)?;
-
-        documents.push((document, String::from_utf8_lossy(&data).to_string()));
-    }
-
-    let mut response_documents = Vec::new();
-    for (document, content) in documents {
-        app.s3().create_document(&document, content).await?;
 
         document.insert(transaction.as_mut()).await?;
 
-        response_documents.push(document);
+        documents.push((
+            *document.id(),
+            document_payload.name().to_string(),
+            content,
+            document_type,
+        ));
+
+        response_documents.push(document)
+    }
+
+    for (id, name, content, mime_type) in documents {
+        app.s3()
+            .create_document(paste.id(), &id, &name, content, &mime_type)
+            .await?;
     }
 
     total_document_limits(&mut transaction, app.config(), paste.id()).await?;

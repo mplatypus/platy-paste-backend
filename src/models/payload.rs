@@ -56,7 +56,67 @@ pub type PatchDocumentPath = DocumentPath;
 pub type DeleteDocumentPath = DocumentPath;
 
 #[derive(Deserialize)]
-pub struct PasteBody {
+pub struct PostPasteBody {
+    /// The name for the paste.
+    #[serde(default)]
+    name: UndefinedOption<String>,
+    /// The expiry time for the paste.
+    #[serde(default, rename = "expiry_timestamp")]
+    expiry: UndefinedOption<DtUtc>,
+    /// The maximum allowed views for the paste.
+    #[serde(default)]
+    max_views: UndefinedOption<usize>,
+    /// The documents attached to the paste.
+    documents: Vec<PostPasteDocumentBody>,
+}
+
+impl PostPasteBody {
+    #[inline]
+    pub fn name(&self) -> UndefinedOption<&str> {
+        self.name.as_deref()
+    }
+
+    #[inline]
+    pub const fn expiry(&self) -> UndefinedOption<DtUtc> {
+        self.expiry
+    }
+
+    #[inline]
+    pub const fn max_views(&self) -> UndefinedOption<usize> {
+        self.max_views
+    }
+
+    #[inline]
+    pub fn documents(&self) -> &[PostPasteDocumentBody] {
+        &self.documents
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PostPasteDocumentBody {
+    /// The ID of the document.
+    ///
+    /// This is **not** a snowflake.
+    /// This is an integer, specifying which document it is referencing in the multipart form data.
+    id: usize,
+    /// The name of the document.
+    name: String,
+}
+
+impl PostPasteDocumentBody {
+    #[inline]
+    pub const fn id(&self) -> usize {
+        self.id
+    }
+
+    #[inline]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PatchPasteBody {
     /// The name for the paste.
     #[serde(default)]
     name: UndefinedOption<String>,
@@ -68,7 +128,7 @@ pub struct PasteBody {
     max_views: UndefinedOption<usize>,
 }
 
-impl PasteBody {
+impl PatchPasteBody {
     #[inline]
     pub fn name(&self) -> UndefinedOption<&str> {
         self.name.as_deref()
@@ -84,10 +144,6 @@ impl PasteBody {
         self.max_views
     }
 }
-
-pub type PostPasteBody = PasteBody;
-
-pub type PatchPasteBody = PasteBody;
 
 #[derive(Serialize)]
 pub struct ResponseConfig {
