@@ -8,7 +8,7 @@ use http::StatusCode;
 
 use crate::{
     app::{application::App, config::Config},
-    models::{error::AppError, payload::ResponseConfig},
+    models::{error::AppError, payload::config::*},
 };
 
 pub fn generate_router(config: &Config) -> Router<App> {

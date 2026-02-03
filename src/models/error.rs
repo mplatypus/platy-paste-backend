@@ -1,11 +1,16 @@
 use aws_sdk_s3::error::{DisplayErrorContext, SdkError};
 use axum::{
     Json,
-    extract::multipart::MultipartError,
+    extract::{
+        multipart::{MultipartError, MultipartRejection},
+        rejection::BytesRejection,
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
+use http::header::ToStrError;
+use mime::FromStrError;
 use serde::{Deserialize, Serialize};
 use std::{num::ParseIntError, string::FromUtf8Error};
 use thiserror::Error;
@@ -25,8 +30,16 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("Parse Int Error: {0}")]
     ParseInt(#[from] ParseIntError),
+    #[error("To String Error: {0}")]
+    ToStr(#[from] ToStrError),
+    #[error("To String Error: {0}")]
+    FromStr(#[from] FromStrError),
     #[error("From UTF-8 Error: {0}")]
     FromUtf8(#[from] FromUtf8Error),
+    #[error("Multipart Rejection: {0}")]
+    MultipartRejection(#[from] MultipartRejection),
+    #[error("Bytes Rejection: {0}")]
+    BytesRejection(#[from] BytesRejection),
     #[error("Regex Build Error: {0}")]
     Regex(#[from] regex::Error),
     #[error("Internal Server Error: {0}")]
@@ -50,11 +63,23 @@ impl IntoResponse for AppError {
                 "Failed to parse integer",
                 &e.to_string(),
             ),
+            Self::ToStr(e) => (
+                StatusCode::BAD_REQUEST,
+                "Failed to parse mime type",
+                &e.to_string(),
+            ),
+            Self::FromStr(e) => (
+                StatusCode::BAD_REQUEST,
+                "Failed to parse mime type",
+                &e.to_string(),
+            ),
             Self::FromUtf8(e) => (
                 StatusCode::BAD_REQUEST,
                 "Failed to parse UTF-8",
                 &e.to_string(),
             ),
+            Self::MultipartRejection(e) => return e.into_response(),
+            Self::BytesRejection(e) => return e.into_response(),
             Self::Regex(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to build regex",

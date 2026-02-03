@@ -1,29 +1,23 @@
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
 use chrono::{TimeDelta, Timelike, Utc};
-use regex::Regex;
 
 use crate::{
     app::{application::App, config::Config},
     models::{
         DtUtc,
         authentication::{Token, generate_token},
-        document::{
-            Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
-        },
+        document::{Document, total_document_limits},
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
-        payload::{
-            DeletePastePath, GetPastePath, PatchPasteBody, PatchPastePath, PostPasteBody,
-            ResponsePaste,
-        },
+        payload::paste::*,
         snowflake::Snowflake,
-        undefined::UndefinedOption,
+        undefined::{Undefined, UndefinedOption},
     },
 };
 
@@ -87,31 +81,12 @@ async fn get_paste(
 /// - `200` - The [`ResponsePaste`] object.
 async fn post_paste(
     State(app): State<App>,
-    mut multipart: Multipart,
+    body: PostPasteMultipartBody,
 ) -> Result<Response, AppError> {
-    let body: PostPasteBody = {
-        if let Some(field) = multipart.next_field().await? {
-            if field
-                .content_type()
-                .is_none_or(|content_type| content_type != "application/json")
-            {
-                return Err(AppError::BadRequest(
-                    "Payload must be of the type application/json.".to_string(),
-                ));
-            }
-
-            let bytes = field.bytes().await?;
-
-            serde_json::from_slice(&bytes)?
-        } else {
-            return Err(AppError::BadRequest("Payload missing.".to_string()));
-        }
-    };
-
-    let expiry = validate_expiry(app.config(), body.expiry())?;
+    let expiry = validate_expiry(app.config(), body.payload.expiry())?;
 
     let max_views = {
-        match body.max_views() {
+        match body.payload.max_views() {
             UndefinedOption::Undefined => app.config().size_limits().default_maximum_views(),
             UndefinedOption::Some(max_views) => Some(max_views),
             UndefinedOption::None => None,
@@ -119,7 +94,7 @@ async fn post_paste(
     };
 
     let name = {
-        match body.name() {
+        match body.payload.name() {
             UndefinedOption::Undefined => app
                 .config()
                 .size_limits()
@@ -164,80 +139,31 @@ async fn post_paste(
 
     paste.insert(transaction.as_mut()).await?;
 
-    let name_regex = Regex::new(r"^files\[(?P<id>[0-9]+)\]$")?;
-
-    let mut documents: Vec<(Snowflake, String, String, String)> = Vec::new();
-    let mut response_documents: Vec<Document> = Vec::new();
-    while let Some(field) = multipart.next_field().await? {
-        let document_type = {
-            match field.content_type() {
-                Some(content_type) => {
-                    if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                        return Err(AppError::BadRequest(format!(
-                            "Invalid mime type received: {content_type}"
-                        )));
-                    }
-
-                    content_type.to_string()
-                }
-                None => {
-                    return Err(AppError::BadRequest(
-                        "The document must have a type.".to_string(),
-                    ));
-                }
-            }
-        };
-
-        let id: usize = {
-            let name = field.name().ok_or(AppError::BadRequest(
-                "One or more of the documents provided require a name.".to_string(),
-            ))?;
-
-            let Some(captures) = name_regex.captures(name) else {
-                return Err(AppError::BadRequest(format!(
-                    "The document name `{name}` does not match the expected format"
-                )));
-            };
-
-            (&captures["id"]).parse()?
-        };
-
-        let Some(document_payload) = body.documents().iter().find(|v| v.id() == id) else {
-            return Err(AppError::BadRequest(format!(
-                "A document with the ID `{id}` was not found in the payload"
-            )));
-        };
-
-        let data = field.bytes().await?;
-
-        let content = String::from_utf8(data.to_vec())?;
-
-        document_limits(app.config(), document_payload.name(), &content)?;
+    let mut response_documents = Vec::new();
+    for (body, content, mime) in body.documents {
+        let mime_string = mime.to_string();
 
         let document = Document::new(
             Snowflake::generate()?,
             *paste.id(),
-            &document_type,
-            document_payload.name(),
+            &mime_string,
+            body.name(),
             content.len(),
         );
 
+        app.s3()
+            .create_document(
+                paste.id(),
+                document.id(),
+                body.name(),
+                content,
+                &mime_string,
+            )
+            .await?;
+
         document.insert(transaction.as_mut()).await?;
 
-        documents.push((
-            *document.id(),
-            document_payload.name().to_string(),
-            content,
-            document_type,
-        ));
-
-        response_documents.push(document)
-    }
-
-    for (id, name, content, mime_type) in documents {
-        app.s3()
-            .create_document(paste.id(), &id, &name, content, &mime_type)
-            .await?;
+        response_documents.push(document);
     }
 
     total_document_limits(&mut transaction, app.config(), paste.id()).await?;
@@ -263,12 +189,6 @@ async fn post_paste(
 ///
 /// - `paste_id` - The paste ID to edit.
 ///
-/// ## Body
-///
-/// References: [`PatchPasteBody`]
-///
-/// - `expiry` - The expiry of the paste.
-///
 /// ## Returns
 ///
 /// - `401` - Invalid token and/or paste ID.
@@ -278,13 +198,13 @@ async fn patch_paste(
     State(app): State<App>,
     Path(path): Path<PatchPastePath>,
     token: Token,
-    Json(body): Json<PatchPasteBody>,
+    body: PatchPasteMultipartBody,
 ) -> Result<Response, AppError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
 
-    let new_expiry = validate_expiry(app.config(), body.expiry())?;
+    let new_expiry = validate_expiry(app.config(), body.payload.expiry())?;
 
-    match body.name() {
+    match body.payload.name() {
         UndefinedOption::Some(name) => {
             let name = name.to_string();
 
@@ -312,7 +232,7 @@ async fn patch_paste(
         paste.set_expiry(new_expiry.into());
     }
 
-    match body.max_views() {
+    match body.payload.max_views() {
         UndefinedOption::Some(max_views) => {
             if paste.views() >= max_views {
                 return Err(AppError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
@@ -330,7 +250,50 @@ async fn patch_paste(
 
     paste.update(transaction.as_mut()).await?;
 
-    let documents = Document::fetch_all(transaction.as_mut(), paste.id()).await?;
+    let mut documents = Document::fetch_all(transaction.as_mut(), paste.id()).await?;
+
+    if let Undefined::Some(document_bodies) = body.payload.documents() {
+        for document_body in document_bodies {
+            if let Some(document) = documents
+                .iter_mut()
+                .find(|d| d.id().id() == document_body.id() as u64)
+            {
+                document.set_name(document_body.name());
+
+                document.update(transaction.as_mut()).await?;
+                continue;
+            }
+
+            return Err(AppError::BadRequest(format!(
+                "The document ID: {} does not exist, and did not have a matching body.",
+                document_body.id()
+            )));
+        }
+    }
+
+    if let Undefined::Some(new_documents) = body.documents {
+        for (body, content, mime) in new_documents {
+            let document = Document::new(
+                Snowflake::generate()?,
+                *paste.id(),
+                &mime.to_string(),
+                body.name(),
+                content.len(),
+            );
+
+            app.s3()
+                .create_document(
+                    document.paste_id(),
+                    document.id(),
+                    document.name(),
+                    content,
+                    document.doc_type(),
+                )
+                .await?;
+
+            documents.push(document);
+        }
+    }
 
     transaction.commit().await?;
 

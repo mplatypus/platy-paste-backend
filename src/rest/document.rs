@@ -20,7 +20,7 @@ use crate::{
         },
         error::{AppError, AuthError},
         paste::{Paste, validate_paste},
-        payload::{DeleteDocumentPath, GetDocumentPath, PatchDocumentPath, PostDocumentPath},
+        payload::document::*,
         snowflake::Snowflake,
     },
 };
