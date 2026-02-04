@@ -5,7 +5,7 @@ use serde::{Deserializer, Serialize, Serializer, de::Error as DEError};
 use serde_json::Value;
 use sqlx::{Decode, Encode};
 
-use super::error::AppError;
+use crate::models::errors::GenerateError;
 
 #[derive(Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// ## Snowflake
@@ -31,17 +31,15 @@ impl Snowflake {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - Failed to get a random value.
+    /// - [`ApplicationError`] - Failed to get a random value.
     ///
     /// ## Returns
     ///
     /// A [`Snowflake`].
-    pub fn generate() -> Result<Self, AppError> {
+    pub fn generate() -> Result<Self, GenerateError> {
         let timestamp = Utc::now().timestamp() as u64;
 
-        let id = getrandom::u64().map_err(|e| {
-            AppError::InternalServer(format!("Failed to obtain a random integer: {e}"))
-        })?;
+        let id = getrandom::u64()?;
 
         let new_snowflake = Self::new((timestamp << 22) | (id as u64 & 0x003F_FFFF));
 

@@ -2,19 +2,17 @@ pub mod app;
 pub mod models;
 pub mod rest;
 
-use axum::{
-    Router,
-    http::HeaderValue,
-    response::{IntoResponse, Response},
-};
+use axum::{Router, http::HeaderValue};
 use chrono::Local;
 use http::{Method, header};
-use models::{error::AppError, paste::expiry_tasks};
+use models::paste::expiry_tasks;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt::time::FormatTime, layer::SubscriberExt};
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
+
+use crate::models::errors::RESTError;
 
 #[tokio::main]
 async fn main() {
@@ -132,6 +130,6 @@ async fn main() {
     }
 }
 
-async fn fallback() -> Response {
-    AppError::NotFound("This endpoint does not exist.".to_string()).into_response()
+async fn fallback() -> RESTError {
+    RESTError::NotFound("This endpoint does not exist.".to_string())
 }
