@@ -1,9 +1,12 @@
+#[cfg(feature = "testing")]
 use platy_paste::{
-    app::{
-        config::{Config, ObjectStoreConfig, S3ObjectStoreConfig, SizeLimitConfigBuilder},
-        database::Database,
-    },
-    models::{document::*, errors::RESTError, snowflake::Snowflake},
+    app::config::{Config, SizeLimitConfig},
+    models::errors::RESTError,
+};
+
+use platy_paste::{
+    app::database::Database,
+    models::{document::*, snowflake::Snowflake},
 };
 
 use rstest::*;
@@ -417,27 +420,16 @@ fn test_contains_mime(#[case] mimes: &[&str], #[case] mime: &str, #[case] expect
     );
 }
 
+#[cfg(feature = "testing")]
 fn make_document_limits_config(
     minimum_document_size: usize,
     minimum_document_name_size: usize,
     maximum_document_size: usize,
     maximum_document_name_size: usize,
 ) -> Config {
-    Config::builder()
-        .host(String::new())
-        .port(5454)
-        .database_url(String::new())
-        .domain(String::new())
-        .object_store(ObjectStoreConfig::S3(
-            S3ObjectStoreConfig::builder()
-                .url(String::new())
-                .access_key(String::new().into())
-                .secret_key(String::new().into())
-                .build()
-                .expect("Failed to build object store"),
-        ))
+    Config::test_builder()
         .size_limits(
-            SizeLimitConfigBuilder::default()
+            SizeLimitConfig::test_builder()
                 .minimum_document_size(minimum_document_size)
                 .minimum_document_name_size(minimum_document_name_size)
                 .maximum_document_size(maximum_document_size)
@@ -449,6 +441,7 @@ fn make_document_limits_config(
         .expect("Failed to build config.")
 }
 
+#[cfg(feature = "testing")]
 #[test]
 fn test_document_limits() {
     let document = Document::new(
@@ -463,6 +456,7 @@ fn test_document_limits() {
         .expect("An error occurred.");
 }
 
+#[cfg(feature = "testing")]
 #[rstest]
 #[case(
     make_document_limits_config(1, 50, 1_000_000, 50),
@@ -501,27 +495,16 @@ fn test_document_limits_errors(#[case] config: Config, #[case] expected: &str) {
     }
 }
 
+#[cfg(feature = "testing")]
 fn make_total_document_limits_config(
     minimum_total_document_count: usize,
     minimum_total_document_size: usize,
     maximum_total_document_count: usize,
     maximum_total_document_size: usize,
 ) -> Config {
-    Config::builder()
-        .host(String::new())
-        .port(5454)
-        .database_url(String::new())
-        .domain(String::new())
-        .object_store(ObjectStoreConfig::S3(
-            S3ObjectStoreConfig::builder()
-                .url(String::new())
-                .access_key(String::new().into())
-                .secret_key(String::new().into())
-                .build()
-                .expect("Failed to build object store"),
-        ))
+    Config::test_builder()
         .size_limits(
-            SizeLimitConfigBuilder::default()
+            SizeLimitConfig::test_builder()
                 .minimum_total_document_count(minimum_total_document_count)
                 .minimum_total_document_size(minimum_total_document_size)
                 .maximum_total_document_count(maximum_total_document_count)
@@ -533,6 +516,7 @@ fn make_total_document_limits_config(
         .expect("Failed to build config.")
 }
 
+#[cfg(feature = "testing")]
 #[sqlx::test(fixtures("pastes", "documents"))]
 async fn test_total_document_limits(pool: PgPool) {
     let db = Database::from_pool(pool);
@@ -552,6 +536,7 @@ async fn test_total_document_limits(pool: PgPool) {
     .expect("An error occurred.");
 }
 
+#[cfg(feature = "testing")]
 #[rstest]
 #[case(
     make_total_document_limits_config(5, 1, 5, 5000),

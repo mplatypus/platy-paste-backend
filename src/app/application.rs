@@ -28,6 +28,8 @@ impl ApplicationState {
     ///
     /// The created [`ApplicationState`] wrapped in [`Arc`].
     pub async fn new() -> Result<Arc<Self>, ApplicationError> {
+        dotenvy::from_filename(".env").ok();
+
         let config = Config::from_env();
 
         let mut state = Self {

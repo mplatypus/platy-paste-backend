@@ -457,7 +457,7 @@ fn validate_expiry(
 mod tests {
     use super::*;
     use crate::{
-        app::config::{Config, ObjectStoreConfig, S3ObjectStoreConfig, SizeLimitConfigBuilder},
+        app::config::{Config, SizeLimitConfig},
         models::errors::RESTError,
     };
     use chrono::Timelike;
@@ -468,21 +468,9 @@ mod tests {
         minimum_expiry_hours: Option<usize>,
         maximum_expiry_hours: Option<usize>,
     ) -> Config {
-        Config::builder()
-            .host(String::new())
-            .port(5454)
-            .database_url(String::new())
-            .domain(String::new())
-            .object_store(ObjectStoreConfig::S3(
-                S3ObjectStoreConfig::builder()
-                    .url(String::new())
-                    .access_key(String::new().into())
-                    .secret_key(String::new().into())
-                    .build()
-                    .expect("Failed to build object store"),
-            ))
+        Config::test_builder()
             .size_limits(
-                SizeLimitConfigBuilder::default()
+                SizeLimitConfig::test_builder()
                     .default_expiry_hours(default_expiry_hours)
                     .minimum_expiry_hours(minimum_expiry_hours)
                     .maximum_expiry_hours(maximum_expiry_hours)
