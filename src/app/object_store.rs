@@ -6,6 +6,8 @@ use aws_sdk_s3::{
 };
 use bytes::{Bytes, BytesMut};
 use secrecy::ExposeSecret as _;
+#[cfg(any(test, feature = "testing"))]
+use tokio::sync::Mutex;
 
 use crate::{
     app::config::{ObjectStoreConfig, S3ObjectStoreConfig},
@@ -14,6 +16,8 @@ use crate::{
 
 use super::application::ApplicationState;
 
+#[cfg(any(test, feature = "testing"))]
+use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
 /// The document buckets name.
@@ -87,12 +91,16 @@ pub trait ObjectStoreExt: Sized {
 #[derive(Debug, Clone)]
 pub enum ObjectStore {
     S3(S3ObjectStore),
+    #[cfg(any(test, feature = "testing"))]
+    Test(TestObjectStore),
 }
 
 impl ObjectStore {
     pub fn from_config(config: &ObjectStoreConfig) -> Result<Self, ObjectStoreError> {
         match config {
             ObjectStoreConfig::S3(config) => Ok(Self::S3(S3ObjectStore::from_config(config))),
+            #[cfg(any(test, feature = "testing"))]
+            ObjectStoreConfig::Test => Ok(ObjectStore::Test(TestObjectStore::new())),
         }
     }
 }
@@ -101,24 +109,32 @@ impl ObjectStoreExt for ObjectStore {
     fn bind_app(&mut self, app: Weak<ApplicationState>) {
         match self {
             Self::S3(os) => os.bind_app(app),
+            #[cfg(any(test, feature = "testing"))]
+            Self::Test(os) => os.bind_app(app),
         }
     }
 
     fn app(&self) -> Arc<ApplicationState> {
         match self {
             Self::S3(os) => os.app(),
+            #[cfg(any(test, feature = "testing"))]
+            Self::Test(os) => os.app(),
         }
     }
 
     async fn create_buckets(&self) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.create_buckets().await,
+            #[cfg(any(test, feature = "testing"))]
+            Self::Test(os) => os.create_buckets().await,
         }
     }
 
     async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError> {
         match self {
             Self::S3(os) => os.fetch_document(document_path).await,
+            #[cfg(any(test, feature = "testing"))]
+            Self::Test(os) => os.fetch_document(document_path).await,
         }
     }
 
@@ -129,12 +145,16 @@ impl ObjectStoreExt for ObjectStore {
     ) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.create_document(document, content).await,
+            #[cfg(any(test, feature = "testing"))]
+            Self::Test(os) => os.create_document(document, content).await,
         }
     }
 
     async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.delete_document(document_path).await,
+            #[cfg(any(test, feature = "testing"))]
+            Self::Test(os) => os.delete_document(document_path).await,
         }
     }
 }
@@ -277,6 +297,93 @@ impl ObjectStoreExt for S3ObjectStore {
             .key(document_path)
             .send()
             .await?;
+
+        Ok(())
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[derive(Debug, Clone)]
+pub struct TestObjectStore {
+    app: Weak<ApplicationState>,
+    buckets: Arc<Mutex<Vec<String>>>,
+    data: Arc<Mutex<HashMap<(String, String), Bytes>>>,
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl TestObjectStore {
+    pub fn new() -> Self {
+        use tokio::sync::Mutex;
+
+        Self {
+            app: Weak::new(),
+            buckets: Arc::new(Mutex::new(Vec::new())),
+            data: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl ObjectStoreExt for TestObjectStore {
+    fn bind_app(&mut self, app: Weak<ApplicationState>) {
+        self.app = app;
+    }
+
+    fn app(&self) -> Arc<ApplicationState> {
+        self.app
+            .upgrade()
+            .expect("Application state has been dropped.")
+    }
+
+    async fn create_buckets(&self) -> Result<(), ObjectStoreError> {
+        for bucket in BUCKETS {
+            let mut bucket_lock = self.buckets.lock().await;
+
+            if bucket_lock.contains(&bucket.to_string()) {
+                continue;
+            }
+
+            bucket_lock.push(bucket.to_string());
+        }
+
+        Ok(())
+    }
+
+    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError> {
+        let data_lock = self.data.lock().await;
+
+        let document_contents = data_lock.get(&(DOCUMENT_BUCKET.to_string(), document_path));
+
+        match document_contents {
+            Some(contents) => Ok(contents.clone()),
+            None => Ok(Bytes::new()),
+        }
+    }
+
+    async fn create_document(
+        &self,
+        document: &Document,
+        content: impl Into<Bytes>,
+    ) -> Result<(), ObjectStoreError> {
+        // FIXME: Check bucket exists.
+        let mut data_lock = self.data.lock().await;
+
+        if data_lock.contains_key(&(DOCUMENT_BUCKET.to_string(), document.generate_path())) {
+            panic!("Key already exists!")
+        }
+
+        data_lock.insert(
+            (DOCUMENT_BUCKET.to_string(), document.generate_path()),
+            content.into(),
+        );
+
+        Ok(())
+    }
+
+    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError> {
+        let mut data_lock = self.data.lock().await;
+
+        data_lock.remove(&(DOCUMENT_BUCKET.to_string(), document_path));
 
         Ok(())
     }
