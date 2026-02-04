@@ -4,14 +4,14 @@ use std::time::Duration;
 
 use crate::{
     app::{application::App, database::Database, object_store::ObjectStoreExt as _},
-    models::{DtUtc, document::Document},
+    models::{
+        DtUtc,
+        document::Document,
+        errors::{AuthenticationError, RESTError},
+    },
 };
 
-use super::{
-    authentication::Token,
-    error::{AppError, AuthError},
-    snowflake::Snowflake,
-};
+use super::{authentication::Token, errors::DatabaseError, snowflake::Snowflake};
 
 #[derive(Debug, Clone)]
 pub struct Paste {
@@ -103,16 +103,12 @@ impl Paste {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     #[inline]
-    pub fn set_edited(&mut self) -> Result<(), AppError> {
-        self.edited = Some(
-            Utc::now()
-                .with_nanosecond(0)
-                .ok_or(AppError::InternalServer(
-                    "Failed to strip nanosecond from date time object.".to_string(),
-                ))?,
-        );
+    pub fn set_edited(&mut self) -> Result<(), DatabaseError> {
+        self.edited = Some(Utc::now().with_nanosecond(0).ok_or(DatabaseError::Custom(
+            "Failed to strip nanosecond from date time object.".to_string(),
+        ))?);
 
         Ok(())
     }
@@ -159,13 +155,16 @@ impl Paste {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
     /// - [`Option::Some`] - The [`Paste`] object.
     /// - [`Option::None`] - No paste was found.
-    pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<Option<Self>, AppError>
+    pub async fn fetch<'e, 'c: 'e, E>(
+        executor: E,
+        id: &Snowflake,
+    ) -> Result<Option<Self>, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -204,7 +203,7 @@ impl Paste {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
@@ -213,7 +212,7 @@ impl Paste {
         executor: E,
         start: &DtUtc,
         end: &DtUtc,
-    ) -> Result<Vec<Self>, AppError>
+    ) -> Result<Vec<Self>, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -253,8 +252,8 @@ impl Paste {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error, or the snowflake exists already.
-    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    /// - [`DatabaseError`] - The database had an error, or the snowflake exists already.
+    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -286,8 +285,8 @@ impl Paste {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
-    pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    /// - [`DatabaseError`] - The database had an error.
+    pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -318,8 +317,11 @@ impl Paste {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
-    pub async fn add_view<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<usize, AppError>
+    /// - [`DatabaseError`] - The database had an error.
+    pub async fn add_view<'e, 'c: 'e, E>(
+        executor: E,
+        id: &Snowflake,
+    ) -> Result<usize, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -346,8 +348,8 @@ impl Paste {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
-    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<bool, AppError>
+    /// - [`DatabaseError`] - The database had an error.
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<bool, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -373,7 +375,7 @@ impl Paste {
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - The database had an error.
+/// - [`DatabaseError`] - The database had an error.
 ///
 /// ## Returns
 ///
@@ -382,9 +384,9 @@ pub async fn validate_paste(
     db: &Database,
     paste_id: &Snowflake,
     token: Option<Token>,
-) -> Result<Paste, AppError> {
+) -> Result<Paste, RESTError> {
     let Some(paste) = Paste::fetch(db.pool(), paste_id).await? else {
-        return Err(AppError::NotFound(
+        return Err(RESTError::NotFound(
             "The paste requested could not be found".to_string(),
         ));
     };
@@ -393,7 +395,7 @@ pub async fn validate_paste(
         && expiry < Utc::now()
     {
         Paste::delete(db.pool(), paste_id).await?;
-        return Err(AppError::NotFound(
+        return Err(RESTError::NotFound(
             "The paste requested could not be found".to_string(),
         ));
     }
@@ -402,7 +404,7 @@ pub async fn validate_paste(
         && paste.views >= max_views
     {
         Paste::delete(db.pool(), paste_id).await?;
-        return Err(AppError::NotFound(
+        return Err(RESTError::NotFound(
             "The paste requested could not be found".to_string(),
         ));
     }
@@ -410,7 +412,9 @@ pub async fn validate_paste(
     if let Some(token) = token
         && paste.id != *token.paste_id()
     {
-        return Err(AppError::Authentication(AuthError::InvalidCredentials));
+        return Err(RESTError::Authentication(
+            AuthenticationError::InvalidCredentials,
+        ));
     }
 
     Ok(paste)
@@ -529,12 +533,12 @@ pub async fn expiry_tasks(app: App) {
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - The database had an error.
+/// - [`DatabaseError`] - The database had an error.
 ///
 /// ## Returns
 ///
 /// A [`Vec`] of [`Paste`]'s.
-async fn collect_nearby_expired_tasks(db: &Database) -> Result<Vec<Paste>, AppError> {
+async fn collect_nearby_expired_tasks(db: &Database) -> Result<Vec<Paste>, DatabaseError> {
     let start = chrono::DateTime::from_timestamp(0, 0)
         .expect("Failed to make a timestamp with the time of 0.");
     let end = Utc::now();

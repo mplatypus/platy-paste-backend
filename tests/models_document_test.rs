@@ -3,7 +3,7 @@ use platy_paste::{
         config::{Config, ObjectStoreConfig, S3ObjectStoreConfig, SizeLimitConfigBuilder},
         database::Database,
     },
-    models::{document::*, error::AppError, snowflake::Snowflake},
+    models::{document::*, errors::RESTError, snowflake::Snowflake},
 };
 
 use rstest::*;
@@ -491,7 +491,7 @@ fn test_document_limits_errors(#[case] config: Config, #[case] expected: &str) {
 
     let error = document_limits(&config, &document).expect_err("No error received.");
 
-    if let AppError::BadRequest(bad_request) = error {
+    if let RESTError::BadRequest(bad_request) = error {
         assert_eq!(
             bad_request, expected,
             "The bad request message received was unexpected."
@@ -591,7 +591,7 @@ async fn test_total_document_limits_errors(
     .await
     .expect_err("No error received.");
 
-    if let AppError::BadRequest(bad_request) = error {
+    if let RESTError::BadRequest(bad_request) = error {
         assert_eq!(
             bad_request, expected,
             "The bad request message received was unexpected."

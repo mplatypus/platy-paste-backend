@@ -2,9 +2,9 @@ use regex::Regex;
 use serde::Serialize;
 use sqlx::{PgExecutor, PgTransaction};
 
-use crate::app::config::Config;
+use crate::{app::config::Config, models::errors::RESTError};
 
-use super::{error::AppError, snowflake::Snowflake};
+use super::{errors::DatabaseError, snowflake::Snowflake};
 
 /* FIXME: Unsure if this is actually needed.
 /// Supported mimes are the ones that will be supported by the website.
@@ -158,13 +158,16 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
     /// - [`Option::Some`] - The [`Document`] object.
     /// - [`Option::None`] - No document was found.
-    pub async fn fetch<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<Option<Self>, AppError>
+    pub async fn fetch<'e, 'c: 'e, E>(
+        executor: E,
+        id: &Snowflake,
+    ) -> Result<Option<Self>, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -201,7 +204,7 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
@@ -211,7 +214,7 @@ impl Document {
         executor: E,
         paste_id: &Snowflake,
         id: &Snowflake,
-    ) -> Result<Option<Self>, AppError>
+    ) -> Result<Option<Self>, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -249,7 +252,7 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
@@ -257,7 +260,7 @@ impl Document {
     pub async fn fetch_all<'e, 'c: 'e, E>(
         executor: E,
         id: &Snowflake,
-    ) -> Result<Vec<Self>, AppError>
+    ) -> Result<Vec<Self>, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -293,7 +296,7 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
@@ -301,7 +304,7 @@ impl Document {
     pub async fn fetch_total_document_size<'e, 'c: 'e, E>(
         executor: E,
         id: &Snowflake,
-    ) -> Result<usize, AppError>
+    ) -> Result<usize, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -328,7 +331,7 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
@@ -336,7 +339,7 @@ impl Document {
     pub async fn fetch_total_document_count<'e, 'c: 'e, E>(
         executor: E,
         id: &Snowflake,
-    ) -> Result<usize, AppError>
+    ) -> Result<usize, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -359,8 +362,8 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error, or the snowflake exists already.
-    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    /// - [`DatabaseError`] - The database had an error, or the snowflake exists already.
+    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -391,8 +394,8 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
-    pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    /// - [`DatabaseError`] - The database had an error.
+    pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -422,8 +425,8 @@ impl Document {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
-    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<bool, AppError>
+    /// - [`DatabaseError`] - The database had an error.
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, id: &Snowflake) -> Result<bool, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -489,33 +492,33 @@ pub fn contains_mime(mimes: &[&str], value: &str) -> bool {
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - Returned when the documents are outside of the limits.
-pub fn document_limits(config: &Config, document: &Document) -> Result<(), AppError> {
+/// - [`RESTError`] - Returned when the documents are outside of the limits.
+pub fn document_limits(config: &Config, document: &Document) -> Result<(), RESTError> {
     let size_limits = config.size_limits();
 
     if size_limits.minimum_document_size() > document.size {
-        return Err(AppError::BadRequest(format!(
+        return Err(RESTError::BadRequest(format!(
             "The document: `{}` is too small.",
             document.name
         )));
     }
 
     if size_limits.maximum_document_size() < document.size {
-        return Err(AppError::BadRequest(format!(
+        return Err(RESTError::BadRequest(format!(
             "The document: `{}` is too large.",
             document.name
         )));
     }
 
     if size_limits.minimum_document_name_size() > document.name.len() {
-        return Err(AppError::BadRequest(format!(
+        return Err(RESTError::BadRequest(format!(
             "The document name: `{}` is too small.",
             document.name
         )));
     }
 
     if size_limits.maximum_document_name_size() < document.name.len() {
-        return Err(AppError::BadRequest(format!(
+        return Err(RESTError::BadRequest(format!(
             "The document name: `{:.25}...` is too large.",
             document.name
         )));
@@ -536,25 +539,25 @@ pub fn document_limits(config: &Config, document: &Document) -> Result<(), AppEr
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - Returned when the documents are outside of the limits.
+/// - [`RESTError`] - Returned when the documents are outside of the limits.
 pub async fn total_document_limits(
     transaction: &mut PgTransaction<'_>,
     config: &Config,
     paste_id: &Snowflake,
-) -> Result<(), AppError> {
+) -> Result<(), RESTError> {
     let size_limits = config.size_limits();
 
     let total_document_count =
         Document::fetch_total_document_count(transaction.as_mut(), paste_id).await?;
 
     if size_limits.minimum_total_document_count() > total_document_count {
-        return Err(AppError::BadRequest(
+        return Err(RESTError::BadRequest(
             "One or more documents is below the minimum total document count.".to_string(),
         ));
     }
 
     if size_limits.maximum_total_document_count() < total_document_count {
-        return Err(AppError::BadRequest(
+        return Err(RESTError::BadRequest(
             "One or more documents exceed the maximum total document count.".to_string(),
         ));
     }
@@ -563,13 +566,13 @@ pub async fn total_document_limits(
         Document::fetch_total_document_size(transaction.as_mut(), paste_id).await?;
 
     if size_limits.minimum_total_document_size() > total_document_size {
-        return Err(AppError::BadRequest(
+        return Err(RESTError::BadRequest(
             "One or more documents is below the minimum individual document size.".to_string(),
         ));
     }
 
     if size_limits.maximum_total_document_size() < total_document_size {
-        return Err(AppError::BadRequest(
+        return Err(RESTError::BadRequest(
             "One or more documents exceed the maximum individual document size.".to_string(),
         ));
     }

@@ -15,7 +15,7 @@ use crate::{
         document::{
             Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
         },
-        error::{AppError, AuthError},
+        errors::{AuthenticationError, RESTError},
         paste::{Paste, validate_paste},
         payload::{
             DeletePastePath, GetPastePath, PatchPasteBody, PatchPastePath, PostPasteBody,
@@ -52,7 +52,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
 async fn get_paste(
     State(app): State<App>,
     Path(path): Path<GetPastePath>,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), None).await?;
 
     let documents = Document::fetch_all(app.database().pool(), paste.id()).await?;
@@ -87,14 +87,14 @@ async fn get_paste(
 async fn post_paste(
     State(app): State<App>,
     mut multipart: Multipart,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     let body: PostPasteBody = {
         if let Some(field) = multipart.next_field().await? {
             if field
                 .content_type()
                 .is_none_or(|content_type| content_type != "application/json")
             {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "Payload must be of the type application/json.".to_string(),
                 ));
             }
@@ -103,7 +103,7 @@ async fn post_paste(
 
             serde_json::from_slice(&bytes)?
         } else {
-            return Err(AppError::BadRequest("Payload missing.".to_string()));
+            return Err(RESTError::BadRequest("Payload missing.".to_string()));
         }
     };
 
@@ -128,13 +128,13 @@ async fn post_paste(
                 let name = name.to_string();
 
                 if name.len() > app.config().size_limits().maximum_paste_name_size() {
-                    return Err(AppError::BadRequest(
+                    return Err(RESTError::BadRequest(
                         "The pastes name is too long.".to_string(),
                     ));
                 }
 
                 if name.len() < app.config().size_limits().minimum_paste_name_size() {
-                    return Err(AppError::BadRequest(
+                    return Err(RESTError::BadRequest(
                         "The pastes name is too short.".to_string(),
                     ));
                 }
@@ -152,7 +152,7 @@ async fn post_paste(
         name,
         Utc::now()
             .with_nanosecond(0)
-            .ok_or(AppError::InternalServer(
+            .ok_or(RESTError::InternalServer(
                 "Failed to strip nanosecond from date time object.".to_string(),
             ))?,
         None,
@@ -169,7 +169,7 @@ async fn post_paste(
             match field.content_type() {
                 Some(content_type) => {
                     if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                        return Err(AppError::BadRequest(format!(
+                        return Err(RESTError::BadRequest(format!(
                             "Invalid mime type received: {content_type}"
                         )));
                     }
@@ -177,7 +177,7 @@ async fn post_paste(
                     content_type.to_string()
                 }
                 None => {
-                    return Err(AppError::BadRequest(
+                    return Err(RESTError::BadRequest(
                         "The document must have a type.".to_string(),
                     ));
                 }
@@ -186,7 +186,7 @@ async fn post_paste(
 
         let name = field
             .file_name()
-            .ok_or(AppError::BadRequest(
+            .ok_or(RESTError::BadRequest(
                 "One or more of the documents provided require a name.".to_string(),
             ))?
             .to_string();
@@ -256,7 +256,7 @@ async fn patch_paste(
     Path(path): Path<PatchPastePath>,
     token: Token,
     Json(body): Json<PatchPasteBody>,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
 
     let new_expiry = validate_expiry(app.config(), body.expiry())?;
@@ -266,13 +266,13 @@ async fn patch_paste(
             let name = name.to_string();
 
             if name.len() > app.config().size_limits().maximum_paste_name_size() {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "The pastes name is too long.".to_string(),
                 ));
             }
 
             if name.len() < app.config().size_limits().minimum_paste_name_size() {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "The pastes name is too short.".to_string(),
                 ));
             }
@@ -292,7 +292,7 @@ async fn patch_paste(
     match body.max_views() {
         UndefinedOption::Some(max_views) => {
             if paste.views() >= max_views {
-                return Err(AppError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
+                return Err(RESTError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
             }
 
             paste.set_max_views(Some(max_views));
@@ -340,13 +340,15 @@ async fn delete_paste(
     State(app): State<App>,
     Path(path): Path<DeletePastePath>,
     token: Token,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     if token.paste_id() != path.paste_id() {
-        return Err(AppError::Authentication(AuthError::InvalidCredentials));
+        return Err(RESTError::Authentication(
+            AuthenticationError::InvalidCredentials,
+        ));
     }
 
     if !Paste::delete(app.database().pool(), path.paste_id()).await? {
-        return Err(AppError::NotFound("The paste was not found.".to_string()));
+        return Err(RESTError::NotFound("The paste was not found.".to_string()));
     }
 
     Ok(StatusCode::NO_CONTENT.into_response())
@@ -366,7 +368,7 @@ async fn delete_paste(
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - The app error returned, if the provided expiry is invalid, or a timestamp was required.
+/// - [`RESTError`] - The app error returned, if the provided expiry is invalid, or a timestamp was required.
 ///
 /// ## Returns
 ///
@@ -376,23 +378,23 @@ async fn delete_paste(
 fn validate_expiry(
     config: &Config,
     expiry: UndefinedOption<DtUtc>,
-) -> Result<UndefinedOption<DtUtc>, AppError> {
+) -> Result<UndefinedOption<DtUtc>, RESTError> {
     let size_limits = config.size_limits();
     match expiry {
         UndefinedOption::Some(expiry) => {
-            let expiry = expiry.with_nanosecond(0).ok_or(AppError::InternalServer(
+            let expiry = expiry.with_nanosecond(0).ok_or(RESTError::InternalServer(
                 "Failed to strip nanosecond from date time object.".to_string(),
             ))?;
             let now = Utc::now()
                 .with_nanosecond(0)
-                .ok_or(AppError::InternalServer(
+                .ok_or(RESTError::InternalServer(
                     "Failed to strip nanosecond from date time object.".to_string(),
                 ))?;
 
             let difference = expiry - now;
 
             if difference.num_seconds() <= 0 {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "The timestamp provided is invalid.".to_string(),
                 ));
             }
@@ -400,7 +402,7 @@ fn validate_expiry(
             if let Some(minimum_expiry_hours) = size_limits.minimum_expiry_hours()
                 && difference < TimeDelta::hours(minimum_expiry_hours as i64)
             {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "The timestamp provided is below the minimum.".to_string(),
                 ));
             }
@@ -408,7 +410,7 @@ fn validate_expiry(
             if let Some(maximum_expiry_hours) = size_limits.maximum_expiry_hours()
                 && difference > TimeDelta::hours(maximum_expiry_hours as i64)
             {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "The timestamp provided is above the maximum.".to_string(),
                 ));
             }
@@ -420,7 +422,7 @@ fn validate_expiry(
                 return Ok(UndefinedOption::Some(
                     Utc::now()
                         .with_nanosecond(0)
-                        .ok_or(AppError::InternalServer(
+                        .ok_or(RESTError::InternalServer(
                             "Failed to strip nanosecond from date time object.".to_string(),
                         ))?
                         + TimeDelta::hours(default_expiry_hours as i64),
@@ -430,7 +432,7 @@ fn validate_expiry(
             if size_limits.minimum_expiry_hours().is_some()
                 || size_limits.maximum_expiry_hours().is_some()
             {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "Timestamp must be provided.".to_string(),
                 ));
             }
@@ -441,7 +443,7 @@ fn validate_expiry(
             if size_limits.minimum_expiry_hours().is_some()
                 || size_limits.maximum_expiry_hours().is_some()
             {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "Timestamp must be provided.".to_string(),
                 ));
             }
@@ -456,7 +458,7 @@ mod tests {
     use super::*;
     use crate::{
         app::config::{Config, ObjectStoreConfig, S3ObjectStoreConfig, SizeLimitConfigBuilder},
-        models::error::AppError,
+        models::errors::RESTError,
     };
     use chrono::Timelike;
     use rstest::*;
@@ -651,7 +653,7 @@ mod tests {
     ) {
         let returned_expiry = validate_expiry(&config, expiry).expect_err("Expected an error.");
 
-        if let AppError::BadRequest(response) = &returned_expiry {
+        if let RESTError::BadRequest(response) = &returned_expiry {
             assert_eq!(response, expected, "Invalid response received.");
         } else {
             panic!(

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     app::object_store::{ObjectStore, ObjectStoreExt as _},
-    models::error::AppError,
+    models::errors::ApplicationError,
 };
 
 use super::{config::Config, database::Database};
@@ -22,12 +22,12 @@ impl ApplicationState {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - When it fails to create a client.
+    /// - [`ApplicationError`] - When it fails to create a client.
     ///
     /// ## Returns
     ///
     /// The created [`ApplicationState`] wrapped in [`Arc`].
-    pub async fn new() -> Result<Arc<Self>, AppError> {
+    pub async fn new() -> Result<Arc<Self>, ApplicationError> {
         let config = Config::from_env();
 
         let mut state = Self {
@@ -59,7 +59,7 @@ impl ApplicationState {
         &self.object_store
     }
 
-    async fn init(&mut self) -> Result<(), AppError> {
+    async fn init(&mut self) -> Result<(), ApplicationError> {
         self.database.connect(self.config.database_url()).await?;
 
         self.object_store.create_buckets().await?;

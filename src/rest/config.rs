@@ -8,7 +8,7 @@ use http::StatusCode;
 
 use crate::{
     app::{application::App, config::Config},
-    models::{error::AppError, payload::ResponseConfig},
+    models::{errors::RESTError, payload::ResponseConfig},
 };
 
 pub fn generate_router(config: &Config) -> Router<App> {
@@ -19,7 +19,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
         ))
 }
 
-async fn get_config(State(app): State<App>) -> Result<Response, AppError> {
+async fn get_config(State(app): State<App>) -> Result<Response, RESTError> {
     let response_config = ResponseConfig::from_config(app.config());
 
     Ok((StatusCode::OK, Json(response_config)).into_response())

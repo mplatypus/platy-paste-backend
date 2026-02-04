@@ -9,7 +9,7 @@ use secrecy::ExposeSecret as _;
 
 use crate::{
     app::config::{ObjectStoreConfig, S3ObjectStoreConfig},
-    models::{document::Document, error::AppError},
+    models::{document::Document, errors::ObjectStoreError},
 };
 
 use super::application::ApplicationState;
@@ -33,8 +33,8 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - If the buckets fail to be created.
-    async fn create_buckets(&self) -> Result<(), AppError>;
+    /// - [`ObjectStoreError`] - If the buckets fail to be created.
+    async fn create_buckets(&self) -> Result<(), ObjectStoreError>;
 
     /// Fetch a document
     ///
@@ -46,11 +46,11 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - When the document cannot be found, or a read failure happens.
+    /// - [`ObjectStoreError`] - When the document cannot be found, or a read failure happens.
     ///
     /// ## Returns
     ///
-    async fn fetch_document(&self, document_path: String) -> Result<Bytes, AppError>;
+    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError>;
 
     /// Create a document
     ///
@@ -63,12 +63,12 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - When the document could not be created.
+    /// - [`ObjectStoreError`] - When the document could not be created.
     async fn create_document(
         &self,
         document: &Document,
         content: impl Into<Bytes>,
-    ) -> Result<(), AppError>;
+    ) -> Result<(), ObjectStoreError>;
 
     /// Delete a document
     ///
@@ -80,8 +80,8 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - When the document could not be deleted.
-    async fn delete_document(&self, document_path: String) -> Result<(), AppError>;
+    /// - [`ObjectStoreError`] - When the document could not be deleted.
+    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError>;
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +90,7 @@ pub enum ObjectStore {
 }
 
 impl ObjectStore {
-    pub fn from_config(config: &ObjectStoreConfig) -> Result<Self, AppError> {
+    pub fn from_config(config: &ObjectStoreConfig) -> Result<Self, ObjectStoreError> {
         match config {
             ObjectStoreConfig::S3(config) => Ok(Self::S3(S3ObjectStore::from_config(config))),
         }
@@ -110,13 +110,13 @@ impl ObjectStoreExt for ObjectStore {
         }
     }
 
-    async fn create_buckets(&self) -> Result<(), AppError> {
+    async fn create_buckets(&self) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.create_buckets().await,
         }
     }
 
-    async fn fetch_document(&self, document_path: String) -> Result<Bytes, AppError> {
+    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError> {
         match self {
             Self::S3(os) => os.fetch_document(document_path).await,
         }
@@ -126,13 +126,13 @@ impl ObjectStoreExt for ObjectStore {
         &self,
         document: &Document,
         content: impl Into<Bytes>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.create_document(document, content).await,
         }
     }
 
-    async fn delete_document(&self, document_path: String) -> Result<(), AppError> {
+    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.delete_document(document_path).await,
         }
@@ -209,7 +209,7 @@ impl ObjectStoreExt for S3ObjectStore {
             .expect("Application state has been dropped.")
     }
 
-    async fn create_buckets(&self) -> Result<(), AppError> {
+    async fn create_buckets(&self) -> Result<(), ObjectStoreError> {
         for bucket in BUCKETS {
             match self.client.head_bucket().bucket(bucket).send().await {
                 Ok(_) => {
@@ -236,7 +236,7 @@ impl ObjectStoreExt for S3ObjectStore {
         Ok(())
     }
 
-    async fn fetch_document(&self, document_path: String) -> Result<Bytes, AppError> {
+    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError> {
         let mut data = self
             .client
             .get_object()
@@ -257,7 +257,7 @@ impl ObjectStoreExt for S3ObjectStore {
         &self,
         document: &Document,
         content: impl Into<Bytes>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), ObjectStoreError> {
         self.client
             .put_object()
             .bucket(DOCUMENT_BUCKET)
@@ -270,7 +270,7 @@ impl ObjectStoreExt for S3ObjectStore {
         Ok(())
     }
 
-    async fn delete_document(&self, document_path: String) -> Result<(), AppError> {
+    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError> {
         self.client
             .delete_object()
             .bucket(DOCUMENT_BUCKET)

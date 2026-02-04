@@ -18,7 +18,7 @@ use crate::{
         document::{
             Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
         },
-        error::{AppError, AuthError},
+        errors::{AuthenticationError, RESTError},
         paste::{Paste, validate_paste},
         payload::{DeleteDocumentPath, GetDocumentPath, PatchDocumentPath, PostDocumentPath},
         snowflake::Snowflake,
@@ -61,13 +61,13 @@ pub fn generate_router(config: &Config) -> Router<App> {
 async fn get_document(
     State(app): State<App>,
     Path(path): Path<GetDocumentPath>,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     let document = Document::fetch(app.database().pool(), path.document_id())
         .await?
-        .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
+        .ok_or_else(|| RESTError::NotFound("Document not found.".to_string()))?;
 
     if document.paste_id() != path.paste_id() {
-        return Err(AppError::BadRequest(
+        return Err(RESTError::BadRequest(
             "The document ID does not belong to that paste.".to_string(),
         ));
     }
@@ -98,27 +98,27 @@ async fn post_document(
     content_type: Option<TypedHeader<ContentType>>,
     token: Token,
     body: Bytes,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
             if contains_mime(UNSUPPORTED_MIMES, &content_type.to_string()) {
-                return Err(AppError::BadRequest(format!(
+                return Err(RESTError::BadRequest(format!(
                     "Invalid mime type received: {content_type}"
                 )));
             }
 
             content_type.to_string()
         } else {
-            return Err(AppError::BadRequest(
+            return Err(RESTError::BadRequest(
                 "The document must have a type.".to_string(),
             ));
         }
     };
 
     let name = content_disposition.filename().ok_or_else(|| {
-        AppError::BadRequest("The document provided requires a name.".to_string())
+        RESTError::BadRequest("The document provided requires a name.".to_string())
     })?;
 
     let document = Document::new(
@@ -174,20 +174,20 @@ async fn patch_document(
     content_type: Option<TypedHeader<ContentType>>,
     token: Token,
     body: Bytes,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
 
     let document_type = {
         if let Some(TypedHeader(content_type)) = content_type {
             if contains_mime(UNSUPPORTED_MIMES, &content_type.to_string()) {
-                return Err(AppError::BadRequest(format!(
+                return Err(RESTError::BadRequest(format!(
                     "Invalid mime type received: {content_type}"
                 )));
             }
 
             content_type.to_string()
         } else {
-            return Err(AppError::BadRequest(
+            return Err(RESTError::BadRequest(
                 "The document must have a type.".to_string(),
             ));
         }
@@ -195,7 +195,7 @@ async fn patch_document(
 
     let mut document = Document::fetch(app.database().pool(), path.document_id())
         .await?
-        .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
+        .ok_or_else(|| RESTError::NotFound("Document not found.".to_string()))?;
 
     let mut transaction = app.database().pool().begin().await?;
 
@@ -246,22 +246,24 @@ async fn delete_document(
     State(app): State<App>,
     Path(path): Path<DeleteDocumentPath>,
     token: Token,
-) -> Result<Response, AppError> {
+) -> Result<Response, RESTError> {
     if token.paste_id() != path.paste_id() {
-        return Err(AppError::Authentication(AuthError::InvalidCredentials));
+        return Err(RESTError::Authentication(
+            AuthenticationError::InvalidCredentials,
+        ));
     }
 
     let total_document_count =
         Document::fetch_total_document_count(app.database().pool(), path.paste_id()).await?;
 
     if total_document_count <= 1 {
-        return Err(AppError::BadRequest(
+        return Err(RESTError::BadRequest(
             "A paste must have at least one document".to_string(),
         ));
     }
 
     if !Document::delete(app.database().pool(), path.document_id()).await? {
-        return Err(AppError::NotFound(
+        return Err(RESTError::NotFound(
             "The document was not found.".to_string(),
         ));
     }

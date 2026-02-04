@@ -1,6 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::app::application::App;
+use crate::{
+    app::application::App,
+    models::errors::{AuthenticationError, DatabaseError, RESTError},
+};
 use axum::{RequestPartsExt, extract::FromRequestParts, http::request::Parts};
 use axum_extra::{
     TypedHeader,
@@ -10,10 +13,7 @@ use base64::{Engine, prelude::BASE64_URL_SAFE};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgExecutor;
 
-use super::{
-    error::{AppError, AuthError},
-    snowflake::Snowflake,
-};
+use super::snowflake::Snowflake;
 
 #[derive(Clone, Debug)]
 pub struct Token {
@@ -54,13 +54,16 @@ impl Token {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
+    /// - [`DatabaseError`] - The database had an error.
     ///
     /// ## Returns
     ///
     /// - [`Option::Some`] - The [`Token`] object.
     /// - [`Option::None`] - No token was found.
-    pub async fn fetch<'e, 'c: 'e, E>(executor: E, token: &str) -> Result<Option<Self>, AppError>
+    pub async fn fetch<'e, 'c: 'e, E>(
+        executor: E,
+        token: &str,
+    ) -> Result<Option<Self>, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -83,8 +86,8 @@ impl Token {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error, or the snowflake exists already.
-    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), AppError>
+    /// - [`DatabaseError`] - The database had an error, or the snowflake exists already.
+    pub async fn insert<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -111,8 +114,8 @@ impl Token {
     ///
     /// ## Errors
     ///
-    /// - [`AppError`] - The database had an error.
-    pub async fn delete<'e, 'c: 'e, E>(executor: E, token: &str) -> Result<(), AppError>
+    /// - [`DatabaseError`] - The database had an error.
+    pub async fn delete<'e, 'c: 'e, E>(executor: E, token: &str) -> Result<(), DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
@@ -125,17 +128,17 @@ impl Token {
 }
 
 impl FromRequestParts<App> for Token {
-    type Rejection = AppError;
+    type Rejection = RESTError;
 
     async fn from_request_parts(parts: &mut Parts, state: &App) -> Result<Self, Self::Rejection> {
         let TypedHeader(Authorization(bearer)) = parts
             .extract::<TypedHeader<Authorization<Bearer>>>()
             .await
-            .map_err(|_| AuthError::MissingCredentials)?;
+            .map_err(|_| AuthenticationError::MissingCredentials)?;
 
         let bot = Self::fetch(state.database().pool(), bearer.token())
             .await?
-            .ok_or(AuthError::InvalidCredentials)?;
+            .ok_or(AuthenticationError::InvalidCredentials)?;
 
         Ok(bot)
     }
@@ -149,18 +152,18 @@ impl FromRequestParts<App> for Token {
 ///
 /// ## Errors
 ///
-/// - [`AppError`] - Raise when it fails to fill random integers.
+/// - [`RESTError`] - Raise when it fails to fill random integers.
 ///
 /// ## Returns
 ///
 /// The [`SecretString`] (token) generated.
-pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, AppError> {
+pub fn generate_token(paste_id: Snowflake) -> Result<SecretString, RESTError> {
     const TOKEN_LENGTH: usize = 25;
 
     let mut buffer: Vec<u8> = vec![0; TOKEN_LENGTH];
 
     getrandom::fill(&mut buffer).map_err(|e| {
-        AppError::InternalServer(format!("Failed to obtain a random integers: {e}"))
+        RESTError::InternalServer(format!("Failed to obtain a random integers: {e}"))
     })?;
 
     let ascii = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-");
