@@ -3,7 +3,7 @@ use sqlx::PgExecutor;
 use std::time::Duration;
 
 use crate::{
-    app::{application::App, database::Database},
+    app::{application::App, database::Database, object_store::ObjectStoreExt as _},
     models::{DtUtc, document::Document},
 };
 
@@ -456,7 +456,11 @@ pub async fn expiry_tasks(app: App) {
         };
 
         for document in documents {
-            match app.s3().delete_document(document.generate_path()).await {
+            match app
+                .object_store()
+                .delete_document(document.generate_path())
+                .await
+            {
                 Ok(()) => tracing::trace!(
                     "Successfully deleted paste document (minio): {}",
                     document.id()
@@ -499,7 +503,7 @@ pub async fn expiry_tasks(app: App) {
                     };
 
                     for document in documents {
-                        match app.s3().delete_document(document.generate_path()).await {
+                        match app.object_store().delete_document(document.generate_path()).await {
                             Ok(()) => tracing::trace!("Successfully deleted paste document (minio): {}", document.id()),
                             Err(e) => tracing::trace!("Failed to delete paste document: {} (minio). Reason: {}", document.id(), e)
                         }

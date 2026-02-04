@@ -3,8 +3,6 @@ use dotenvy::from_filename;
 use secrecy::SecretString;
 
 #[derive(Debug, Clone, Builder)]
-#[builder(default)]
-#[derive(Default)]
 pub struct Config {
     /// The host to run on.
     host: String,
@@ -12,18 +10,10 @@ pub struct Config {
     port: u16,
     /// The database URL.
     database_url: String,
-    /// The S3 Service URL.
-    s3_url: String,
-    /// The S3 Service Access Key.
-    s3_access_key: SecretString,
-    /// The S3 Service Secret Key.
-    s3_secret_key: SecretString,
-    /// The Minio User.
-    minio_root_user: String,
-    /// The Minio Password.
-    minio_root_password: SecretString,
     /// The domain to use for cors.
     domain: String,
+    /// Object store information.
+    object_store: ObjectStoreConfig,
     /// Size limits.
     size_limits: SizeLimitConfig,
 }
@@ -47,27 +37,8 @@ impl Config {
                 std::env::var("DATABASE_URL")
                     .expect("DATABASE_URL environment variable must be set."),
             )
-            .s3_url(std::env::var("S3_URL").expect("S3_URL environment variable must be set."))
-            .s3_access_key(
-                std::env::var("S3_ACCESS_KEY")
-                    .expect("S3_ACCESS_KEY environment variable must be set.")
-                    .into(),
-            )
-            .s3_secret_key(
-                std::env::var("S3_SECRET_KEY")
-                    .expect("S3_SECRET_KEY environment variable must be set.")
-                    .into(),
-            )
-            .minio_root_user(
-                std::env::var("MINIO_ROOT_USER")
-                    .expect("MINIO_ROOT_USER environment variable must be set."),
-            )
-            .minio_root_password(
-                std::env::var("MINIO_ROOT_PASSWORD")
-                    .expect("MINIO_ROOT_PASSWORD environment variable must be set.")
-                    .into(),
-            )
             .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
+            .object_store(ObjectStoreConfig::from_env(false))
             .size_limits(SizeLimitConfig::from_env(false))
             .build()
             .expect("Failed to create application configuration.")
@@ -85,32 +56,88 @@ impl Config {
         &self.database_url
     }
 
-    pub fn s3_url(&self) -> &str {
-        &self.s3_url
-    }
-
-    pub const fn s3_access_key(&self) -> &SecretString {
-        &self.s3_access_key
-    }
-
-    pub const fn s3_secret_key(&self) -> &SecretString {
-        &self.s3_secret_key
-    }
-
-    pub fn minio_root_user(&self) -> &str {
-        &self.minio_root_user
-    }
-
-    pub const fn minio_root_password(&self) -> &SecretString {
-        &self.minio_root_password
-    }
-
     pub fn domain(&self) -> &str {
         &self.domain
     }
 
+    pub const fn object_store(&self) -> &ObjectStoreConfig {
+        &self.object_store
+    }
+
     pub const fn size_limits(&self) -> &SizeLimitConfig {
         &self.size_limits
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ObjectStoreConfig {
+    S3(S3ObjectStoreConfig),
+}
+
+impl ObjectStoreConfig {
+    #[expect(clippy::too_many_lines)]
+    pub fn from_env(fetch_env: bool) -> Self {
+        if fetch_env {
+            from_filename(".env").ok();
+        }
+
+        let obs_type =
+            std::env::var("OBS_TYPE").expect("OBS_TYPE environment variable must be set.");
+
+        match obs_type.as_str() {
+            "MINIO" => Self::S3(S3ObjectStoreConfig::from_env(false)),
+            unknown => panic!("The OBS_TYPE `{unknown}` is unknown."),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Builder)]
+pub struct S3ObjectStoreConfig {
+    /// The S3 Service URL.
+    url: String,
+    /// The S3 Service Access Key.
+    access_key: SecretString,
+    /// The S3 Service Secret Key.
+    secret_key: SecretString,
+}
+
+impl S3ObjectStoreConfig {
+    pub fn builder() -> S3ObjectStoreConfigBuilder {
+        S3ObjectStoreConfigBuilder::default()
+    }
+
+    #[expect(clippy::too_many_lines)]
+    pub fn from_env(fetch_env: bool) -> Self {
+        if fetch_env {
+            from_filename(".env").ok();
+        }
+
+        Self::builder()
+            .url(std::env::var("OBS_URL").expect("OBS_URL environment variable must be set."))
+            .access_key(
+                std::env::var("OBS_ACCESS_KEY")
+                    .expect("OBS_ACCESS_KEY environment variable must be set.")
+                    .into(),
+            )
+            .secret_key(
+                std::env::var("OBS_SECRET_KEY")
+                    .expect("OBS_SECRET_KEY environment variable must be set.")
+                    .into(),
+            )
+            .build()
+            .expect("Failed to build S3 object store config.")
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub const fn access_key(&self) -> &SecretString {
+        &self.access_key
+    }
+
+    pub const fn secret_key(&self) -> &SecretString {
+        &self.secret_key
     }
 }
 

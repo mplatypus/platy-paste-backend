@@ -12,7 +12,7 @@ use bytes::Bytes;
 use http::{HeaderName, HeaderValue, StatusCode};
 
 use crate::{
-    app::{application::App, config::Config},
+    app::{application::App, config::Config, object_store::ObjectStoreExt as _},
     models::{
         authentication::Token,
         document::{
@@ -141,7 +141,7 @@ async fn post_document(
 
     total_document_limits(&mut transaction, app.config(), path.paste_id()).await?;
 
-    app.s3().create_document(&document, body).await?;
+    app.object_store().create_document(&document, body).await?;
 
     transaction.commit().await?;
 
@@ -217,9 +217,11 @@ async fn patch_document(
 
     total_document_limits(&mut transaction, app.config(), path.paste_id()).await?;
 
-    app.s3().delete_document(document.generate_path()).await?;
+    app.object_store()
+        .delete_document(document.generate_path())
+        .await?;
 
-    app.s3().create_document(&document, body).await?;
+    app.object_store().create_document(&document, body).await?;
 
     transaction.commit().await?;
 

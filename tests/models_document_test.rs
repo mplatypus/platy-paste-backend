@@ -1,6 +1,6 @@
 use platy_paste::{
     app::{
-        config::{Config, SizeLimitConfigBuilder},
+        config::{Config, ObjectStoreConfig, S3ObjectStoreConfig, SizeLimitConfigBuilder},
         database::Database,
     },
     models::{document::*, error::AppError, snowflake::Snowflake},
@@ -427,12 +427,15 @@ fn make_document_limits_config(
         .host(String::new())
         .port(5454)
         .database_url(String::new())
-        .s3_url(String::new())
-        .s3_access_key(String::new().into())
-        .s3_secret_key(String::new().into())
-        .minio_root_user(String::new())
-        .minio_root_password(String::new().into())
         .domain(String::new())
+        .object_store(ObjectStoreConfig::S3(
+            S3ObjectStoreConfig::builder()
+                .url(String::new())
+                .access_key(String::new().into())
+                .secret_key(String::new().into())
+                .build()
+                .expect("Failed to build object store"),
+        ))
         .size_limits(
             SizeLimitConfigBuilder::default()
                 .minimum_document_size(minimum_document_size)
@@ -508,12 +511,15 @@ fn make_total_document_limits_config(
         .host(String::new())
         .port(5454)
         .database_url(String::new())
-        .s3_url(String::new())
-        .s3_access_key(String::new().into())
-        .s3_secret_key(String::new().into())
-        .minio_root_user(String::new())
-        .minio_root_password(String::new().into())
         .domain(String::new())
+        .object_store(ObjectStoreConfig::S3(
+            S3ObjectStoreConfig::builder()
+                .url(String::new())
+                .access_key(String::new().into())
+                .secret_key(String::new().into())
+                .build()
+                .expect("Failed to build object store"),
+        ))
         .size_limits(
             SizeLimitConfigBuilder::default()
                 .minimum_total_document_count(minimum_total_document_count)

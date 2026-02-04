@@ -8,7 +8,7 @@ use axum::{
 use chrono::{TimeDelta, Timelike, Utc};
 
 use crate::{
-    app::{application::App, config::Config},
+    app::{application::App, config::Config, object_store::ObjectStoreExt as _},
     models::{
         DtUtc,
         authentication::{Token, generate_token},
@@ -208,7 +208,9 @@ async fn post_paste(
 
     let mut response_documents = Vec::new();
     for (document, content) in documents {
-        app.s3().create_document(&document, content).await?;
+        app.object_store()
+            .create_document(&document, content)
+            .await?;
 
         document.insert(transaction.as_mut()).await?;
 
@@ -453,7 +455,7 @@ fn validate_expiry(
 mod tests {
     use super::*;
     use crate::{
-        app::config::{Config, SizeLimitConfigBuilder},
+        app::config::{Config, ObjectStoreConfig, S3ObjectStoreConfig, SizeLimitConfigBuilder},
         models::error::AppError,
     };
     use chrono::Timelike;
@@ -468,12 +470,15 @@ mod tests {
             .host(String::new())
             .port(5454)
             .database_url(String::new())
-            .s3_url(String::new())
-            .s3_access_key(String::new().into())
-            .s3_secret_key(String::new().into())
-            .minio_root_user(String::new())
-            .minio_root_password(String::new().into())
             .domain(String::new())
+            .object_store(ObjectStoreConfig::S3(
+                S3ObjectStoreConfig::builder()
+                    .url(String::new())
+                    .access_key(String::new().into())
+                    .secret_key(String::new().into())
+                    .build()
+                    .expect("Failed to build object store"),
+            ))
             .size_limits(
                 SizeLimitConfigBuilder::default()
                     .default_expiry_hours(default_expiry_hours)
