@@ -2,6 +2,9 @@ use regex::Regex;
 use serde::Serialize;
 use sqlx::{PgExecutor, PgTransaction};
 
+#[cfg(any(test, feature = "testing"))]
+use serde::Deserialize;
+
 use crate::{app::config::Config, models::errors::RESTError};
 
 use super::{errors::DatabaseError, snowflake::Snowflake};
@@ -30,6 +33,7 @@ const SUPPORTED_MIMES: &[&str] = &[
 pub const UNSUPPORTED_MIMES: &[&str] =
     &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
 
+#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
 #[derive(Serialize, Clone, Debug)]
 pub struct Document {
     /// The ID of the document.

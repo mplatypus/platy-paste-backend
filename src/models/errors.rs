@@ -160,11 +160,11 @@ impl IntoResponse for RESTError {
             Self::NotFound(ref e) => (StatusCode::NOT_FOUND, "Not Found", e),
         };
 
-        let body = Json(RESTErrorResponse {
-            timestamp: Utc::now().timestamp() as u64,
-            reason: String::from(reason),
-            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
-        });
+        let body = Json(RESTErrorResponse::new(
+            reason,
+            Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
+        ));
+
         (status, body).into_response()
     }
 }
@@ -189,11 +189,7 @@ impl IntoResponse for AuthenticationError {
             ),
         };
 
-        let body = Json(RESTErrorResponse {
-            timestamp: Utc::now().timestamp() as u64,
-            reason: String::from(reason),
-            trace: None,
-        });
+        let body = Json(RESTErrorResponse::new(reason, None));
 
         (status, body).into_response()
     }
@@ -207,4 +203,29 @@ pub struct RESTErrorResponse {
     trace: Option<String>,
     /// Time since epoch of when the error occurred.
     timestamp: u64,
+}
+
+impl RESTErrorResponse {
+    pub fn new(reason: impl ToString, trace: Option<String>) -> Self {
+        Self {
+            reason: reason.to_string(),
+            trace: trace,
+            timestamp: Utc::now().timestamp() as u64,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl RESTErrorResponse {
+    pub fn reason(&self) -> &str {
+        &self.reason
+    }
+
+    pub fn trace(&self) -> Option<&str> {
+        self.trace.as_deref()
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        self.timestamp
+    }
 }

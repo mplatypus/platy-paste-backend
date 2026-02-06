@@ -29,6 +29,7 @@ future_not_send = "allow"
 redundant_pub_crate = "allow"
 
 [features]
+default = ["testing"] # FIXME: Remove this.
 testing = ["dep:derive_builder"]
 testing-database = []
 testing-object-store = []
@@ -72,3 +73,6 @@ derive_builder = { version = "0.20", optional = true }
 [dev-dependencies]
 rstest = "0.26"
 derive_builder = "0.20"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+axum-test = "18.7"

@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+#[cfg(any(test, feature = "testing"))]
+use sqlx::PgPool;
+
+#[cfg(any(test, feature = "testing"))]
+use crate::app::object_store::TestObjectStore;
 use crate::{
     app::object_store::{ObjectStore, ObjectStoreExt as _},
     models::errors::ApplicationError,
@@ -43,6 +48,19 @@ impl ApplicationState {
         Ok(Arc::new_cyclic(|w| {
             state.database.bind_to(w.clone());
             state
+        }))
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn new_tests(
+        config: Config,
+        pool: PgPool,
+        object_store: TestObjectStore,
+    ) -> Result<Arc<Self>, ApplicationError> {
+        Ok(Arc::new(Self {
+            config,
+            database: Database::from_pool(pool),
+            object_store: ObjectStore::Test(object_store),
         }))
     }
 

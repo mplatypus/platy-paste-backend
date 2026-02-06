@@ -89,6 +89,7 @@ pub type PostPasteBody = PasteBody;
 
 pub type PatchPasteBody = PasteBody;
 
+#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseConfig {
     /// Defaults.
@@ -122,6 +123,7 @@ impl ResponseConfig {
     }
 }
 
+#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseDefaultsConfig {
     /// The default expiry for pastes.
@@ -162,6 +164,7 @@ impl ResponseDefaultsConfig {
     }
 }
 
+#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseSizeLimitsConfig {
     /// The minimum size of a paste name.
@@ -247,6 +250,7 @@ impl ResponseSizeLimitsConfig {
     }
 }
 
+#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponsePaste {
     /// The ID for the paste.
@@ -329,5 +333,44 @@ impl ResponsePaste {
             paste.max_views(),
             documents,
         )
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl ResponsePaste {
+    pub fn id(&self) -> Snowflake {
+        self.id
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
+
+    pub fn creation(&self) -> &DtUtc {
+        &self.creation
+    }
+
+    pub fn edited(&self) -> Option<&DtUtc> {
+        self.edited.as_ref()
+    }
+
+    pub fn expiry(&self) -> Option<&DtUtc> {
+        self.expiry.as_ref()
+    }
+
+    pub fn views(&self) -> usize {
+        self.views
+    }
+
+    pub fn max_views(&self) -> Option<usize> {
+        self.max_views
+    }
+
+    pub fn documents(&self) -> &Vec<Document> {
+        &self.documents
     }
 }
