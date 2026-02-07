@@ -1,6 +1,6 @@
 pub mod authentication;
 pub mod document;
-pub mod error;
+pub mod errors;
 pub mod paste;
 pub mod payload;
 pub mod snowflake;

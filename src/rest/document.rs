@@ -1,28 +1,14 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, State},
-    response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    routing::get,
 };
-use axum_extra::{
-    TypedHeader,
-    headers::{self, ContentType, Header},
-};
-use bytes::Bytes;
+use axum_extra::headers::{self, Header};
 use http::{HeaderName, HeaderValue, StatusCode};
 
 use crate::{
     app::{application::App, config::Config},
-    models::{
-        authentication::Token,
-        document::{
-            Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
-        },
-        error::{AppError, AuthError},
-        paste::{Paste, validate_paste},
-        payload::document::*,
-        snowflake::Snowflake,
-    },
+    models::{document::Document, errors::RESTError, paste::Paste, payload::document::*},
 };
 
 pub fn generate_router(config: &Config) -> Router<App> {
@@ -30,15 +16,6 @@ pub fn generate_router(config: &Config) -> Router<App> {
         .route(
             "/pastes/{paste_id}/documents/{document_id}",
             get(get_document),
-        )
-        .route("/pastes/{paste_id}/documents", post(post_document))
-        .route(
-            "/pastes/{paste_id}/documents/{document_id}",
-            patch(patch_document),
-        )
-        .route(
-            "/pastes/{paste_id}/documents/{document_id}",
-            delete(delete_document),
         )
         .layer(DefaultBodyLimit::max(
             config.size_limits().maximum_total_document_size(),
@@ -58,245 +35,32 @@ pub fn generate_router(config: &Config) -> Router<App> {
 ///
 /// - `404` - The paste or document was not found.
 /// - `200` - The [`ResponseDocument`] object.
-async fn get_document(
+pub async fn get_document(
     State(app): State<App>,
     Path(path): Path<GetDocumentPath>,
-) -> Result<Response, AppError> {
+) -> Result<(StatusCode, Json<Document>), RESTError> {
     let document = Document::fetch(app.database().pool(), path.document_id())
         .await?
-        .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
+        .ok_or_else(|| RESTError::NotFound("Document not found.".to_string()))?;
 
     if document.paste_id() != path.paste_id() {
-        return Err(AppError::BadRequest(
+        return Err(RESTError::BadRequest(
             "The document ID does not belong to that paste.".to_string(),
         ));
     }
 
     Paste::add_view(app.database().pool(), path.paste_id()).await?;
 
-    Ok((StatusCode::OK, Json(document)).into_response())
-}
-
-/// Post Document.
-///
-/// Adds a document to an existing paste.
-///
-/// ## Body
-///
-/// The body of the document, will be the content of the document.
-///
-/// ## Returns
-///
-/// - `401` - Invalid token and/or paste ID.
-/// - `400` - The body and/or documents are invalid.
-/// - `200` - The [`ResponseDocument`].
-/// - `204` - If content is set to false.
-async fn post_document(
-    State(app): State<App>,
-    Path(path): Path<PostDocumentPath>,
-    TypedHeader(content_disposition): TypedHeader<ContentDisposition>,
-    content_type: Option<TypedHeader<ContentType>>,
-    token: Token,
-    body: Bytes,
-) -> Result<Response, AppError> {
-    let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
-
-    let document_type = {
-        if let Some(TypedHeader(content_type)) = content_type {
-            if contains_mime(UNSUPPORTED_MIMES, &content_type.to_string()) {
-                return Err(AppError::BadRequest(format!(
-                    "Invalid mime type received: {content_type}"
-                )));
-            }
-
-            content_type.to_string()
-        } else {
-            return Err(AppError::BadRequest(
-                "The document must have a type.".to_string(),
-            ));
-        }
-    };
-
-    let name = content_disposition.filename().ok_or_else(|| {
-        AppError::BadRequest("The document provided requires a name.".to_string())
-    })?;
-
-    let document = Document::new(
-        Snowflake::generate()?,
-        *paste.id(),
-        &document_type,
-        name,
-        body.len(),
-    );
-
-    let content = String::from_utf8(body.to_vec())?;
-
-    document_limits(app.config(), name, &content)?;
-
-    let mut transaction = app.database().pool().begin().await?;
-
-    paste.set_edited()?;
-
-    paste.update(transaction.as_mut()).await?;
-
-    document.insert(transaction.as_mut()).await?;
-
-    total_document_limits(&mut transaction, app.config(), path.paste_id()).await?;
-
-    app.s3()
-        .create_document(
-            document.paste_id(),
-            document.id(),
-            document.name(),
-            content,
-            &document_type,
-        )
-        .await?;
-
-    transaction.commit().await?;
-
-    Ok((StatusCode::OK, Json(document)).into_response())
-}
-
-/// Patch Document.
-///
-/// Adds a document to an existing paste.
-///
-/// ## Path
-///
-/// - `paste_id` - The paste ID of the document.
-/// - `document_id` - The document ID to edit.
-///
-/// ## Body
-///
-/// The body of the document, will be the content of the document.
-///
-/// ## Returns
-///
-/// - `401` - Invalid token and/or paste ID.
-/// - `400` - The body and/or documents are invalid.
-/// - `200` - The [`ResponseDocument`].
-/// - `204` - If content is set to false.
-async fn patch_document(
-    State(app): State<App>,
-    Path(path): Path<PatchDocumentPath>,
-    TypedHeader(content_disposition): TypedHeader<ContentDisposition>,
-    content_type: Option<TypedHeader<ContentType>>,
-    token: Token,
-    body: Bytes,
-) -> Result<Response, AppError> {
-    let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
-
-    let document_type = {
-        if let Some(TypedHeader(content_type)) = content_type {
-            if contains_mime(UNSUPPORTED_MIMES, &content_type.to_string()) {
-                return Err(AppError::BadRequest(format!(
-                    "Invalid mime type received: {content_type}"
-                )));
-            }
-
-            content_type.to_string()
-        } else {
-            return Err(AppError::BadRequest(
-                "The document must have a type.".to_string(),
-            ));
-        }
-    };
-
-    let mut document = Document::fetch(app.database().pool(), path.document_id())
-        .await?
-        .ok_or_else(|| AppError::NotFound("Document not found.".to_string()))?;
-
-    let mut transaction = app.database().pool().begin().await?;
-
-    paste.set_edited()?;
-
-    paste.update(transaction.as_mut()).await?;
-
-    document.set_doc_type(&document_type);
-
-    document.set_size(body.len());
-
-    if let Some(filename) = content_disposition.filename() {
-        document.set_name(filename);
-    }
-
-    let content = String::from_utf8(body.to_vec())?;
-
-    document_limits(app.config(), document.name(), &content)?;
-
-    document.update(transaction.as_mut()).await?;
-
-    total_document_limits(&mut transaction, app.config(), path.paste_id()).await?;
-
-    app.s3()
-        .delete_document(document.paste_id(), document.id(), document.name())
-        .await?;
-
-    app.s3()
-        .create_document(
-            document.paste_id(),
-            document.id(),
-            document.name(),
-            content,
-            &document_type,
-        )
-        .await?;
-
-    transaction.commit().await?;
-
-    Ok((StatusCode::OK, Json(document)).into_response())
-}
-
-/// Patch Document.
-///
-/// Adds a document to an existing paste.
-///
-/// ## Path
-///
-/// - `paste_id` - The paste ID of the document.
-/// - `document_id` - The document ID to delete.
-///
-/// ## Returns
-///
-/// - `401` - Invalid token and/or paste ID.
-/// - `400` - A paste must have at least one document.
-/// - `204` - Successful deletion of the document.
-async fn delete_document(
-    State(app): State<App>,
-    Path(path): Path<DeleteDocumentPath>,
-    token: Token,
-) -> Result<Response, AppError> {
-    if token.paste_id() != path.paste_id() {
-        return Err(AppError::Authentication(AuthError::InvalidCredentials));
-    }
-
-    let total_document_count =
-        Document::fetch_total_document_count(app.database().pool(), path.paste_id()).await?;
-
-    if total_document_count <= 1 {
-        return Err(AppError::BadRequest(
-            "A paste must have at least one document".to_string(),
-        ));
-    }
-
-    if !Document::delete(app.database().pool(), path.document_id()).await? {
-        return Err(AppError::NotFound(
-            "The document was not found.".to_string(),
-        ));
-    }
-
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok((StatusCode::OK, Json(document)))
 }
 
 #[derive(Debug, Clone)]
-struct ContentDisposition {
+pub struct ContentDisposition {
     disposition: String,
     filename: Option<String>,
 }
 
 impl ContentDisposition {
-    #[expect(dead_code)]
     pub fn disposition(&self) -> &str {
         &self.disposition
     }
@@ -351,6 +115,140 @@ impl Header for ContentDisposition {
 
         if let Ok(header_value) = HeaderValue::from_str(&full) {
             values.extend(std::iter::once(header_value));
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use sqlx::PgPool;
+
+    use crate::app::config::Config;
+    use crate::rest::generate_router as main_generate_router;
+
+    use axum_test::TestServer;
+    use http::StatusCode;
+    use rstest::rstest;
+
+    use crate::{
+        app::{application::ApplicationState, object_store::TestObjectStore},
+        models::{
+            document::Document, errors::RESTErrorResponse, paste::Paste, snowflake::Snowflake,
+        },
+    };
+
+    mod v1 {
+        use super::*;
+
+        mod get_document {
+            use super::*;
+
+            #[sqlx::test(fixtures(path = "../../tests/fixtures", scripts("pastes", "documents")))]
+            async fn test_existing(pool: PgPool) {
+                let config = Config::test_builder()
+                    .build()
+                    .expect("Failed to build config.");
+                let object_store = TestObjectStore::new();
+                let state =
+                    ApplicationState::new_tests(config.clone(), pool.clone(), object_store.clone())
+                        .await
+                        .expect("Failed to build application state.");
+
+                let app = main_generate_router(state);
+                let server = TestServer::new(app).expect("Failed to build server.");
+
+                let paste_id = Snowflake::new(517815304354284605);
+                let document_id = Snowflake::new(517815304354284708);
+
+                let views = Paste::fetch(&pool, &paste_id)
+                    .await
+                    .expect("Failed to make DB request")
+                    .expect("Failed to find paste.")
+                    .views();
+
+                let response = server
+                    .get(&format!("/v1/pastes/{paste_id}/documents/{document_id}"))
+                    .await;
+
+                response.assert_status(StatusCode::OK);
+
+                response.assert_header("Content-Type", "application/json");
+
+                let body: Document = response.json();
+
+                let document = Document::fetch_with_paste(&pool, &paste_id, &document_id)
+                    .await
+                    .expect("Failed to make DB request")
+                    .expect("Document does not exist.");
+
+                assert_eq!(body.paste_id(), &paste_id, "Paste ID's do not match.");
+
+                assert_eq!(body.id(), &document_id, "Document ID's do not match.");
+
+                assert_eq!(
+                    body.name(),
+                    document.name(),
+                    "Document name's do not match."
+                );
+
+                assert_eq!(
+                    body.doc_type(),
+                    document.doc_type(),
+                    "Document name's do not match."
+                );
+
+                assert_eq!(
+                    body.size(),
+                    document.size(),
+                    "Document name's do not match."
+                );
+
+                let updated_views = Paste::fetch(&pool, &paste_id)
+                    .await
+                    .expect("Failed to make DB request")
+                    .expect("Failed to find paste.")
+                    .views();
+
+                assert_eq!(views + 1, updated_views, "Views was not updated.");
+            }
+
+            #[rstest]
+            #[case(Snowflake::new(517815304354284605), Some("Document not found."))]
+            #[case(Snowflake::new(1234567890), Some("Document not found."))]
+            #[sqlx::test(fixtures(path = "../../tests/fixtures", scripts("pastes", "documents")))]
+            async fn test_missing(
+                #[ignore] pool: PgPool,
+                #[case] paste_id: Snowflake,
+                #[case] trace: Option<&str>,
+            ) {
+                let config = Config::test_builder()
+                    .build()
+                    .expect("Failed to build config.");
+                let object_store = TestObjectStore::new();
+                let state =
+                    ApplicationState::new_tests(config.clone(), pool.clone(), object_store.clone())
+                        .await
+                        .expect("Failed to build application state.");
+
+                let document_id = Snowflake::new(1234567890);
+
+                let app = main_generate_router(state);
+                let server = TestServer::new(app).expect("Failed to build server.");
+
+                let response = server
+                    .get(&format!("/v1/pastes/{paste_id}/documents/{document_id}"))
+                    .await;
+
+                response.assert_status(StatusCode::NOT_FOUND);
+
+                response.assert_header("Content-Type", "application/json");
+
+                let body: RESTErrorResponse = response.json();
+
+                assert_eq!(body.reason(), "Not Found", "Reason does not match.");
+
+                assert_eq!(body.trace(), trace, "Trace does not match.");
+            }
         }
     }
 }

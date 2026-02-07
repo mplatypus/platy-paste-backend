@@ -57,7 +57,7 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
-        run: cargo test --verbose
+        run: cargo test --verbose --features testing
 
   sqlx:
     runs-on: ubuntu-latest

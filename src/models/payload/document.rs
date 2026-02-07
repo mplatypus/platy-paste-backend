@@ -1,6 +1,11 @@
 use serde::Deserialize;
 
-use crate::models::{payload::paste::PastePath, snowflake::Snowflake};
+use crate::models::{
+    errors::RESTError,
+    payload::paste::PastePath,
+    snowflake::{PartialSnowflake, Snowflake},
+    undefined::Undefined,
+};
 
 //------//
 // Path //
@@ -39,25 +44,64 @@ pub type DeleteDocumentPath = DocumentPath;
 //------//
 
 #[derive(Deserialize, Clone)]
-pub struct PasteDocumentBody {
+pub struct PostPasteDocumentBody {
     /// The ID of the document.
     ///
     /// This is **not** a snowflake.
     /// This is an integer, specifying which document it is referencing in the multipart form data.
-    id: usize,
+    id: PartialSnowflake,
     /// The name of the document.
     name: String,
 }
 
-impl PasteDocumentBody {
+impl PostPasteDocumentBody {
     #[inline]
-    pub const fn id(&self) -> usize {
-        self.id
+    pub const fn id(&self) -> &PartialSnowflake {
+        &self.id
     }
 
     #[inline]
     pub fn name(&self) -> &str {
         &self.name
+    }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct PatchPasteDocumentBody {
+    /// The ID of the document.
+    ///
+    /// This is **not** a snowflake.
+    /// This is an integer, specifying which document it is referencing in the multipart form data.
+    id: PartialSnowflake,
+    /// The name of the document.
+    #[serde(default)]
+    name: Undefined<String>,
+}
+
+impl PatchPasteDocumentBody {
+    #[inline]
+    pub const fn id(&self) -> &PartialSnowflake {
+        &self.id
+    }
+
+    #[inline]
+    pub fn name(&self) -> Undefined<&str> {
+        self.name.as_deref()
+    }
+}
+
+impl TryFrom<PatchPasteDocumentBody> for PostPasteDocumentBody {
+    type Error = RESTError;
+
+    fn try_from(value: PatchPasteDocumentBody) -> Result<Self, Self::Error> {
+        let Undefined::Some(name) = value.name else {
+            return Err(RESTError::BadRequest(format!(
+                "The new document {} requires the `name` parameter.",
+                value.id()
+            )));
+        };
+
+        Ok(PostPasteDocumentBody { id: value.id, name })
     }
 }
 

@@ -1,10 +1,10 @@
+#[cfg(test)]
 use derive_builder::Builder;
-use dotenvy::from_filename;
 use secrecy::SecretString;
 
-#[derive(Debug, Clone, Builder)]
-#[builder(default)]
-#[derive(Default)]
+#[cfg_attr(test, derive(Builder, Default))]
+#[cfg_attr(test, builder(default))]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// The host to run on.
     host: String,
@@ -12,65 +12,33 @@ pub struct Config {
     port: u16,
     /// The database URL.
     database_url: String,
-    /// The S3 Service URL.
-    s3_url: String,
-    /// The S3 Service Access Key.
-    s3_access_key: SecretString,
-    /// The S3 Service Secret Key.
-    s3_secret_key: SecretString,
-    /// The Minio User.
-    minio_root_user: String,
-    /// The Minio Password.
-    minio_root_password: SecretString,
     /// The domain to use for cors.
     domain: String,
+    /// Object store information.
+    object_store: ObjectStoreConfig,
     /// Size limits.
     size_limits: SizeLimitConfig,
 }
 
 impl Config {
-    pub fn builder() -> ConfigBuilder {
+    #[cfg(test)]
+    pub fn test_builder() -> ConfigBuilder {
         ConfigBuilder::default()
     }
 
     pub fn from_env() -> Self {
-        from_filename(".env").ok();
-        Self::builder()
-            .host(std::env::var("HOST").expect("HOST environment variable must be set."))
-            .port(
-                std::env::var("PORT")
-                    .expect("PORT environment variable must be set.")
-                    .parse()
-                    .expect("PORT requires an integer."),
-            )
-            .database_url(
-                std::env::var("DATABASE_URL")
-                    .expect("DATABASE_URL environment variable must be set."),
-            )
-            .s3_url(std::env::var("S3_URL").expect("S3_URL environment variable must be set."))
-            .s3_access_key(
-                std::env::var("S3_ACCESS_KEY")
-                    .expect("S3_ACCESS_KEY environment variable must be set.")
-                    .into(),
-            )
-            .s3_secret_key(
-                std::env::var("S3_SECRET_KEY")
-                    .expect("S3_SECRET_KEY environment variable must be set.")
-                    .into(),
-            )
-            .minio_root_user(
-                std::env::var("MINIO_ROOT_USER")
-                    .expect("MINIO_ROOT_USER environment variable must be set."),
-            )
-            .minio_root_password(
-                std::env::var("MINIO_ROOT_PASSWORD")
-                    .expect("MINIO_ROOT_PASSWORD environment variable must be set.")
-                    .into(),
-            )
-            .domain(std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."))
-            .size_limits(SizeLimitConfig::from_env(false))
-            .build()
-            .expect("Failed to create application configuration.")
+        Self {
+            host: std::env::var("HOST").expect("HOST environment variable must be set."),
+            port: std::env::var("PORT")
+                .expect("PORT environment variable must be set.")
+                .parse()
+                .expect("PORT requires an integer."),
+            database_url: std::env::var("DATABASE_URL")
+                .expect("DATABASE_URL environment variable must be set."),
+            domain: std::env::var("DOMAIN").expect("DOMAIN environment variable must be set."),
+            object_store: ObjectStoreConfig::from_env(),
+            size_limits: SizeLimitConfig::from_env(),
+        }
     }
 
     pub fn host(&self) -> &str {
@@ -85,28 +53,12 @@ impl Config {
         &self.database_url
     }
 
-    pub fn s3_url(&self) -> &str {
-        &self.s3_url
-    }
-
-    pub const fn s3_access_key(&self) -> &SecretString {
-        &self.s3_access_key
-    }
-
-    pub const fn s3_secret_key(&self) -> &SecretString {
-        &self.s3_secret_key
-    }
-
-    pub fn minio_root_user(&self) -> &str {
-        &self.minio_root_user
-    }
-
-    pub const fn minio_root_password(&self) -> &SecretString {
-        &self.minio_root_password
-    }
-
     pub fn domain(&self) -> &str {
         &self.domain
+    }
+
+    pub const fn object_store(&self) -> &ObjectStoreConfig {
+        &self.object_store
     }
 
     pub const fn size_limits(&self) -> &SizeLimitConfig {
@@ -114,8 +66,68 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone, Builder)]
-#[builder(default)]
+#[cfg_attr(test, derive(Default))]
+#[derive(Debug, Clone)]
+pub enum ObjectStoreConfig {
+    S3(S3ObjectStoreConfig),
+    #[cfg(test)]
+    #[cfg_attr(test, default)]
+    Test,
+}
+
+impl ObjectStoreConfig {
+    #[expect(clippy::too_many_lines)]
+    pub fn from_env() -> Self {
+        let obs_type =
+            std::env::var("OBS_TYPE").expect("OBS_TYPE environment variable must be set.");
+
+        match obs_type.as_str() {
+            "MINIO" => Self::S3(S3ObjectStoreConfig::from_env()),
+            unknown => panic!("The OBS_TYPE `{unknown}` is unknown."),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct S3ObjectStoreConfig {
+    /// The S3 Service URL.
+    url: String,
+    /// The S3 Service Access Key.
+    access_key: SecretString,
+    /// The S3 Service Secret Key.
+    secret_key: SecretString,
+}
+
+impl S3ObjectStoreConfig {
+    #[expect(clippy::too_many_lines)]
+    pub fn from_env() -> Self {
+        Self {
+            url: std::env::var("OBS_URL").expect("OBS_URL environment variable must be set."),
+            access_key: std::env::var("OBS_ACCESS_KEY")
+                .expect("OBS_ACCESS_KEY environment variable must be set.")
+                .into(),
+            secret_key: std::env::var("OBS_SECRET_KEY")
+                .expect("OBS_SECRET_KEY environment variable must be set.")
+                .into(),
+        }
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub const fn access_key(&self) -> &SecretString {
+        &self.access_key
+    }
+
+    pub const fn secret_key(&self) -> &SecretString {
+        &self.secret_key
+    }
+}
+
+#[cfg_attr(test, derive(Builder))]
+#[cfg_attr(test, builder(default))]
+#[derive(Debug, Clone)]
 pub struct SizeLimitConfig {
     /// The default expiry for pastes.
     default_expiry_hours: Option<usize>,
@@ -150,146 +162,131 @@ pub struct SizeLimitConfig {
 }
 
 impl SizeLimitConfig {
-    pub fn builder() -> SizeLimitConfigBuilder {
+    #[cfg(test)]
+    pub fn test_builder() -> SizeLimitConfigBuilder {
         SizeLimitConfigBuilder::default()
     }
 
     #[expect(clippy::too_many_lines)]
-    pub fn from_env(fetch_env: bool) -> Self {
-        if fetch_env {
-            from_filename(".env").ok();
-        }
-
+    pub fn from_env() -> Self {
         let defaults = Self::default();
 
-        let builder = Self::builder()
-            .default_expiry_hours(std::env::var("DEFAULT_EXPIRY_HOURS").ok().map_or(
-                defaults.default_expiry_hours,
-                |v| {
-                    Some(
-                        v.parse()
-                            .expect("DEFAULT_EXPIRY_HOURS requires an integer."),
-                    )
-                },
-            ))
-            .default_maximum_views(std::env::var("DEFAULT_MAXIMUM_VIEWS").ok().map_or(
-                defaults.default_maximum_views,
-                |v| {
-                    Some(
-                        v.parse()
-                            .expect("DEFAULT_MAXIMUM_VIEWS requires an integer."),
-                    )
-                },
-            ))
-            .default_paste_name(
-                std::env::var("DEFAULT_PASTE_NAME")
+        let value =
+            Self {
+                default_expiry_hours: std::env::var("DEFAULT_EXPIRY_HOURS").ok().map_or(
+                    defaults.default_expiry_hours,
+                    |v| {
+                        Some(
+                            v.parse()
+                                .expect("DEFAULT_EXPIRY_HOURS requires an integer."),
+                        )
+                    },
+                ),
+                default_maximum_views: std::env::var("DEFAULT_MAXIMUM_VIEWS").ok().map_or(
+                    defaults.default_maximum_views,
+                    |v| {
+                        Some(
+                            v.parse()
+                                .expect("DEFAULT_MAXIMUM_VIEWS requires an integer."),
+                        )
+                    },
+                ),
+                default_paste_name: std::env::var("DEFAULT_PASTE_NAME")
                     .ok()
                     .map_or(defaults.default_paste_name, |v| Some(v)),
-            )
-            .minimum_expiry_hours(std::env::var("MINIMUM_EXPIRY_HOURS").ok().map_or(
-                defaults.minimum_expiry_hours,
-                |v| {
-                    Some(
-                        v.parse()
-                            .expect("MINIMUM_EXPIRY_HOURS requires an integer."),
-                    )
-                },
-            ))
-            .minimum_total_document_count(
-                std::env::var("MINIMUM_TOTAL_DOCUMENT_COUNT").ok().map_or(
-                    defaults.minimum_total_document_count,
+                minimum_expiry_hours: std::env::var("MINIMUM_EXPIRY_HOURS").ok().map_or(
+                    defaults.minimum_expiry_hours,
                     |v| {
+                        Some(
+                            v.parse()
+                                .expect("MINIMUM_EXPIRY_HOURS requires an integer."),
+                        )
+                    },
+                ),
+                minimum_total_document_count: std::env::var("MINIMUM_TOTAL_DOCUMENT_COUNT")
+                    .ok()
+                    .map_or(defaults.minimum_total_document_count, |v| {
                         v.parse()
                             .expect("MINIMUM_TOTAL_DOCUMENT_COUNT requires an integer.")
-                    },
-                ),
-            )
-            .minimum_document_size(std::env::var("MINIMUM_DOCUMENT_SIZE").ok().map_or(
-                defaults.minimum_document_size,
-                |v| {
-                    v.parse()
-                        .expect("MINIMUM_DOCUMENT_SIZE requires an integer.")
-                },
-            ))
-            .minimum_total_document_size(std::env::var("MINIMUM_TOTAL_DOCUMENT_SIZE").ok().map_or(
-                defaults.minimum_total_document_size,
-                |v| {
-                    v.parse()
-                        .expect("MINIMUM_TOTAL_DOCUMENT_SIZE requires an integer.")
-                },
-            ))
-            .minimum_document_name_size(std::env::var("MINIMUM_DOCUMENT_NAME_SIZE").ok().map_or(
-                defaults.minimum_document_name_size,
-                |v| {
-                    v.parse()
-                        .expect("MINIMUM_DOCUMENT_NAME_SIZE requires an integer.")
-                },
-            ))
-            .minimum_paste_name_size(std::env::var("MINIMUM_PASTE_NAME_SIZE").ok().map_or(
-                defaults.minimum_paste_name_size,
-                |v| {
-                    v.parse()
-                        .expect("MINIMUM_PASTE_NAME_SIZE requires an integer.")
-                },
-            ))
-            .maximum_expiry_hours(std::env::var("MAXIMUM_EXPIRY_HOURS").ok().map_or(
-                defaults.maximum_expiry_hours,
-                |v| {
-                    Some(
-                        v.parse()
-                            .expect("MAXIMUM_EXPIRY_HOURS requires an integer."),
-                    )
-                },
-            ))
-            .maximum_total_document_count(
-                std::env::var("MAXIMUM_TOTAL_DOCUMENT_COUNT").ok().map_or(
-                    defaults.maximum_total_document_count,
+                    }),
+                minimum_document_size: std::env::var("MINIMUM_DOCUMENT_SIZE").ok().map_or(
+                    defaults.minimum_document_size,
                     |v| {
                         v.parse()
-                            .expect("MAXIMUM_TOTAL_DOCUMENT_COUNT requires an integer.")
+                            .expect("MINIMUM_DOCUMENT_SIZE requires an integer.")
                     },
                 ),
-            )
-            .maximum_document_size(std::env::var("MAXIMUM_DOCUMENT_SIZE").ok().map_or(
-                defaults.maximum_document_size,
-                |v| {
-                    v.parse()
-                        .expect("MAXIMUM_DOCUMENT_SIZE requires an integer.")
-                },
-            ))
-            .maximum_total_document_size(std::env::var("MAXIMUM_TOTAL_DOCUMENT_SIZE").ok().map_or(
-                defaults.maximum_total_document_size,
-                |v| {
-                    v.parse()
-                        .expect("MAXIMUM_TOTAL_DOCUMENT_SIZE requires an integer.")
-                },
-            ))
-            .maximum_document_name_size(std::env::var("MAXIMUM_DOCUMENT_NAME_SIZE").ok().map_or(
-                defaults.maximum_document_name_size,
-                |v| {
-                    v.parse()
-                        .expect("MAXIMUM_DOCUMENT_NAME_SIZE requires an integer.")
-                },
-            ))
-            .maximum_paste_name_size(std::env::var("MAXIMUM_PASTE_NAME_SIZE").ok().map_or(
-                defaults.maximum_paste_name_size,
-                |v| {
-                    v.parse()
-                        .expect("MAXIMUM_PASTE_NAME_SIZE requires an integer.")
-                },
-            ))
-            .build()
-            .expect("Failed to create application size limit configuration.");
+                minimum_total_document_size: std::env::var("MINIMUM_TOTAL_DOCUMENT_SIZE")
+                    .ok()
+                    .map_or(defaults.minimum_total_document_size, |v| {
+                        v.parse()
+                            .expect("MINIMUM_TOTAL_DOCUMENT_SIZE requires an integer.")
+                    }),
+                minimum_document_name_size: std::env::var("MINIMUM_DOCUMENT_NAME_SIZE")
+                    .ok()
+                    .map_or(defaults.minimum_document_name_size, |v| {
+                        v.parse()
+                            .expect("MINIMUM_DOCUMENT_NAME_SIZE requires an integer.")
+                    }),
+                minimum_paste_name_size: std::env::var("MINIMUM_PASTE_NAME_SIZE").ok().map_or(
+                    defaults.minimum_paste_name_size,
+                    |v| {
+                        v.parse()
+                            .expect("MINIMUM_PASTE_NAME_SIZE requires an integer.")
+                    },
+                ),
+                maximum_expiry_hours: std::env::var("MAXIMUM_EXPIRY_HOURS").ok().map_or(
+                    defaults.maximum_expiry_hours,
+                    |v| {
+                        Some(
+                            v.parse()
+                                .expect("MAXIMUM_EXPIRY_HOURS requires an integer."),
+                        )
+                    },
+                ),
+                maximum_total_document_count: std::env::var("MAXIMUM_TOTAL_DOCUMENT_COUNT")
+                    .ok()
+                    .map_or(defaults.maximum_total_document_count, |v| {
+                        v.parse()
+                            .expect("MAXIMUM_TOTAL_DOCUMENT_COUNT requires an integer.")
+                    }),
+                maximum_document_size: std::env::var("MAXIMUM_DOCUMENT_SIZE").ok().map_or(
+                    defaults.maximum_document_size,
+                    |v| {
+                        v.parse()
+                            .expect("MAXIMUM_DOCUMENT_SIZE requires an integer.")
+                    },
+                ),
+                maximum_total_document_size: std::env::var("MAXIMUM_TOTAL_DOCUMENT_SIZE")
+                    .ok()
+                    .map_or(defaults.maximum_total_document_size, |v| {
+                        v.parse()
+                            .expect("MAXIMUM_TOTAL_DOCUMENT_SIZE requires an integer.")
+                    }),
+                maximum_document_name_size: std::env::var("MAXIMUM_DOCUMENT_NAME_SIZE")
+                    .ok()
+                    .map_or(defaults.maximum_document_name_size, |v| {
+                        v.parse()
+                            .expect("MAXIMUM_DOCUMENT_NAME_SIZE requires an integer.")
+                    }),
+                maximum_paste_name_size: std::env::var("MAXIMUM_PASTE_NAME_SIZE").ok().map_or(
+                    defaults.maximum_paste_name_size,
+                    |v| {
+                        v.parse()
+                            .expect("MAXIMUM_PASTE_NAME_SIZE requires an integer.")
+                    },
+                ),
+            };
 
-        if let Some(default_expiry_hours) = builder.default_expiry_hours {
-            if let Some(minimum_expiry_hours) = builder.minimum_expiry_hours {
+        if let Some(default_expiry_hours) = value.default_expiry_hours {
+            if let Some(minimum_expiry_hours) = value.minimum_expiry_hours {
                 assert!(
                     default_expiry_hours >= minimum_expiry_hours,
                     "The DEFAULT_EXPIRY_HOURS must be equal to or less than MAXIMUM_EXPIRY_HOURS"
                 );
             }
 
-            if let Some(maximum_expiry_hours) = builder.maximum_expiry_hours {
+            if let Some(maximum_expiry_hours) = value.maximum_expiry_hours {
                 assert!(
                     default_expiry_hours >= maximum_expiry_hours,
                     "The DEFAULT_EXPIRY_HOURS must be equal to or less than MAXIMUM_EXPIRY_HOURS"
@@ -298,7 +295,7 @@ impl SizeLimitConfig {
         }
 
         if let (Some(minimum_expiry_hours), Some(maximum_expiry_hours)) =
-            (builder.minimum_expiry_hours, builder.maximum_expiry_hours)
+            (value.minimum_expiry_hours, value.maximum_expiry_hours)
         {
             assert!(
                 minimum_expiry_hours >= maximum_expiry_hours,
@@ -307,73 +304,68 @@ impl SizeLimitConfig {
         }
 
         assert!(
-            builder.minimum_paste_name_size < builder.maximum_paste_name_size,
+            value.minimum_paste_name_size < value.maximum_paste_name_size,
             "The MINIMUM_PASTE_NAME_SIZE must be equal to or less than MAXIMUM_PASTE_NAME_SIZE"
         );
 
         assert!(
-            builder.minimum_paste_name_size > 0,
+            value.minimum_paste_name_size > 0,
             "The MINIMUM_PASTE_NAME_SIZE must be greater than 0."
         );
 
-        if let Some(default_paste_name) = &builder.default_paste_name {
+        if let Some(default_paste_name) = &value.default_paste_name {
             assert!(
-                default_paste_name.len() > builder.minimum_paste_name_size,
+                default_paste_name.len() > value.minimum_paste_name_size,
                 "The DEFAULT_PASTE_NAME must be equal to or greater than the MINIMUM_PASTE_NAME_SIZE"
             );
 
             assert!(
-                default_paste_name.len() < builder.maximum_paste_name_size,
+                default_paste_name.len() < value.maximum_paste_name_size,
                 "The DEFAULT_PASTE_NAME must be equal to or less than the MAXIMUM_PASTE_NAME_SIZE"
             );
         }
 
         assert!(
-            builder.minimum_total_document_count > 0,
+            value.minimum_total_document_count > 0,
             "The MINIMUM_TOTAL_DOCUMENT_COUNT must be greater than 0."
         );
 
         assert!(
-            builder.minimum_total_document_count < builder.maximum_total_document_count,
+            value.minimum_total_document_count < value.maximum_total_document_count,
             "The MINIMUM_TOTAL_DOCUMENT_COUNT must be equal to or less than MAXIMUM_TOTAL_DOCUMENT_COUNT"
         );
 
         assert!(
-            builder.minimum_document_size > 0,
+            value.minimum_document_size > 0,
             "The MINIMUM_DOCUMENT_SIZE must be greater than 0."
         );
 
         assert!(
-            builder.minimum_document_size < builder.maximum_document_size,
+            value.minimum_document_size < value.maximum_document_size,
             "The MINIMUM_DOCUMENT_SIZE must be equal to or less than MAXIMUM_DOCUMENT_SIZE"
         );
 
         assert!(
-            builder.minimum_total_document_size > 0,
+            value.minimum_total_document_size > 0,
             "The MINIMUM_TOTAL_DOCUMENT_SIZE must be greater than 0."
         );
 
         assert!(
-            builder.minimum_total_document_size < builder.maximum_total_document_size,
+            value.minimum_total_document_size < value.maximum_total_document_size,
             "The MINIMUM_TOTAL_DOCUMENT_SIZE must be equal to or less than MAXIMUM_TOTAL_DOCUMENT_SIZE"
         );
 
         assert!(
-            builder.minimum_document_name_size > 0,
+            value.minimum_document_name_size > 0,
             "The MINIMUM_DOCUMENT_NAME_SIZE must be greater than 0."
         );
 
         assert!(
-            builder.minimum_document_name_size < builder.maximum_document_name_size,
+            value.minimum_document_name_size < value.maximum_document_name_size,
             "The MINIMUM_DOCUMENT_NAME_SIZE must be equal to or less than MAXIMUM_DOCUMENT_NAME_SIZE"
         );
 
-        assert!(
-            builder.minimum_document_name_size > 0,
-            "The MINIMUM_DOCUMENT_NAME_SIZE must be greater than 0."
-        );
-
-        builder
+        value
     }
 
     pub const fn default_expiry_hours(&self) -> Option<usize> {

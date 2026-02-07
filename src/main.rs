@@ -2,19 +2,14 @@ pub mod app;
 pub mod models;
 pub mod rest;
 
-use axum::{
-    Router,
-    http::HeaderValue,
-    response::{IntoResponse, Response},
-};
 use chrono::Local;
-use http::{Method, header};
-use models::{error::AppError, paste::expiry_tasks};
-use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use models::paste::expiry_tasks;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt::time::FormatTime, layer::SubscriberExt};
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::net::SocketAddr;
+
+use crate::rest::generate_router;
 
 #[tokio::main]
 async fn main() {
@@ -58,42 +53,16 @@ async fn main() {
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
-    let state: Arc<app::application::ApplicationState> =
-        match app::application::ApplicationState::new().await {
-            Ok(s) => s,
-            Err(err) => panic!("Failed to build state: {err}"),
-        };
+    let state: app::application::App = match app::application::ApplicationState::new().await {
+        Ok(s) => s,
+        Err(err) => panic!("Failed to build state: {err}"),
+    };
 
     let expiry_state = state.clone();
 
     let config = state.config().clone();
 
-    let cors = CorsLayer::new()
-        .allow_origin(
-            config
-                .domain()
-                .parse::<HeaderValue>()
-                .expect("Failed to parse CORS domain."),
-        )
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PATCH,
-            Method::PUT,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
-        .allow_headers([header::ACCEPT, header::CONTENT_TYPE, header::AUTHORIZATION]);
-
-    let app = Router::new()
-        .nest("/v1", rest::paste::generate_router(&config))
-        .nest("/v1", rest::document::generate_router(&config))
-        .nest("/v1", rest::config::generate_router(&config))
-        .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(Duration::from_secs(10)))
-        .layer(cors)
-        .fallback(fallback)
-        .with_state(state);
+    let app = generate_router(state);
 
     let host = config.host();
     let port = config.port();
@@ -130,8 +99,4 @@ async fn main() {
             tracing::info!("Successfully shutdown expiry task and server.");
         },
     }
-}
-
-async fn fallback() -> Response {
-    AppError::NotFound("This endpoint does not exist.".to_string()).into_response()
 }

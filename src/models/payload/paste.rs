@@ -18,10 +18,10 @@ use crate::{
         DtUtc,
         authentication::Token,
         document::{Document, UNSUPPORTED_MIMES, contains_mime, document_limits},
-        error::AppError,
+        errors::RESTError,
         paste::Paste,
-        payload::document::PasteDocumentBody,
-        snowflake::Snowflake,
+        payload::document::{PatchPasteDocumentBody, PostPasteDocumentBody},
+        snowflake::{PartialSnowflake, Snowflake},
         undefined::{Undefined, UndefinedOption},
     },
 };
@@ -61,15 +61,15 @@ pub struct PostPasteBodyInner {
     #[serde(default)]
     max_views: UndefinedOption<usize>,
     /// The documents attached to the paste.
-    documents: Vec<PasteDocumentBody>,
+    documents: Vec<PostPasteDocumentBody>,
 }
 
 impl PostPasteBodyInner {
-    pub fn documents(&self) -> &[PasteDocumentBody] {
+    pub fn documents(&self) -> &[PostPasteDocumentBody] {
         &self.documents
     }
 
-    pub fn into_parts(self) -> (PostPasteBody, Vec<PasteDocumentBody>) {
+    pub fn into_parts(self) -> (PostPasteBody, Vec<PostPasteDocumentBody>) {
         let body = PostPasteBody {
             name: self.name,
             expiry: self.expiry,
@@ -119,7 +119,7 @@ pub struct PatchPasteBody {
     max_views: UndefinedOption<usize>,
     /// The documents attached to the paste.
     #[serde(default)]
-    documents: Undefined<Vec<PasteDocumentBody>>,
+    documents: Undefined<Vec<PatchPasteDocumentBody>>,
 }
 
 impl PatchPasteBody {
@@ -139,7 +139,7 @@ impl PatchPasteBody {
     }
 
     #[inline]
-    pub fn documents(&self) -> Undefined<&[PasteDocumentBody]> {
+    pub fn documents(&self) -> Undefined<&[PatchPasteDocumentBody]> {
         self.documents.as_deref()
     }
 }
@@ -148,6 +148,7 @@ impl PatchPasteBody {
 // Response //
 //----------//
 
+#[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponsePaste {
     /// The ID for the paste.
@@ -233,17 +234,56 @@ impl ResponsePaste {
     }
 }
 
+#[cfg(test)]
+impl ResponsePaste {
+    pub fn id(&self) -> Snowflake {
+        self.id
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
+
+    pub fn creation(&self) -> &DtUtc {
+        &self.creation
+    }
+
+    pub fn edited(&self) -> Option<&DtUtc> {
+        self.edited.as_ref()
+    }
+
+    pub fn expiry(&self) -> Option<&DtUtc> {
+        self.expiry.as_ref()
+    }
+
+    pub fn views(&self) -> usize {
+        self.views
+    }
+
+    pub fn max_views(&self) -> Option<usize> {
+        self.max_views
+    }
+
+    pub fn documents(&self) -> &Vec<Document> {
+        &self.documents
+    }
+}
+
 //------------//
 // Extractors //
 //------------//
 
 pub struct PostPasteMultipartBody {
     pub payload: PostPasteBody,
-    pub documents: Vec<(PasteDocumentBody, String, Mime)>,
+    pub documents: Vec<(PostPasteDocumentBody, String, Mime)>,
 }
 
 impl FromRequest<App> for PostPasteMultipartBody {
-    type Rejection = AppError;
+    type Rejection = RESTError;
 
     async fn from_request(
         req: axum::extract::Request,
@@ -252,7 +292,7 @@ impl FromRequest<App> for PostPasteMultipartBody {
         let name_regex = Regex::new(r"^files\[(?P<id>[0-9]+)\]$")?;
 
         let Some(content_type) = req.headers().get(CONTENT_TYPE) else {
-            return Err(AppError::BadRequest(
+            return Err(RESTError::BadRequest(
                 "The content type header is expected.".to_string(),
             ));
         };
@@ -260,7 +300,7 @@ impl FromRequest<App> for PostPasteMultipartBody {
         let mime: mime::Mime = content_type.to_str()?.parse()?;
 
         if mime.type_() != mime::MULTIPART || mime.subtype() != mime::FORM_DATA {
-            return Err(AppError::BadRequest(format!(
+            return Err(RESTError::BadRequest(format!(
                 "Expected {} as content type.",
                 mime::MULTIPART_FORM_DATA
             )));
@@ -273,13 +313,13 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
         while let Some(field) = multipart.next_field().await? {
             let Some(name) = field.name() else {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "All multipart fields require a name.".to_string(),
                 ));
             };
 
             let Some(content_type) = field.content_type() else {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "All multipart fields require a content type.".to_string(),
                 ));
             };
@@ -288,20 +328,21 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
             if name == "payload" {
                 if content_type != mime::APPLICATION_JSON {
-                    return Err(AppError::BadRequest(
-                        "Payload must be of the content type application/json".to_string(),
+                    return Err(RESTError::BadRequest(
+                        "Payload must have a content type of application/json".to_string(),
                     ));
                 }
 
                 let data = field.bytes().await?;
                 let json: PostPasteBodyInner = serde_json::from_slice(&data.to_vec())?;
 
-                let document_ids: Vec<usize> = json.documents().iter().map(|v| v.id()).collect();
+                let document_ids: Vec<PartialSnowflake> =
+                    json.documents().iter().map(|v| *v.id()).collect();
 
-                let document_ids_set: HashSet<usize> =
+                let document_ids_set: HashSet<PartialSnowflake> =
                     HashSet::from_iter(document_ids.clone().into_iter());
                 if document_ids.len() != document_ids_set.len() {
-                    return Err(AppError::BadRequest(
+                    return Err(RESTError::BadRequest(
                         "One or more documents provided has the same ID".to_string(),
                     ));
                 }
@@ -312,15 +353,16 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
             if let Some(captures) = name_regex.captures(name) {
                 if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                    return Err(AppError::BadRequest(format!(
-                        "Invalid mime type received for a document: {content_type}"
+                    return Err(RESTError::BadRequest(format!(
+                        "Invalid mime type: {content_type} received for the document: {}",
+                        &captures["id"]
                     )));
                 }
 
-                let id: usize = (&captures["id"]).parse()?;
+                let id: PartialSnowflake = (&captures["id"]).try_into()?;
 
                 if document_contents.contains_key(&id) {
-                    return Err(AppError::BadRequest(
+                    return Err(RESTError::BadRequest(
                         "A duplicate ID was found in the form data".to_string(),
                     ));
                 }
@@ -332,13 +374,13 @@ impl FromRequest<App> for PostPasteMultipartBody {
                 continue;
             }
 
-            return Err(AppError::BadRequest(format!(
+            return Err(RESTError::BadRequest(format!(
                 "An unknown multipart item was received: {name}"
             )));
         }
 
         let Some(payload) = payload else {
-            return Err(AppError::BadRequest(
+            return Err(RESTError::BadRequest(
                 "Payload was not found in the form data".to_string(),
             ));
         };
@@ -347,18 +389,25 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
         let mut documents = Vec::new();
         for document in body_documents {
-            let Some((content, mime)) = document_contents.remove(&document.id()) else {
-                return Err(AppError::BadRequest(format!(
+            let Some((content, mime)) = document_contents.remove(document.id()) else {
+                return Err(RESTError::BadRequest(format!(
                     "A document with the ID of {} was not found",
                     document.id()
                 )));
             };
 
+            document_limits(
+                state.config(),
+                document.id(),
+                Undefined::Some(document.name()),
+                Undefined::Some(&content),
+            )?;
+
             documents.push((document, content, mime));
         }
 
         if document_contents.len() > 0 {
-            return Err(AppError::BadRequest(
+            return Err(RESTError::BadRequest(
                 "More files were provided, than listed inside the payload".to_string(),
             ));
         }
@@ -369,20 +418,22 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
 pub struct PatchPasteMultipartBody {
     pub payload: PatchPasteBody,
-    pub documents: Undefined<Vec<(PasteDocumentBody, String, Mime)>>,
+    pub documents: Undefined<Vec<(PatchPasteDocumentBody, String, Mime)>>,
 }
 
 impl PatchPasteMultipartBody {
-    pub async fn from_json(req: axum::extract::Request, state: &App) -> Result<Self, AppError> {
+    pub async fn from_json(req: axum::extract::Request, state: &App) -> Result<Self, RESTError> {
         let bytes = Bytes::from_request(req, state).await?;
-        let json: PatchPasteBody = serde_json::from_slice(&bytes.to_vec())?;
-        if let Undefined::Some(documents) = json.documents() {
-            let document_ids: Vec<usize> = documents.iter().map(|v| v.id()).collect();
 
-            let document_ids_set: HashSet<usize> =
+        let json: PatchPasteBody = serde_json::from_slice(&bytes.to_vec())?;
+
+        if let Undefined::Some(documents) = json.documents() {
+            let document_ids: Vec<PartialSnowflake> = documents.iter().map(|v| *v.id()).collect();
+
+            let document_ids_set: HashSet<PartialSnowflake> =
                 HashSet::from_iter(document_ids.clone().into_iter());
             if document_ids.len() != document_ids_set.len() {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "One or more documents provided has the same ID".to_string(),
                 ));
             }
@@ -397,23 +448,23 @@ impl PatchPasteMultipartBody {
     pub async fn from_multipart(
         req: axum::extract::Request,
         state: &App,
-    ) -> Result<Self, AppError> {
+    ) -> Result<Self, RESTError> {
         let name_regex = Regex::new(r"^files\[(?P<id>[0-9]+)\]$")?;
 
         let mut multipart = Multipart::from_request(req, state).await?;
 
         let mut payload = None;
-        let mut document_contents: Option<HashMap<usize, (String, Mime)>> = None;
+        let mut document_contents: Option<HashMap<PartialSnowflake, (String, Mime)>> = None;
 
         while let Some(field) = multipart.next_field().await? {
             let Some(name) = field.name() else {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "All multipart fields require a name.".to_string(),
                 ));
             };
 
             let Some(content_type) = field.content_type() else {
-                return Err(AppError::BadRequest(
+                return Err(RESTError::BadRequest(
                     "All multipart fields require a content type.".to_string(),
                 ));
             };
@@ -422,8 +473,8 @@ impl PatchPasteMultipartBody {
 
             if name == "payload" {
                 if content_type != mime::APPLICATION_JSON {
-                    return Err(AppError::BadRequest(
-                        "Payload must be of the content type application/json".to_string(),
+                    return Err(RESTError::BadRequest(
+                        "Payload must have a content type of application/json".to_string(),
                     ));
                 }
 
@@ -431,12 +482,13 @@ impl PatchPasteMultipartBody {
                 let json: PatchPasteBody = serde_json::from_slice(&data.to_vec())?;
 
                 if let Undefined::Some(documents) = json.documents() {
-                    let document_ids: Vec<usize> = documents.iter().map(|v| v.id()).collect();
+                    let document_ids: Vec<PartialSnowflake> =
+                        documents.iter().map(|v| *v.id()).collect();
 
-                    let document_ids_set: HashSet<usize> =
+                    let document_ids_set: HashSet<PartialSnowflake> =
                         HashSet::from_iter(document_ids.clone().into_iter());
                     if document_ids.len() != document_ids_set.len() {
-                        return Err(AppError::BadRequest(
+                        return Err(RESTError::BadRequest(
                             "One or more documents provided has the same ID".to_string(),
                         ));
                     }
@@ -448,16 +500,16 @@ impl PatchPasteMultipartBody {
 
             if let Some(captures) = name_regex.captures(name) {
                 if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                    return Err(AppError::BadRequest(format!(
+                    return Err(RESTError::BadRequest(format!(
                         "Invalid mime type received for a document: {content_type}"
                     )));
                 }
 
-                let id: usize = (&captures["id"]).parse()?;
+                let id: PartialSnowflake = (&captures["id"]).try_into()?;
 
                 if let Some(document_contents) = &document_contents {
                     if document_contents.contains_key(&id) {
-                        return Err(AppError::BadRequest(
+                        return Err(RESTError::BadRequest(
                             "A duplicate ID was found in the form data".to_string(),
                         ));
                     }
@@ -472,13 +524,13 @@ impl PatchPasteMultipartBody {
                 continue;
             }
 
-            return Err(AppError::BadRequest(format!(
+            return Err(RESTError::BadRequest(format!(
                 "An unknown multipart item was received: {name}"
             )));
         }
 
         let Some(payload) = payload else {
-            return Err(AppError::BadRequest(
+            return Err(RESTError::BadRequest(
                 "Payload was not found in the form data".to_string(),
             ));
         };
@@ -488,26 +540,33 @@ impl PatchPasteMultipartBody {
                 documents: Undefined::Some(body_documents),
                 ..
             } => {
-                let mut docs_map: HashMap<usize, PasteDocumentBody> =
-                    body_documents.into_iter().map(|d| (d.id(), d)).collect();
+                let mut docs_map: HashMap<PartialSnowflake, PatchPasteDocumentBody> =
+                    body_documents.into_iter().map(|d| (*d.id(), d)).collect();
 
                 let mut documents_inner = Vec::new();
 
                 if let Some(document_contents) = document_contents {
                     for (id, (content, mime)) in document_contents {
                         let Some(body) = docs_map.remove(&id) else {
-                            return Err(AppError::BadRequest(format!(
+                            return Err(RESTError::BadRequest(format!(
                                 "A document with the ID of {} was not found",
                                 id
                             )));
                         };
 
-                        document_limits(state.config(), body.name(), &content)?;
+                        document_limits(
+                            state.config(),
+                            &id,
+                            body.name(),
+                            Undefined::Some(&content),
+                        )?;
+
                         documents_inner.push((body, content, mime));
                     }
                 }
 
-                let remaining_documents: Vec<PasteDocumentBody> = docs_map.into_values().collect();
+                let remaining_documents: Vec<PatchPasteDocumentBody> =
+                    docs_map.into_values().collect();
 
                 let new_payload = PatchPasteBody {
                     documents: if remaining_documents.is_empty() {
@@ -532,14 +591,14 @@ impl PatchPasteMultipartBody {
 }
 
 impl FromRequest<App> for PatchPasteMultipartBody {
-    type Rejection = AppError;
+    type Rejection = RESTError;
 
     async fn from_request(
         req: axum::extract::Request,
         state: &App,
     ) -> Result<Self, Self::Rejection> {
         let Some(content_type) = req.headers().get(CONTENT_TYPE) else {
-            return Err(AppError::BadRequest(
+            return Err(RESTError::BadRequest(
                 "The content type header is expected.".to_string(),
             ));
         };
@@ -551,7 +610,7 @@ impl FromRequest<App> for PatchPasteMultipartBody {
         } else if mime.type_() == mime::MULTIPART && mime.subtype() == mime::FORM_DATA {
             Self::from_multipart(req, state).await
         } else {
-            return Err(AppError::BadRequest(format!(
+            return Err(RESTError::BadRequest(format!(
                 "Expected {} or {} as content type.",
                 mime::APPLICATION_JSON,
                 mime::MULTIPART_FORM_DATA

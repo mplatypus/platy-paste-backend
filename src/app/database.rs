@@ -2,6 +2,8 @@ use std::sync::{Arc, Weak};
 
 use sqlx::{migrate, postgres::PgPool};
 
+use crate::models::errors::DatabaseError;
+
 use super::application::ApplicationState;
 
 #[derive(Clone, Debug)]
@@ -80,7 +82,7 @@ impl Database {
     /// ## Errors
     ///
     /// - [`sqlx::Error`] - If the database connection fails.
-    pub async fn connect(&mut self, url: &str) -> Result<(), sqlx::Error> {
+    pub async fn connect(&mut self, url: &str) -> Result<(), DatabaseError> {
         self.pool = Some(PgPool::connect(url).await?);
         migrate!("./migrations").run(self.pool()).await?;
         Ok(())

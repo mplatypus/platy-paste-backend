@@ -28,6 +28,10 @@ future_not_send = "allow"
 # Doesn't play nicely with tokio::select!
 redundant_pub_crate = "allow"
 
+[features]
+testing-database = []
+testing-object-store = []
+
 [dependencies]
 # Async
 tokio = { version = "1", features = ["full"] }
@@ -57,7 +61,6 @@ bytes = "1.10"
 thiserror = "2.0"
 dotenvy = "0.15"
 color-eyre = "0.6"
-derive_builder = "0.20"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 getrandom = "0.3"
@@ -67,3 +70,7 @@ mime = "0.3"
 
 [dev-dependencies]
 rstest = "0.26"
+derive_builder = "0.20"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+axum-test = "18.7"

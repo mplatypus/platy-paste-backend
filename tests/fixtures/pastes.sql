@@ -34,3 +34,12 @@ INSERT INTO pastes VALUES (
     4387,
     null
 );
+INSERT INTO pastes VALUES (
+    517815304354284605,
+    'Test 5',
+    '1970-01-10 00:00:00.0+00',
+    '1970-01-20 00:00:00.0+00',
+    null,
+    2322,
+    20000
+);

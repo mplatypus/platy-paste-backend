@@ -48,3 +48,17 @@ INSERT INTO documents VALUES (
     'main.py',
     4569
 );
+INSERT INTO documents VALUES (
+    517815304354284708,
+    517815304354284605,
+    'plain/text',
+    'test.txt',
+    440
+);
+INSERT INTO documents VALUES (
+    517815304354284709,
+    517815304354284605,
+    'application/json',
+    'random.json',
+    40
+);

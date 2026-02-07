@@ -58,9 +58,7 @@ The `DATABASE_URL` should be set to the docker network name.
 
 The `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` are required by the end user.
 
-The `S3_ACCESS_KEY` and `S3_SECRET_KEY` will be explained how to get later.
-
-The `S3_URL is where the server is hosted by default. The host should be the docker network name.
+The `OBS_TYPE` will be explained later, and will designate which object storage to use.
 
 ### Step 3
 
@@ -78,9 +76,20 @@ docker compose up -d
 
 ### Step 4
 
+Based on which type of `OBS_TYPE` was selected, follow the speicifc guide below.
+
+<details>
+<summary>Minio</summary>
+
+### Minio
+---
+Using MINIO, you must set the `OBS_TYPE` to `MINIO` in the environment.
+
+#### Step 1
+
 Log into your minio instance. It will be located at the `http://your-host-here:9001/`, using the credentials `MINIO_ROOT_USER` as the username, and `MINIO_ROOT_PASSWORD` as the password.
 
-### Step 5
+#### Step 2
 
 under the `User` tab, select the `Access Keys` tab.
 
@@ -89,6 +98,11 @@ On that page, press the `Create access key +` button.
 Fill out any information like `expiry` (not recommended) and the `name`/`description`.
 
 Press the `Create` button, and use the created `Access Key` and enter it in your environment file, under the `S3_ACCESS_KEY` and the `Secret Key under the `S3_SECRET_KEY` variable.
+
+---
+</details>
+
+### Step 5
 
 Restart your docker containers by running the following command.
 
