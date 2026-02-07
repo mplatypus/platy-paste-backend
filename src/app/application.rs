@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 use sqlx::PgPool;
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 use crate::app::object_store::TestObjectStore;
 use crate::{
     app::object_store::{ObjectStore, ObjectStoreExt as _},
@@ -51,7 +51,7 @@ impl ApplicationState {
         }))
     }
 
-    #[cfg(any(test, feature = "testing"))]
+    #[cfg(test)]
     pub async fn new_tests(
         config: Config,
         pool: PgPool,

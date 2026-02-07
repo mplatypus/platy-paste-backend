@@ -460,11 +460,7 @@ pub async fn expiry_tasks(app: App) {
         };
 
         for document in documents {
-            match app
-                .object_store()
-                .delete_document(document.generate_path())
-                .await
-            {
+            match app.object_store().delete_document(&document).await {
                 Ok(()) => tracing::trace!(
                     "Successfully deleted paste document (minio): {}",
                     document.id()
@@ -507,7 +503,7 @@ pub async fn expiry_tasks(app: App) {
                     };
 
                     for document in documents {
-                        match app.object_store().delete_document(document.generate_path()).await {
+                        match app.object_store().delete_document(&document).await {
                             Ok(()) => tracing::trace!("Successfully deleted paste document (minio): {}", document.id()),
                             Err(e) => tracing::trace!("Failed to delete paste document: {} (minio). Reason: {}", document.id(), e)
                         }

@@ -66,6 +66,13 @@ where
     }
 }
 
+/// Implemented for easy conversion without mapping error type.
+impl From<sqlx::Error> for RESTError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(DatabaseError::Sqlx(value))
+    }
+}
+
 impl IntoResponse for ObjectStoreError {
     fn into_response(self) -> Response {
         let (status, reason, trace): (StatusCode, &str, &str) = match self {
@@ -111,6 +118,138 @@ impl IntoResponse for GenerateError {
 }
 
 #[derive(Error, Debug)]
+pub enum ParseError {
+    #[error("JSON Error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("Regex Error: {0}")]
+    Regex(#[from] regex::Error),
+    #[error("Header To String Error: {0}")]
+    HeaderToStr(#[from] http::header::ToStrError),
+    #[error("Mime From String Error: {0}")]
+    MimeFromStr(#[from] mime::FromStrError),
+    #[error("From UTF-8 Error: {0}")]
+    FromUtf8(#[from] std::string::FromUtf8Error),
+    #[error("Parse Integer Error: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
+    #[error("Parse Snowflake Error: {0}")]
+    ParseSnowflake(String),
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<serde_json::Error> for RESTError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Parse(ParseError::Json(value))
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<regex::Error> for RESTError {
+    fn from(value: regex::Error) -> Self {
+        Self::Parse(ParseError::Regex(value))
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<http::header::ToStrError> for RESTError {
+    fn from(value: http::header::ToStrError) -> Self {
+        Self::Parse(ParseError::HeaderToStr(value))
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<mime::FromStrError> for RESTError {
+    fn from(value: mime::FromStrError) -> Self {
+        Self::Parse(ParseError::MimeFromStr(value))
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<std::string::FromUtf8Error> for RESTError {
+    fn from(value: std::string::FromUtf8Error) -> Self {
+        Self::Parse(ParseError::FromUtf8(value))
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<std::num::ParseIntError> for RESTError {
+    fn from(value: std::num::ParseIntError) -> Self {
+        Self::Parse(ParseError::ParseInt(value))
+    }
+}
+
+impl IntoResponse for ParseError {
+    fn into_response(self) -> Response {
+        let (status, reason, trace): (StatusCode, &str, &str) = match self {
+            Self::Json(e) => (StatusCode::BAD_REQUEST, "Json Parse Error", &e.to_string()),
+            Self::Regex(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Regex Error",
+                &e.to_string(),
+            ),
+            Self::HeaderToStr(e) => (
+                StatusCode::BAD_REQUEST,
+                "Header To String Error",
+                &e.to_string(),
+            ),
+            Self::MimeFromStr(e) => (
+                StatusCode::BAD_REQUEST,
+                "Mime From String Error",
+                &e.to_string(),
+            ),
+            Self::FromUtf8(e) => (StatusCode::BAD_REQUEST, "From UTF-8 Error", &e.to_string()),
+            Self::ParseInt(e) => (
+                StatusCode::BAD_REQUEST,
+                "Parse Integer Error",
+                &e.to_string(),
+            ),
+            Self::ParseSnowflake(e) => (
+                StatusCode::BAD_REQUEST,
+                "Parse Snowflake Error",
+                &e.to_string(),
+            ),
+        };
+
+        let body = Json(RESTErrorResponse {
+            timestamp: Utc::now().timestamp() as u64,
+            reason: String::from(reason),
+            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
+        });
+        (status, body).into_response()
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum RejectionError {
+    #[error("Multipart Rejection Error: {0}")]
+    Multipart(#[from] axum::extract::multipart::MultipartRejection),
+    #[error("Bytes Rejection Error: {0}")]
+    Bytes(#[from] axum::extract::rejection::BytesRejection),
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<axum::extract::multipart::MultipartRejection> for RESTError {
+    fn from(value: axum::extract::multipart::MultipartRejection) -> Self {
+        Self::Rejection(RejectionError::Multipart(value))
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<axum::extract::rejection::BytesRejection> for RESTError {
+    fn from(value: axum::extract::rejection::BytesRejection) -> Self {
+        Self::Rejection(RejectionError::Bytes(value))
+    }
+}
+
+impl IntoResponse for RejectionError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Multipart(error) => error.into_response(),
+            Self::Bytes(error) => error.into_response(),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
 pub enum RESTError {
     // Library Errors
     #[error(transparent)]
@@ -118,14 +257,16 @@ pub enum RESTError {
     #[error(transparent)]
     Database(#[from] DatabaseError),
     #[error(transparent)]
+    ObjectStore(#[from] ObjectStoreError),
+    #[error(transparent)]
     Generate(#[from] GenerateError),
     #[error(transparent)]
-    ObjectStore(#[from] ObjectStoreError),
+    Parse(#[from] ParseError),
+    #[error(transparent)]
+    Rejection(#[from] RejectionError),
     // Crate Errors
-    #[error("Multipart Error: {0}")]
+    #[error(transparent)]
     Multipart(#[from] axum::extract::multipart::MultipartError),
-    #[error("JSON Error: {0}")]
-    Json(#[from] serde_json::Error),
     // Custom Errors
     #[error("Internal Server Error: {0}")]
     InternalServer(String),
@@ -135,22 +276,16 @@ pub enum RESTError {
     NotFound(String),
 }
 
-/// Implemented for easy conversion without mapping error type.
-impl From<sqlx::Error> for RESTError {
-    fn from(value: sqlx::Error) -> Self {
-        RESTError::Database(DatabaseError::Sqlx(value))
-    }
-}
-
 impl IntoResponse for RESTError {
     fn into_response(self) -> Response {
         let (status, reason, trace): (StatusCode, &str, &str) = match self {
             Self::Authentication(error) => return error.into_response(),
             Self::Database(error) => return error.into_response(),
-            Self::Generate(error) => return error.into_response(),
             Self::ObjectStore(error) => return error.into_response(),
+            Self::Generate(error) => return error.into_response(),
+            Self::Parse(error) => return error.into_response(),
+            Self::Rejection(error) => return error.into_response(),
             Self::Multipart(error) => return error.into_response(),
-            Self::Json(e) => (StatusCode::BAD_REQUEST, "Json Parse Error", &e.to_string()),
             Self::InternalServer(ref e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error",
@@ -215,7 +350,7 @@ impl RESTErrorResponse {
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 impl RESTErrorResponse {
     pub fn reason(&self) -> &str {
         &self.reason

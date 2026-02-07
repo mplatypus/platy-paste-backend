@@ -1,95 +1,20 @@
-use secrecy::ExposeSecret;
-use serde::{Deserialize, Serialize};
+use secrecy::ExposeSecret as _;
+#[cfg(test)]
+use serde::Deserialize;
+use serde::Serialize;
 
-use crate::{app::config::Config, models::DtUtc};
-
-use super::{
-    authentication::Token, document::Document, paste::Paste, snowflake::Snowflake,
-    undefined::UndefinedOption,
+use crate::{
+    app::config::Config,
+    models::{
+        DtUtc, authentication::Token, document::Document, paste::Paste, snowflake::Snowflake,
+    },
 };
 
-#[derive(Deserialize)]
-pub struct PastePath {
-    /// The paste ID.
-    paste_id: Snowflake,
-}
+//----------//
+// Response //
+//----------//
 
-impl PastePath {
-    #[inline]
-    pub const fn paste_id(&self) -> &Snowflake {
-        &self.paste_id
-    }
-}
-
-pub type GetPastePath = PastePath;
-
-pub type PatchPastePath = PastePath;
-
-pub type DeletePastePath = PastePath;
-
-pub type PostDocumentPath = PastePath;
-
-#[derive(Deserialize)]
-pub struct DocumentPath {
-    /// The paste ID.
-    paste_id: Snowflake,
-    /// The document ID.
-    document_id: Snowflake,
-}
-
-impl DocumentPath {
-    #[inline]
-    pub const fn paste_id(&self) -> &Snowflake {
-        &self.paste_id
-    }
-
-    #[inline]
-    pub const fn document_id(&self) -> &Snowflake {
-        &self.document_id
-    }
-}
-
-pub type GetDocumentPath = DocumentPath;
-
-pub type PatchDocumentPath = DocumentPath;
-
-pub type DeleteDocumentPath = DocumentPath;
-
-#[derive(Deserialize)]
-pub struct PasteBody {
-    /// The name for the paste.
-    #[serde(default)]
-    name: UndefinedOption<String>,
-    /// The expiry time for the paste.
-    #[serde(default, rename = "expiry_timestamp")]
-    expiry: UndefinedOption<DtUtc>,
-    /// The maximum allowed views for the paste.
-    #[serde(default)]
-    max_views: UndefinedOption<usize>,
-}
-
-impl PasteBody {
-    #[inline]
-    pub fn name(&self) -> UndefinedOption<&str> {
-        self.name.as_deref()
-    }
-
-    #[inline]
-    pub const fn expiry(&self) -> UndefinedOption<DtUtc> {
-        self.expiry
-    }
-
-    #[inline]
-    pub const fn max_views(&self) -> UndefinedOption<usize> {
-        self.max_views
-    }
-}
-
-pub type PostPasteBody = PasteBody;
-
-pub type PatchPasteBody = PasteBody;
-
-#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
+#[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseConfig {
     /// Defaults.
@@ -123,7 +48,7 @@ impl ResponseConfig {
     }
 }
 
-#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
+#[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseDefaultsConfig {
     /// The default expiry for pastes.
@@ -164,7 +89,7 @@ impl ResponseDefaultsConfig {
     }
 }
 
-#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
+#[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseSizeLimitsConfig {
     /// The minimum size of a paste name.
@@ -250,7 +175,7 @@ impl ResponseSizeLimitsConfig {
     }
 }
 
-#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
+#[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponsePaste {
     /// The ID for the paste.
@@ -336,7 +261,7 @@ impl ResponsePaste {
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 impl ResponsePaste {
     pub fn id(&self) -> Snowflake {
         self.id

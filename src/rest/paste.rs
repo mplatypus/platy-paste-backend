@@ -1,8 +1,7 @@
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart, Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
 };
 use chrono::{TimeDelta, Timelike, Utc};
@@ -12,17 +11,12 @@ use crate::{
     models::{
         DtUtc,
         authentication::{Token, generate_token},
-        document::{
-            Document, UNSUPPORTED_MIMES, contains_mime, document_limits, total_document_limits,
-        },
+        document::{Document, total_document_limits},
         errors::{AuthenticationError, RESTError},
         paste::{Paste, validate_paste},
-        payload::{
-            DeletePastePath, GetPastePath, PatchPasteBody, PatchPastePath, PostPasteBody,
-            ResponsePaste,
-        },
-        snowflake::Snowflake,
-        undefined::UndefinedOption,
+        payload::{document::PostPasteDocumentBody, paste::*},
+        snowflake::{PartialSnowflake, Snowflake},
+        undefined::{Undefined, UndefinedOption},
     },
 };
 
@@ -52,7 +46,7 @@ pub fn generate_router(config: &Config) -> Router<App> {
 pub async fn get_paste(
     State(app): State<App>,
     Path(path): Path<GetPastePath>,
-) -> Result<Response, RESTError> {
+) -> Result<(StatusCode, Json<ResponsePaste>), RESTError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), None).await?;
 
     let documents = Document::fetch_all(app.database().pool(), paste.id()).await?;
@@ -63,7 +57,7 @@ pub async fn get_paste(
 
     let paste_response = ResponsePaste::from_paste(&paste, None, documents);
 
-    Ok((StatusCode::OK, Json(paste_response)).into_response())
+    Ok((StatusCode::OK, Json(paste_response)))
 }
 
 /// Post Paste.
@@ -86,39 +80,10 @@ pub async fn get_paste(
 /// - `200` - The [`ResponsePaste`] object.
 pub async fn post_paste(
     State(app): State<App>,
-    mut multipart: Multipart,
-) -> Result<Response, RESTError> {
-    let body: PostPasteBody = {
-        if let Some(field) = multipart.next_field().await? {
-            if field
-                .content_type()
-                .is_none_or(|content_type| content_type != "application/json")
-            {
-                return Err(RESTError::BadRequest(
-                    "Payload must be of the type application/json.".to_string(),
-                ));
-            }
-
-            let bytes = field.bytes().await?;
-
-            serde_json::from_slice(&bytes)?
-        } else {
-            return Err(RESTError::BadRequest("Payload missing.".to_string()));
-        }
-    };
-
-    let expiry = validate_expiry(app.config(), body.expiry())?;
-
-    let max_views = {
-        match body.max_views() {
-            UndefinedOption::Undefined => app.config().size_limits().default_maximum_views(),
-            UndefinedOption::Some(max_views) => Some(max_views),
-            UndefinedOption::None => None,
-        }
-    };
-
+    body: PostPasteMultipartBody,
+) -> Result<(StatusCode, Json<ResponsePaste>), RESTError> {
     let name = {
-        match body.name() {
+        match body.payload.name() {
             UndefinedOption::Undefined => app
                 .config()
                 .size_limits()
@@ -145,6 +110,14 @@ pub async fn post_paste(
         }
     };
 
+    let expiry = validate_expiry(app.config(), body.payload.expiry())?;
+
+    let max_views = match body.payload.max_views() {
+        UndefinedOption::Some(views) => Some(views),
+        UndefinedOption::Undefined => app.config().size_limits().default_maximum_views(),
+        UndefinedOption::None => None,
+    };
+
     let mut transaction = app.database().pool().begin().await?;
 
     let paste = Paste::new(
@@ -163,51 +136,18 @@ pub async fn post_paste(
 
     paste.insert(transaction.as_mut()).await?;
 
-    let mut documents: Vec<(Document, String)> = Vec::new();
-    while let Some(field) = multipart.next_field().await? {
-        let document_type = {
-            match field.content_type() {
-                Some(content_type) => {
-                    if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                        return Err(RESTError::BadRequest(format!(
-                            "Invalid mime type received: {content_type}"
-                        )));
-                    }
-
-                    content_type.to_string()
-                }
-                None => {
-                    return Err(RESTError::BadRequest(
-                        "The document must have a type.".to_string(),
-                    ));
-                }
-            }
-        };
-
-        let name = field
-            .file_name()
-            .ok_or(RESTError::BadRequest(
-                "One or more of the documents provided require a name.".to_string(),
-            ))?
-            .to_string();
-
-        let data = field.bytes().await?;
+    let mut response_documents = Vec::new();
+    for (body, content, mime) in body.documents {
+        let mime_string = mime.to_string();
 
         let document = Document::new(
             Snowflake::generate()?,
             *paste.id(),
-            &document_type,
-            &name,
-            data.len(),
+            &mime_string,
+            body.name(),
+            content.len(),
         );
 
-        document_limits(app.config(), &document)?;
-
-        documents.push((document, String::from_utf8_lossy(&data).to_string()));
-    }
-
-    let mut response_documents = Vec::new();
-    for (document, content) in documents {
         app.object_store()
             .create_document(&document, content)
             .await?;
@@ -227,7 +167,7 @@ pub async fn post_paste(
 
     let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
 
-    Ok((StatusCode::OK, Json(response)).into_response())
+    Ok((StatusCode::OK, Json(response)))
 }
 
 /// Patch Paste.
@@ -240,12 +180,6 @@ pub async fn post_paste(
 ///
 /// - `paste_id` - The paste ID to edit.
 ///
-/// ## Body
-///
-/// References: [`PatchPasteBody`]
-///
-/// - `expiry` - The expiry of the paste.
-///
 /// ## Returns
 ///
 /// - `401` - Invalid token and/or paste ID.
@@ -255,13 +189,15 @@ pub async fn patch_paste(
     State(app): State<App>,
     Path(path): Path<PatchPastePath>,
     token: Token,
-    Json(body): Json<PatchPasteBody>,
-) -> Result<Response, RESTError> {
+    body: PatchPasteMultipartBody,
+) -> Result<(StatusCode, Json<ResponsePaste>), RESTError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
 
-    let new_expiry = validate_expiry(app.config(), body.expiry())?;
+    let new_expiry = validate_expiry(app.config(), body.payload.expiry())?;
 
-    match body.name() {
+    let mut documents = Document::fetch_all(app.database().pool(), path.paste_id()).await?;
+
+    match body.payload.name() {
         UndefinedOption::Some(name) => {
             let name = name.to_string();
 
@@ -289,7 +225,7 @@ pub async fn patch_paste(
         paste.set_expiry(new_expiry.into());
     }
 
-    match body.max_views() {
+    match body.payload.max_views() {
         UndefinedOption::Some(max_views) => {
             if paste.views() >= max_views {
                 return Err(RESTError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
@@ -307,13 +243,109 @@ pub async fn patch_paste(
 
     paste.update(transaction.as_mut()).await?;
 
-    let documents = Document::fetch_all(transaction.as_mut(), paste.id()).await?;
+    if let Undefined::Some(payload_documents) = body.payload.documents() {
+        let mut new_documents = Vec::with_capacity(documents.len());
+        let mut unknown_ids: Vec<u64> = Vec::new();
+
+        for mut document in documents.drain(..) {
+            if let Undefined::Some(ref d) = body.documents
+                && d.iter().find(|v| v.0.id() == document.id()).is_some()
+            {
+                if *document.id() == PartialSnowflake::new(0) {
+                    panic!("here 1");
+                }
+                new_documents.push(document);
+                continue;
+            }
+
+            if let Some(payload_document) = payload_documents
+                .iter()
+                .find(|&v| *v.id() == *document.id())
+            {
+                if *document.id() == PartialSnowflake::new(0) {
+                    panic!("here 2");
+                }
+                if let Undefined::Some(name) = payload_document.name() {
+                    document.set_name(name);
+                }
+
+                document.update(transaction.as_mut()).await?;
+                new_documents.push(document);
+            } else {
+                if *document.id() == PartialSnowflake::new(0) {
+                    panic!("here 3");
+                }
+                let deleted = Document::delete(app.database().pool(), document.id()).await?;
+
+                if !deleted {
+                    unknown_ids.push(document.id().id());
+                }
+            }
+        }
+
+        let new_document_ids: Vec<u64> = new_documents.iter().map(|v| v.id().id()).collect();
+        unknown_ids.extend(
+            payload_documents
+                .iter()
+                .map(|v| v.id().id())
+                .filter(|v| !new_document_ids.contains(v)),
+        );
+
+        if !unknown_ids.is_empty() {
+            return Err(RESTError::BadRequest(
+                "Document(s) were provided that do not exist or do not have contents".to_string(),
+            ));
+        }
+
+        documents = new_documents;
+    }
+
+    if let Undefined::Some(multipart_documents) = body.documents {
+        //let document_ids: Vec<Snowflake> = documents.iter().map(|v|*v.id()).collect();
+        //let mp_doc_ids: Vec<PartialSnowflake> = multipart_documents.iter().map(|v|*v.0.id()).collect();
+        //panic!("Document ID's: {document_ids:?}\nMP Document ID's: {mp_doc_ids:?}");
+        for (body, content, mime) in multipart_documents {
+            if let Some(document) = documents.iter_mut().find(|v| v.id() == body.id()) {
+                if let Undefined::Some(name) = body.name() {
+                    document.set_name(name);
+                }
+
+                document.set_doc_type(&mime.to_string());
+                document.set_size(content.len());
+
+                document.update(transaction.as_mut()).await?;
+
+                app.object_store().delete_document(document).await?;
+                app.object_store()
+                    .create_document(document, content)
+                    .await?;
+            } else {
+                let body: PostPasteDocumentBody = body.try_into()?;
+
+                let document = Document::new(
+                    Snowflake::generate()?,
+                    *paste.id(),
+                    &mime.to_string(),
+                    body.name(),
+                    content.len(),
+                );
+
+                document.insert(transaction.as_mut()).await?;
+
+                app.object_store()
+                    .create_document(&document, content)
+                    .await?;
+
+                documents.push(document);
+            }
+        }
+    }
 
     transaction.commit().await?;
 
     let paste_response = ResponsePaste::from_paste(&paste, None, documents);
 
-    Ok((StatusCode::OK, Json(paste_response)).into_response())
+    Ok((StatusCode::OK, Json(paste_response)))
 }
 
 /// Delete Paste.
@@ -340,7 +372,7 @@ pub async fn delete_paste(
     State(app): State<App>,
     Path(path): Path<DeletePastePath>,
     token: Token,
-) -> Result<Response, RESTError> {
+) -> Result<StatusCode, RESTError> {
     if token.paste_id() != path.paste_id() {
         return Err(RESTError::Authentication(
             AuthenticationError::InvalidCredentials,
@@ -351,7 +383,7 @@ pub async fn delete_paste(
         return Err(RESTError::NotFound("The paste was not found.".to_string()));
     }
 
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Validate Expiry.
@@ -395,7 +427,7 @@ fn validate_expiry(
 
             if difference.num_seconds() <= 0 {
                 return Err(RESTError::BadRequest(
-                    "The timestamp provided is invalid.".to_string(),
+                    "The timestamp provided has already passed.".to_string(),
                 ));
             }
 
@@ -433,7 +465,7 @@ fn validate_expiry(
                 || size_limits.maximum_expiry_hours().is_some()
             {
                 return Err(RESTError::BadRequest(
-                    "Timestamp must be provided.".to_string(),
+                    "The expiry timestamp parameter is required.".to_string(),
                 ));
             }
 
@@ -444,7 +476,7 @@ fn validate_expiry(
                 || size_limits.maximum_expiry_hours().is_some()
             {
                 return Err(RESTError::BadRequest(
-                    "Timestamp must be provided.".to_string(),
+                    "The expiry timestamp parameter cannot be none.".to_string(),
                 ));
             }
 
@@ -492,7 +524,13 @@ mod tests {
                         .await
                         .expect("Failed to build application state.");
 
-                let paste_id = Snowflake::new(517815304354284604);
+                let paste_id = Snowflake::new(517815304354284605);
+
+                let views = Paste::fetch(&pool, &paste_id)
+                    .await
+                    .expect("Failed to make DB request")
+                    .expect("Failed to find paste.")
+                    .views();
 
                 let app = main_generate_router(state);
                 let server = TestServer::new(app).expect("Failed to build server.");
@@ -516,7 +554,10 @@ mod tests {
                 let expected_body =
                     serde_json::to_vec(&ResponsePaste::from_paste(&paste, None, documents))
                         .expect("Failed to build expected body.");
+
                 assert_eq!(body.to_vec(), expected_body, "Body does not match.");
+
+                assert_eq!(views + 1, paste.views(), "Views was not updated.");
             }
 
             #[sqlx::test(fixtures(path = "../../tests/fixtures", scripts("pastes", "documents")))]
@@ -556,8 +597,11 @@ mod tests {
         mod post_paste {
             use super::*;
 
+            #[rstest]
+            #[case(true)]
+            #[case(false)]
             #[sqlx::test]
-            async fn test_existing(pool: PgPool) {
+            async fn test_successful(#[ignore] pool: PgPool, #[case] switch_order: bool) {
                 let config = Config::test_builder()
                     .build()
                     .expect("Failed to build config.");
@@ -576,7 +620,11 @@ mod tests {
                 let body = json!({
                     "name": "test paste",
                     "expiry_timestamp": payload_expiry.to_rfc3339(),
-                    "max_views": 100
+                    "max_views": 100,
+                    "documents": [
+                        {"id": 0, "name": "custom.json"},
+                        {"id": 1, "name": "random.txt"}
+                    ]
                 });
 
                 let payload = serde_json::to_string(&body).expect("Failed to build request body.");
@@ -586,24 +634,25 @@ mod tests {
 
                 let document_1_content = Bytes::from(r#"{"test": "test_value"}"#);
                 let document_1_part = Part::bytes(document_1_content.clone())
-                    .add_header("Content-Type", "application/json")
-                    .add_header(
-                        "Content-Disposition",
-                        r#"attachment; filename="custom.json""#,
-                    );
+                    .add_header("Content-Type", "application/json");
 
                 let document_2_content = Bytes::from(r#"Just some random text."#);
                 let document_2_part = Part::bytes(document_2_content.clone())
-                    .add_header("Content-Type", "text/plain")
-                    .add_header(
-                        "Content-Disposition",
-                        r#"attachment; filename="random.txt""#,
-                    );
+                    .add_header("Content-Type", "text/plain");
 
-                let form = MultipartForm::new()
-                    .add_part("payload", payload_part)
-                    .add_part("document_1", document_1_part)
-                    .add_part("document_2", document_2_part);
+                let form = {
+                    if switch_order {
+                        MultipartForm::new()
+                            .add_part("payload", payload_part)
+                            .add_part("files[0]", document_1_part)
+                            .add_part("files[1]", document_2_part)
+                    } else {
+                        MultipartForm::new()
+                            .add_part("files[1]", document_2_part)
+                            .add_part("files[0]", document_1_part)
+                            .add_part("payload", payload_part)
+                    }
+                };
 
                 let response = server.post("/v1/pastes").multipart(form).await;
 
@@ -667,7 +716,7 @@ mod tests {
                 );
 
                 let document_1_contents = object_store
-                    .fetch_document(document_1.generate_path())
+                    .fetch_document(&document_1)
                     .await
                     .expect("Failed to find document_1's contents.");
 
@@ -699,7 +748,7 @@ mod tests {
                 );
 
                 let document_2_contents = object_store
-                    .fetch_document(document_2.generate_path())
+                    .fetch_document(&document_2)
                     .await
                     .expect("Failed to find document_1's contents.");
 
@@ -718,6 +767,7 @@ mod tests {
                     "name": "test paste",
                     "expiry_timestamp": Utc::now() + TimeDelta::hours(5),
                     "max_views": 100,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 Some("test paste"),
                 Some((Utc::now() + TimeDelta::hours(5)).with_nanosecond(0).expect("Failed to strip nanoseconds")),
@@ -731,6 +781,7 @@ mod tests {
                     "name": null,
                     "expiry_timestamp": null,
                     "max_views": null,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 None,
                 None,
@@ -749,6 +800,7 @@ mod tests {
                 json!({
                     "expiry_timestamp": null,
                     "max_views": null,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 None,
                 None,
@@ -767,6 +819,7 @@ mod tests {
                 json!({
                     "expiry_timestamp": null,
                     "max_views": null,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 Some("default_name"),
                 None,
@@ -785,6 +838,7 @@ mod tests {
                 json!({
                     "name": null,
                     "max_views": null,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 None,
                 None,
@@ -803,6 +857,7 @@ mod tests {
                 json!({
                     "name": null,
                     "max_views": null,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 None,
                 Some((Utc::now() + TimeDelta::hours(5)).with_nanosecond(0).expect("Failed to strip nanoseconds")),
@@ -821,6 +876,7 @@ mod tests {
                 json!({
                     "name": null,
                     "expiry_timestamp": null,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 None,
                 None,
@@ -839,6 +895,7 @@ mod tests {
                 json!({
                     "name": null,
                     "expiry_timestamp": null,
+                    "documents": [{"id": 0, "name": "test.txt"}]
                 }),
                 None,
                 None,
@@ -868,16 +925,12 @@ mod tests {
                 let payload_part = Part::bytes(Bytes::from(payload))
                     .add_header("Content-Type", "application/json");
 
-                let document_1_part = Part::bytes(Bytes::from("test"))
-                    .add_header("Content-Type", "application/json")
-                    .add_header(
-                        "Content-Disposition",
-                        r#"attachment; filename="custom.json""#,
-                    );
+                let document_1_part =
+                    Part::bytes(Bytes::from("test")).add_header("Content-Type", "application/json");
 
                 let form = MultipartForm::new()
                     .add_part("payload", payload_part)
-                    .add_part("document_1", document_1_part);
+                    .add_part("files[0]", document_1_part);
 
                 let response = server.post("/v1/pastes").multipart(form).await;
 
@@ -912,7 +965,53 @@ mod tests {
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json")),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("One or more documents is below the minimum total document count.".to_string())),
+                RESTErrorResponse::new("Json Parse Error", Some("missing field `documents` at line 1 column 2".to_string())),
+            )]
+            #[case(
+                Config::test_builder()
+                    .build()
+                    .expect("Failed to build config."),
+                MultipartForm::new()
+                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Json Parse Error", Some("missing field `documents` at line 1 column 2".to_string())),
+            )]
+            #[case(
+                Config::test_builder()
+                    .build()
+                    .expect("Failed to build config."),
+                MultipartForm::new()
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": []
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", Some("Not enough documents were provided. Expected: 1, Received: 0".to_string())),
+            )]
+            #[case(
+                Config::test_builder()
+                    .build()
+                    .expect("Failed to build config."),
+                MultipartForm::new()
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test.txt"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", Some("A document with the ID of 0 was not found".to_string())),
+            )]
+            #[case(
+                Config::test_builder()
+                    .build()
+                    .expect("Failed to build config."),
+                MultipartForm::new()
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": []
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", Some("More files were provided, than listed inside the payload".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -921,27 +1020,21 @@ mod tests {
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from("{}"))),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("Payload must be of the type application/json.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Payload must have a content type of application/json".to_string())),
             )]
             #[case(
                 Config::test_builder()
                     .build()
                     .expect("Failed to build config."),
                 MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::new()).add_header("Content-Type", "image/png")),
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test.png"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::new()).add_header("Content-Type", "image/png")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("Invalid mime type received: image/png".to_string())),
-            )]
-            #[case(
-                Config::test_builder()
-                    .build()
-                    .expect("Failed to build config."),
-                MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::new()).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("One or more of the documents provided require a name.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Invalid mime type: image/png received for the document: 0".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -954,10 +1047,14 @@ mod tests {
                     .build()
                     .expect("Failed to build config."),
                 MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test.txt""#)),
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test.txt"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("The document name: `test.txt` is too small.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Document `0`'s name: `test.txt` is too small.".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -970,10 +1067,14 @@ mod tests {
                     .build()
                     .expect("Failed to build config."),
                 MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test_file.txt""#)),
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test_file.txt"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("The document name: `test_file.txt...` is too large.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Document `0`'s name: `test_file.txt` is too large.".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -986,10 +1087,14 @@ mod tests {
                     .build()
                     .expect("Failed to build config."),
                 MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::new()).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test.txt""#)),
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test.txt"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::new()).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("The document: `test.txt` is too small.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Document `0` is too small.".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -1002,10 +1107,14 @@ mod tests {
                     .build()
                     .expect("Failed to build config."),
                 MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::from(vec![0; 110])).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test.txt""#)),
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test.txt"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::from(vec![0; 110])).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("The document: `test.txt` is too large.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Document `0` is too large.".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -1018,10 +1127,14 @@ mod tests {
                     .build()
                     .expect("Failed to build config."),
                 MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test.txt""#)),
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test.txt"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("One or more documents is below the minimum total document count.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Not enough documents were provided. Expected: 2, Received: 1".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -1034,11 +1147,16 @@ mod tests {
                     .build()
                     .expect("Failed to build config."),
                 MultipartForm::new()
-                    .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test.txt""#))
-                    .add_part("document_2", Part::bytes(Bytes::from("test2")).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test2.txt""#)),
+                    .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                        "documents": [
+                            {"id": 0, "name": "test.txt"},
+                            {"id": 1, "name": "test2.txt"}
+                        ]
+                    })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain"))
+                    .add_part("files[1]", Part::bytes(Bytes::from("test2")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("One or more documents exceed the maximum total document count.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("Too many documents were provided. Expected: 1, Received: 2".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -1054,10 +1172,11 @@ mod tests {
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
                         "expiry_timestamp": Utc::now().to_rfc3339(),
+                        "documents": [{"id": 0, "name": "test.txt"}]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test.txt""#)),
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("The timestamp provided is invalid.".to_string())),
+                RESTErrorResponse::new("Bad Request", Some("The timestamp provided has already passed.".to_string())),
             )]
             #[case(
                 Config::test_builder()
@@ -1073,13 +1192,14 @@ mod tests {
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
                         "expiry_timestamp": (Utc::now() + TimeDelta::hours(6)).to_rfc3339(),
+                        "documents": [{"id": 0, "name": "test.txt"}]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
-                    .add_part("document_1", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain").add_header("Content-Disposition", r#"attachment; filename="test.txt""#)),
+                    .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
                 RESTErrorResponse::new("Bad Request", Some("The timestamp provided is above the maximum.".to_string())),
             )]
             #[sqlx::test]
-            async fn test_bad(
+            async fn test_failures(
                 #[ignore] pool: PgPool,
                 #[case] config: Config,
                 #[case] form: MultipartForm,
@@ -1116,13 +1236,977 @@ mod tests {
         mod patch_paste {
             use super::*;
 
+            mod json {
+                use super::*;
+
+                #[rstest]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({}),
+                    Some("Test 5"),
+                    None,
+                    Some(20000)
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "name": "beans"
+                    }),
+                    Some("beans"),
+                    None,
+                    Some(20000)
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "expiry_timestamp": Utc::now() + TimeDelta::hours(5),
+                    }),
+                    Some("Test 5"),
+                    Some((Utc::now() + TimeDelta::hours(5)).with_nanosecond(0).expect("Failed to strip nanoseconds")),
+                    Some(20000)
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "max_views": 5000
+                    }),
+                    Some("Test 5"),
+                    None,
+                    Some(5000)
+                )]
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_successful(
+                    #[ignore] pool: PgPool,
+                    #[case] config: Config,
+                    #[case] body: serde_json::Value,
+                    #[case] expected_name: Option<&str>,
+                    #[case] expected_expiry: Option<DtUtc>,
+                    #[case] expected_max_views: Option<usize>,
+                ) {
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .json(&body)
+                        .await;
+
+                    response.assert_status(StatusCode::OK);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: ResponsePaste = response.json();
+
+                    assert_eq!(body.name(), expected_name, "Names do not match.");
+
+                    assert_eq!(
+                        body.expiry(),
+                        expected_expiry.as_ref(),
+                        "Expiry's do not match."
+                    );
+
+                    assert_eq!(
+                        body.max_views(),
+                        expected_max_views,
+                        "Max views do not match."
+                    );
+                }
+
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_successful_document_deletion(pool: PgPool) {
+                    let config = Config::test_builder()
+                        .build()
+                        .expect("Failed to build config.");
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let deleted_document_id = Snowflake::new(517815304354284709);
+
+                    let documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+                    let document_ids: Vec<Snowflake> = documents.iter().map(|v| *v.id()).collect();
+
+                    assert!(
+                        document_ids.contains(&deleted_document_id),
+                        "Document ID's does not contain the to be deleted ID."
+                    );
+
+                    let body = json!({
+                        "documents": [
+                            {"id": "517815304354284708"}
+                        ]
+                    });
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .json(&body)
+                        .await;
+
+                    response.assert_status(StatusCode::OK);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: ResponsePaste = response.json();
+
+                    let body_document_ids: Vec<Snowflake> =
+                        body.documents().iter().map(|v| *v.id()).collect();
+
+                    assert!(
+                        !body_document_ids.contains(&deleted_document_id),
+                        "Body Document ID's still contains the deleted document."
+                    );
+
+                    let updated_documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+                    let updated_document_ids: Vec<Snowflake> =
+                        updated_documents.iter().map(|v| *v.id()).collect();
+
+                    assert!(
+                        !updated_document_ids.contains(&deleted_document_id),
+                        "Updated Database ID's still contains the deleted document."
+                    );
+                }
+
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_successful_document_update(pool: PgPool) {
+                    let config = Config::test_builder()
+                        .build()
+                        .expect("Failed to build config.");
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let updated_document_id = Snowflake::new(517815304354284708);
+
+                    let documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+                    let document_ids: Vec<Snowflake> = documents.iter().map(|v| *v.id()).collect();
+
+                    assert!(
+                        document_ids.contains(&updated_document_id),
+                        "Document ID's does not contain the to be deleted ID."
+                    );
+
+                    let body = json!({
+                        "documents": [
+                            {"id": "517815304354284708", "name": "updated.txt"},
+                            {"id": "517815304354284709"}
+                        ]
+                    });
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .json(&body)
+                        .await;
+
+                    response.assert_status(StatusCode::OK);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: ResponsePaste = response.json();
+
+                    let body_document_ids: Vec<Snowflake> =
+                        body.documents().iter().map(|v| *v.id()).collect();
+
+                    assert_eq!(
+                        document_ids, body_document_ids,
+                        "Body Document ID's were changed."
+                    );
+
+                    let updated_documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+                    let updated_document_ids: Vec<Snowflake> =
+                        updated_documents.iter().map(|v| *v.id()).collect();
+
+                    assert_eq!(
+                        document_ids, updated_document_ids,
+                        "Updated Database ID's were changed."
+                    );
+
+                    let target_document = body
+                        .documents()
+                        .iter()
+                        .find(|d| *d.id() == updated_document_id);
+
+                    let Some(target_document) = target_document else {
+                        panic!("Target document was not found.");
+                    };
+
+                    assert_eq!(
+                        target_document.name(),
+                        "updated.txt",
+                        "Name was not updated."
+                    );
+
+                    // TODO: Need to validate that the value was not updated in the database.
+                }
+
+                #[rstest]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                                SizeLimitConfig::test_builder()
+                                    .minimum_expiry_hours(Some(1))
+                                    .build()
+                                    .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "expiry_timestamp": null,
+                    }),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("The expiry timestamp parameter cannot be none.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                                SizeLimitConfig::test_builder()
+                                    .minimum_expiry_hours(Some(1))
+                                    .maximum_expiry_hours(Some(5))
+                                    .build()
+                                    .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "expiry_timestamp": Utc::now().to_rfc3339(),
+                    }),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("The timestamp provided has already passed.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                                SizeLimitConfig::test_builder()
+                                    .minimum_expiry_hours(Some(1))
+                                    .maximum_expiry_hours(Some(5))
+                                    .build()
+                                    .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "expiry_timestamp": (Utc::now() + TimeDelta::hours(6)).to_rfc3339(),
+                    }),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("The timestamp provided is above the maximum.".to_string())),
+                )]
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_bad(
+                    #[ignore] pool: PgPool,
+                    #[case] config: Config,
+                    #[case] body: serde_json::Value,
+                    #[case] expected_status: StatusCode,
+                    #[case] expected_body: RESTErrorResponse,
+                ) {
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .json(&body)
+                        .await;
+
+                    response.assert_status(expected_status);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: RESTErrorResponse = response.json();
+
+                    assert_eq!(
+                        body.reason(),
+                        expected_body.reason(),
+                        "Reason does not match."
+                    );
+
+                    assert_eq!(body.trace(), expected_body.trace(), "Trace does not match.");
+                }
+            }
+
+            mod multipart {
+                use super::*;
+
+                #[rstest]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({}),
+                    Some("Test 5"),
+                    None,
+                    Some(20000)
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "name": "beans"
+                    }),
+                    Some("beans"),
+                    None,
+                    Some(20000)
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "expiry_timestamp": Utc::now() + TimeDelta::hours(5),
+                    }),
+                    Some("Test 5"),
+                    Some((Utc::now() + TimeDelta::hours(5)).with_nanosecond(0).expect("Failed to strip nanoseconds")),
+                    Some(20000)
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    json!({
+                        "max_views": 5000
+                    }),
+                    Some("Test 5"),
+                    None,
+                    Some(5000)
+                )]
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_successful(
+                    #[ignore] pool: PgPool,
+                    #[case] config: Config,
+                    #[case] body: serde_json::Value,
+                    #[case] expected_name: Option<&str>,
+                    #[case] expected_expiry: Option<DtUtc>,
+                    #[case] expected_max_views: Option<usize>,
+                ) {
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let value =
+                        Bytes::from(serde_json::to_vec(&body).expect("Failed to build payload"));
+                    let form = MultipartForm::new().add_part(
+                        "payload",
+                        Part::bytes(value).add_header("Content-Type", "application/json"),
+                    );
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .multipart(form)
+                        .await;
+
+                    response.assert_status(StatusCode::OK);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: ResponsePaste = response.json();
+
+                    assert_eq!(body.name(), expected_name, "Names do not match.");
+
+                    assert_eq!(
+                        body.expiry(),
+                        expected_expiry.as_ref(),
+                        "Expiry's do not match."
+                    );
+
+                    assert_eq!(
+                        body.max_views(),
+                        expected_max_views,
+                        "Max views do not match."
+                    );
+                }
+
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_successful_document_update(pool: PgPool) {
+                    let config = Config::test_builder()
+                        .build()
+                        .expect("Failed to build config.");
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let updated_document_id = Snowflake::new(517815304354284708);
+
+                    let documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+                    let mut document_ids: Vec<Snowflake> =
+                        documents.iter().map(|v| *v.id()).collect();
+                    document_ids.sort();
+
+                    assert!(
+                        document_ids.contains(&updated_document_id),
+                        "Document ID's does not contain the to be deleted ID."
+                    );
+
+                    let body = json!({
+                        "documents": [
+                            {"id": "517815304354284708"},
+                            {"id": "517815304354284709"}
+                        ]
+                    });
+
+                    let multipart = MultipartForm::new()
+                        .add_part(
+                            "payload",
+                            Part::bytes(
+                                serde_json::to_string(&body).expect("Failed to parse body."),
+                            )
+                            .add_header("Content-Type", "application/json"),
+                        )
+                        .add_part(
+                            "files[517815304354284708]",
+                            Part::bytes(Bytes::from("test"))
+                                .add_header("Content-Type", "text/plain"),
+                        );
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .multipart(multipart)
+                        .await;
+
+                    response.assert_status(StatusCode::OK);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: ResponsePaste = response.json();
+
+                    let mut body_document_ids: Vec<Snowflake> =
+                        body.documents().iter().map(|v| *v.id()).collect();
+                    body_document_ids.sort();
+
+                    assert_eq!(
+                        document_ids, body_document_ids,
+                        "Body Document ID's were changed."
+                    );
+
+                    let updated_documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+                    let mut updated_document_ids: Vec<Snowflake> =
+                        updated_documents.iter().map(|v| *v.id()).collect();
+                    updated_document_ids.sort();
+
+                    assert_eq!(
+                        document_ids, updated_document_ids,
+                        "Updated Database ID's were changed."
+                    );
+
+                    let target_document = body
+                        .documents()
+                        .iter()
+                        .find(|d| *d.id() == updated_document_id);
+
+                    let Some(target_document) = target_document else {
+                        panic!("Target document was not found.");
+                    };
+
+                    assert_eq!(
+                        target_document.size(),
+                        4,
+                        "Size of document was not updated."
+                    );
+
+                    let content = object_store
+                        .fetch_document(&target_document)
+                        .await
+                        .expect("Failed to find updated document from paste.");
+
+                    assert_eq!(content, Bytes::from("test"), "Content does not match.");
+                }
+
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_successful_document_create(pool: PgPool) {
+                    let config = Config::test_builder()
+                        .build()
+                        .expect("Failed to build config.");
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+
+                    assert_eq!(documents.len(), 2, "Original document count is incorrect.");
+
+                    let body = json!({
+                        "documents": [
+                            {"id": "517815304354284708"},
+                            {"id": "517815304354284709"},
+                            {"id": "0", "name": "new.txt"}
+                        ]
+                    });
+
+                    let multipart = MultipartForm::new()
+                        .add_part(
+                            "payload",
+                            Part::bytes(
+                                serde_json::to_string(&body).expect("Failed to parse body."),
+                            )
+                            .add_header("Content-Type", "application/json"),
+                        )
+                        .add_part(
+                            "files[0]",
+                            Part::bytes(Bytes::from("some cool text"))
+                                .add_header("Content-Type", "text/plain"),
+                        );
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .multipart(multipart)
+                        .await;
+
+                    response.assert_status(StatusCode::OK);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: ResponsePaste = response.json();
+
+                    assert_eq!(
+                        body.documents().len(),
+                        3,
+                        "Body document count was incorrect."
+                    );
+
+                    let updated_documents = Document::fetch_all(&pool, &paste_id)
+                        .await
+                        .expect("Failed to make DB request");
+
+                    assert_eq!(
+                        updated_documents.len(),
+                        3,
+                        "DB document count was incorrect."
+                    );
+
+                    let target_document = body
+                        .documents()
+                        .iter()
+                        .find(|d| ![517815304354284708, 517815304354284709].contains(&d.id().id()));
+
+                    let Some(target_document) = target_document else {
+                        panic!("Target document was not found.");
+                    };
+
+                    assert_eq!(
+                        target_document.paste_id(),
+                        &paste_id,
+                        "Size of document was not updated."
+                    );
+
+                    assert_eq!(
+                        target_document.size(),
+                        14,
+                        "Size of document was not updated."
+                    );
+
+                    assert_eq!(
+                        target_document.name(),
+                        "new.txt",
+                        "Size of document was not updated."
+                    );
+
+                    assert_eq!(
+                        target_document.doc_type(),
+                        "text/plain",
+                        "Size of document was not updated."
+                    );
+
+                    let content = object_store
+                        .fetch_document(&target_document)
+                        .await
+                        .expect("Failed to find updated document from paste.");
+
+                    assert_eq!(
+                        content,
+                        Bytes::from("some cool text"),
+                        "Content does not match."
+                    );
+                }
+
+                #[rstest]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                                SizeLimitConfig::test_builder()
+                                    .minimum_expiry_hours(Some(1))
+                                    .build()
+                                    .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "expiry_timestamp": null,
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("The expiry timestamp parameter cannot be none.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                                SizeLimitConfig::test_builder()
+                                    .minimum_expiry_hours(Some(1))
+                                    .maximum_expiry_hours(Some(5))
+                                    .build()
+                                    .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "expiry_timestamp": Utc::now().to_rfc3339(),
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("The timestamp provided has already passed.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                                SizeLimitConfig::test_builder()
+                                    .minimum_expiry_hours(Some(1))
+                                    .maximum_expiry_hours(Some(5))
+                                    .build()
+                                    .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "expiry_timestamp": (Utc::now() + TimeDelta::hours(6)).to_rfc3339(),
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("The timestamp provided is above the maximum.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"},
+                                {"id": 0}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("Document(s) were provided that do not exist or do not have contents".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                        .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("A document with the ID of 0 was not found".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"},
+                                {"id": 0}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                        .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("The new document 0 requires the `name` parameter.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                            SizeLimitConfig::test_builder()
+                                .minimum_document_name_size(10)
+                                .build()
+                                .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"},
+                                {"id": 0, "name": "test.txt"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                        .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("Document `0`'s name: `test.txt` is too small.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                            SizeLimitConfig::test_builder()
+                                .maximum_document_name_size(10)
+                                .build()
+                                .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"},
+                                {"id": 0, "name": "test_file.txt"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                        .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("Document `0`'s name: `test_file.txt` is too large.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                            SizeLimitConfig::test_builder()
+                                .minimum_document_size(10)
+                                .build()
+                                .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"},
+                                {"id": 0, "name": "test.txt"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                        .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("Document `0` is too small.".to_string())),
+                )]
+                #[case(
+                    Config::test_builder()
+                        .size_limits(
+                            SizeLimitConfig::test_builder()
+                                .maximum_document_size(10)
+                                .build()
+                                .expect("Failed to build size limit config.")
+                        )
+                        .build()
+                        .expect("Failed to build config."),
+                    MultipartForm::new()
+                        .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
+                            "documents": [
+                                {"id": "517815304354284708"},
+                                {"id": "517815304354284709"},
+                                {"id": 0, "name": "test.txt"}
+                            ]
+                        })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
+                        .add_part("files[0]", Part::bytes(Bytes::from("some random contents")).add_header("Content-Type", "text/plain")),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", Some("Document `0` is too large.".to_string())),
+                )]
+                #[sqlx::test(fixtures(
+                    path = "../../tests/fixtures",
+                    scripts("pastes", "documents", "tokens")
+                ))]
+                async fn test_failures(
+                    #[ignore] pool: PgPool,
+                    #[case] config: Config,
+                    #[case] form: MultipartForm,
+                    #[case] expected_status: StatusCode,
+                    #[case] expected_body: RESTErrorResponse,
+                ) {
+                    let object_store = TestObjectStore::new();
+                    let state = ApplicationState::new_tests(
+                        config.clone(),
+                        pool.clone(),
+                        object_store.clone(),
+                    )
+                    .await
+                    .expect("Failed to build application state.");
+
+                    let app = main_generate_router(state);
+                    let server = TestServer::new(app).expect("Failed to build server.");
+
+                    let paste_id = Snowflake::new(517815304354284605);
+                    let token_string =
+                        "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
+
+                    let response = server
+                        .patch(&format!("/v1/pastes/{paste_id}"))
+                        .add_header("Authorization", format!("Bearer {token_string}"))
+                        .multipart(form)
+                        .await;
+
+                    response.assert_status(expected_status);
+
+                    response.assert_header("Content-Type", "application/json");
+
+                    let body: RESTErrorResponse = response.json();
+
+                    assert_eq!(
+                        body.reason(),
+                        expected_body.reason(),
+                        "Reason does not match."
+                    );
+
+                    assert_eq!(body.trace(), expected_body.trace(), "Trace does not match.");
+                }
+            }
+
             #[rstest]
             #[case(
-                Snowflake::new(517815304354284604),
+                Snowflake::new(517815304354284605),
                 Some("beans"),
                 "Invalid Token and/or mismatched paste ID"
             )]
-            #[case(Snowflake::new(517815304354284604), None, "Missing Credentials")]
+            #[case(Snowflake::new(517815304354284605), None, "Missing Credentials")]
             #[sqlx::test(fixtures(
                 path = "../../tests/fixtures",
                 scripts("pastes", "documents", "tokens")
@@ -1165,61 +2249,14 @@ mod tests {
                 assert_eq!(body.trace(), None, "Trace does not match.");
             }
 
-            #[rstest]
-            #[case(
-                Config::test_builder()
-                    .build()
-                    .expect("Failed to build config."),
-                json!({}),
-                None,
-                None,
-                None
-            )]
-            #[case(
-                Config::test_builder()
-                    .build()
-                    .expect("Failed to build config."),
-                json!({
-                    "name": "beans"
-                }),
-                Some("beans"),
-                None,
-                None
-            )]
-            #[case(
-                Config::test_builder()
-                    .build()
-                    .expect("Failed to build config."),
-                json!({
-                    "expiry_timestamp": Utc::now() + TimeDelta::hours(5),
-                }),
-                None,
-                Some((Utc::now() + TimeDelta::hours(5)).with_nanosecond(0).expect("Failed to strip nanoseconds")),
-                None
-            )]
-            #[case(
-                Config::test_builder()
-                    .build()
-                    .expect("Failed to build config."),
-                json!({
-                    "max_views": 5000
-                }),
-                None,
-                None,
-                Some(5000)
-            )]
             #[sqlx::test(fixtures(
                 path = "../../tests/fixtures",
                 scripts("pastes", "documents", "tokens")
             ))]
-            async fn test_existing(
-                #[ignore] pool: PgPool,
-                #[case] config: Config,
-                #[case] body: serde_json::Value,
-                #[case] expected_name: Option<&str>,
-                #[case] expected_expiry: Option<DtUtc>,
-                #[case] expected_max_views: Option<usize>,
-            ) {
+            async fn test_unknown_body_type(pool: PgPool) {
+                let config = Config::test_builder()
+                    .build()
+                    .expect("Failed to build config.");
                 let object_store = TestObjectStore::new();
                 let state =
                     ApplicationState::new_tests(config.clone(), pool.clone(), object_store.clone())
@@ -1229,131 +2266,31 @@ mod tests {
                 let app = main_generate_router(state);
                 let server = TestServer::new(app).expect("Failed to build server.");
 
-                let paste_id = Snowflake::new(517815304354284604);
+                let paste_id = Snowflake::new(517815304354284605);
                 let token_string =
-                    "NTE3ODE1MzA0MzU0Mjg0NjA0.MTc0NzgxNjE4OQ==.FDP-mNTjfuOKovulMFbaSkoeq";
+                    "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
 
-                let response = server
+                let request = server
                     .patch(&format!("/v1/pastes/{paste_id}"))
                     .add_header("Authorization", format!("Bearer {token_string}"))
-                    .json(&body)
-                    .await;
+                    .add_header("Content-Type", "image/png")
+                    .bytes(Bytes::from("test"));
 
-                response.assert_status(StatusCode::OK);
+                let response = request.await;
 
-                response.assert_header("Content-Type", "application/json");
-
-                let body: ResponsePaste = response.json();
-
-                assert_eq!(body.name(), expected_name, "Names do not match.");
-
-                assert_eq!(
-                    body.expiry(),
-                    expected_expiry.as_ref(),
-                    "Expiry's do not match."
-                );
-
-                assert_eq!(
-                    body.max_views(),
-                    expected_max_views,
-                    "Max views do not match."
-                );
-            }
-
-            #[rstest]
-            #[case(
-                Config::test_builder()
-                    .size_limits(
-                            SizeLimitConfig::test_builder()
-                                .minimum_expiry_hours(Some(1))
-                                .build()
-                                .expect("Failed to build size limit config.")
-                    )
-                    .build()
-                    .expect("Failed to build config."),
-                json!({
-                    "expiry_timestamp": null,
-                }),
-                StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("Timestamp must be provided.".to_string())),
-            )]
-            #[case(
-                Config::test_builder()
-                    .size_limits(
-                            SizeLimitConfig::test_builder()
-                                .minimum_expiry_hours(Some(1))
-                                .maximum_expiry_hours(Some(5))
-                                .build()
-                                .expect("Failed to build size limit config.")
-                    )
-                    .build()
-                    .expect("Failed to build config."),
-                json!({
-                    "expiry_timestamp": Utc::now().to_rfc3339(),
-                }),
-                StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("The timestamp provided is invalid.".to_string())),
-            )]
-            #[case(
-                Config::test_builder()
-                    .size_limits(
-                            SizeLimitConfig::test_builder()
-                                .minimum_expiry_hours(Some(1))
-                                .maximum_expiry_hours(Some(5))
-                                .build()
-                                .expect("Failed to build size limit config.")
-                    )
-                    .build()
-                    .expect("Failed to build config."),
-                json!({
-                    "expiry_timestamp": (Utc::now() + TimeDelta::hours(6)).to_rfc3339(),
-                }),
-                StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new("Bad Request", Some("The timestamp provided is above the maximum.".to_string())),
-            )]
-            #[sqlx::test(fixtures(
-                path = "../../tests/fixtures",
-                scripts("pastes", "documents", "tokens")
-            ))]
-            async fn test_bad(
-                #[ignore] pool: PgPool,
-                #[case] config: Config,
-                #[case] body: serde_json::Value,
-                #[case] expected_status: StatusCode,
-                #[case] expected_body: RESTErrorResponse,
-            ) {
-                let object_store = TestObjectStore::new();
-                let state =
-                    ApplicationState::new_tests(config.clone(), pool.clone(), object_store.clone())
-                        .await
-                        .expect("Failed to build application state.");
-
-                let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
-
-                let paste_id = Snowflake::new(517815304354284604);
-                let token_string =
-                    "NTE3ODE1MzA0MzU0Mjg0NjA0.MTc0NzgxNjE4OQ==.FDP-mNTjfuOKovulMFbaSkoeq";
-
-                let response = server
-                    .patch(&format!("/v1/pastes/{paste_id}"))
-                    .add_header("Authorization", format!("Bearer {token_string}"))
-                    .json(&body)
-                    .await;
-
-                response.assert_status(expected_status);
+                response.assert_status(StatusCode::BAD_REQUEST);
 
                 response.assert_header("Content-Type", "application/json");
 
                 let body: RESTErrorResponse = response.json();
 
-                assert_eq!(
-                    body.reason(),
-                    expected_body.reason(),
-                    "Reason does not match."
-                );
+                assert_eq!(body.reason(), "Bad Request", "Reason does not match.");
 
-                assert_eq!(body.trace(), expected_body.trace(), "Trace does not match.");
+                assert_eq!(
+                    body.trace(),
+                    Some("Expected application/json or multipart/form-data as content type."),
+                    "Trace does not match."
+                );
             }
         }
 
@@ -1363,15 +2300,15 @@ mod tests {
             #[rstest]
             #[case(
                 Snowflake::new(1234567890),
-                Some("NTE3ODE1MzA0MzU0Mjg0NjA0.MTc0NzgxNjE4OQ==.FDP-mNTjfuOKovulMFbaSkoeq"),
+                Some("NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv"),
                 "Invalid Token and/or mismatched paste ID"
             )]
             #[case(
-                Snowflake::new(517815304354284604),
+                Snowflake::new(517815304354284605),
                 Some("beans"),
                 "Invalid Token and/or mismatched paste ID"
             )]
-            #[case(Snowflake::new(517815304354284604), None, "Missing Credentials")]
+            #[case(Snowflake::new(517815304354284605), None, "Missing Credentials")]
             #[sqlx::test(fixtures(
                 path = "../../tests/fixtures",
                 scripts("pastes", "documents", "tokens")
@@ -1418,7 +2355,7 @@ mod tests {
                 path = "../../tests/fixtures",
                 scripts("pastes", "documents", "tokens")
             ))]
-            async fn test_existing(pool: PgPool) {
+            async fn test_successful(pool: PgPool) {
                 let config = Config::test_builder()
                     .build()
                     .expect("Failed to build config.");
@@ -1431,9 +2368,9 @@ mod tests {
                 let app = main_generate_router(state);
                 let server = TestServer::new(app).expect("Failed to build server.");
 
-                let paste_id = Snowflake::new(517815304354284604);
+                let paste_id = Snowflake::new(517815304354284605);
                 let token_string =
-                    "NTE3ODE1MzA0MzU0Mjg0NjA0.MTc0NzgxNjE4OQ==.FDP-mNTjfuOKovulMFbaSkoeq";
+                    "NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv";
 
                 let paste = Paste::fetch(&pool, &paste_id)
                     .await
@@ -1447,7 +2384,7 @@ mod tests {
 
                 assert!(paste.is_some(), "Paste was not found");
 
-                assert_eq!(documents.len(), 1, "Incorrect amount of documents found");
+                assert_eq!(documents.len(), 2, "Incorrect amount of documents found");
 
                 assert!(token.is_some(), "Token was not found");
 
@@ -1584,48 +2521,48 @@ mod tests {
     #[case(
         make_config(None, Some(1), None),
         UndefinedOption::None,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter cannot be none."
     )]
     #[case(
         make_config(None, None, Some(100)),
         UndefinedOption::None,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter cannot be none."
     )]
     #[case(
         make_config(Some(10), Some(1), None),
         UndefinedOption::None,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter cannot be none."
     )]
     #[case(
         make_config(None, Some(1), Some(100)),
         UndefinedOption::None,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter cannot be none."
     )]
     #[case(
         make_config(Some(10), None, Some(100)),
         UndefinedOption::None,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter cannot be none."
     )]
     #[case(
         make_config(Some(10), Some(1), Some(100)),
         UndefinedOption::None,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter cannot be none."
     )]
     // Undefined expiry cases.
     #[case(
         make_config(None, Some(1), None),
         UndefinedOption::Undefined,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter is required."
     )]
     #[case(
         make_config(None, None, Some(100)),
         UndefinedOption::Undefined,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter is required."
     )]
     #[case(
         make_config(None, Some(1), Some(100)),
         UndefinedOption::Undefined,
-        "Timestamp must be provided."
+        "The expiry timestamp parameter is required."
     )]
     // Invalid expiry cases.
     #[case(

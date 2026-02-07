@@ -2,10 +2,13 @@ use regex::Regex;
 use serde::Serialize;
 use sqlx::{PgExecutor, PgTransaction};
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 use serde::Deserialize;
 
-use crate::{app::config::Config, models::errors::RESTError};
+use crate::{
+    app::config::Config,
+    models::{errors::RESTError, snowflake::PartialSnowflake, undefined::Undefined},
+};
 
 use super::{errors::DatabaseError, snowflake::Snowflake};
 
@@ -33,7 +36,7 @@ const SUPPORTED_MIMES: &[&str] = &[
 pub const UNSUPPORTED_MIMES: &[&str] =
     &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
 
-#[cfg_attr(any(test, feature = "testing"), derive(Deserialize))]
+#[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize, Clone, Debug)]
 pub struct Document {
     /// The ID of the document.
@@ -491,41 +494,66 @@ pub fn contains_mime(mimes: &[&str], value: &str) -> bool {
 ///
 /// ## Arguments
 ///
+/// - `id` - The documents relavant ID.
 /// - `config` - The config to check again.
 /// - `document` - The document to check.
 ///
 /// ## Errors
 ///
 /// - [`RESTError`] - Returned when the documents are outside of the limits.
-pub fn document_limits(config: &Config, document: &Document) -> Result<(), RESTError> {
+pub fn document_limits(
+    config: &Config,
+    id: &PartialSnowflake,
+    name: Undefined<&str>,
+    content: Undefined<&str>,
+) -> Result<(), RESTError> {
     let size_limits = config.size_limits();
 
-    if size_limits.minimum_document_size() > document.size {
-        return Err(RESTError::BadRequest(format!(
-            "The document: `{}` is too small.",
-            document.name
-        )));
+    if let Undefined::Some(content) = content {
+        let content_length = content.len();
+
+        if size_limits.minimum_document_size() > content_length {
+            return Err(RESTError::BadRequest(format!(
+                "Document `{}` is too small.",
+                id
+            )));
+        }
+
+        if size_limits.maximum_document_size() < content_length {
+            return Err(RESTError::BadRequest(format!(
+                "Document `{}` is too large.",
+                id
+            )));
+        }
     }
 
-    if size_limits.maximum_document_size() < document.size {
-        return Err(RESTError::BadRequest(format!(
-            "The document: `{}` is too large.",
-            document.name
-        )));
-    }
+    if let Undefined::Some(name) = name {
+        let name_length = name.len();
 
-    if size_limits.minimum_document_name_size() > document.name.len() {
-        return Err(RESTError::BadRequest(format!(
-            "The document name: `{}` is too small.",
-            document.name
-        )));
-    }
+        if size_limits.minimum_document_name_size() > name_length {
+            return Err(RESTError::BadRequest(format!(
+                "Document `{}`'s name: `{}` is too small.",
+                id, name
+            )));
+        }
 
-    if size_limits.maximum_document_name_size() < document.name.len() {
-        return Err(RESTError::BadRequest(format!(
-            "The document name: `{:.25}...` is too large.",
-            document.name
-        )));
+        if size_limits.maximum_document_name_size() < name_length {
+            if name_length > 50 {
+                return Err(RESTError::BadRequest(format!(
+                    "Document `{}`'s name: `{}`... is too large.",
+                    id,
+                    &name[..name
+                        .char_indices()
+                        .nth(47)
+                        .map(|(i, _)| i)
+                        .unwrap_or(name.len())]
+                )));
+            }
+            return Err(RESTError::BadRequest(format!(
+                "Document `{}`'s name: `{}` is too large.",
+                id, name
+            )));
+        }
     }
 
     Ok(())
@@ -555,15 +583,19 @@ pub async fn total_document_limits(
         Document::fetch_total_document_count(transaction.as_mut(), paste_id).await?;
 
     if size_limits.minimum_total_document_count() > total_document_count {
-        return Err(RESTError::BadRequest(
-            "One or more documents is below the minimum total document count.".to_string(),
-        ));
+        return Err(RESTError::BadRequest(format!(
+            "Not enough documents were provided. Expected: {}, Received: {}",
+            size_limits.minimum_total_document_count(),
+            total_document_count,
+        )));
     }
 
     if size_limits.maximum_total_document_count() < total_document_count {
-        return Err(RESTError::BadRequest(
-            "One or more documents exceed the maximum total document count.".to_string(),
-        ));
+        return Err(RESTError::BadRequest(format!(
+            "Too many documents were provided. Expected: {}, Received: {}",
+            size_limits.maximum_total_document_count(),
+            total_document_count,
+        )));
     }
 
     let total_document_size =
@@ -582,4 +614,188 @@ pub async fn total_document_limits(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use sqlx::PgPool;
+
+    use crate::app::{
+        config::{Config, SizeLimitConfig},
+        database::Database,
+    };
+
+    fn make_document_limits_config(
+        minimum_document_size: usize,
+        minimum_document_name_size: usize,
+        maximum_document_size: usize,
+        maximum_document_name_size: usize,
+    ) -> Config {
+        Config::test_builder()
+            .size_limits(
+                SizeLimitConfig::test_builder()
+                    .minimum_document_size(minimum_document_size)
+                    .minimum_document_name_size(minimum_document_name_size)
+                    .maximum_document_size(maximum_document_size)
+                    .maximum_document_name_size(maximum_document_name_size)
+                    .build()
+                    .expect("Failed to build rate limits"),
+            )
+            .build()
+            .expect("Failed to build config.")
+    }
+
+    #[test]
+    fn test_document_limits() {
+        document_limits(
+            &make_document_limits_config(1, 3, 1_000_000, 50),
+            &PartialSnowflake::new(123),
+            Undefined::Some("text/plain"),
+            Undefined::Some("some random content."),
+        )
+        .expect("An error occurred.");
+    }
+
+    #[rstest]
+    #[case(
+        make_document_limits_config(1, 50, 1_000_000, 50),
+        "test_doc.txt",
+        "Document `123`'s name: `test_doc.txt` is too small."
+    )]
+    #[case(
+        make_document_limits_config(1, 3, 1_000_000, 10),
+        "test_doc.txt",
+        "Document `123`'s name: `test_doc.txt` is too large."
+    )]
+    #[case(
+        make_document_limits_config(1, 3, 1_000_000, 10),
+        "this_is_a_really_long_document_name_that_is_far_too_long_for_use.txt",
+        "Document `123`'s name: `this_is_a_really_long_document_name_that_is_far`... is too large."
+    )]
+    #[case(
+        make_document_limits_config(500, 3, 1_000_000, 50),
+        "test_doc.txt",
+        "Document `123` is too small."
+    )]
+    #[case(
+        make_document_limits_config(1, 3, 250, 50),
+        "test_doc.txt",
+        "Document `123` is too large."
+    )]
+    fn test_document_limits_errors(
+        #[case] config: Config,
+        #[case] title: &str,
+        #[case] expected: &str,
+    ) {
+        let content: String = (0..=489).map(|_| 'a').collect();
+
+        let error = document_limits(
+            &config,
+            &PartialSnowflake::new(123),
+            Undefined::Some(title),
+            Undefined::Some(&content),
+        )
+        .expect_err("No error received.");
+
+        if let RESTError::BadRequest(bad_request) = error {
+            assert_eq!(
+                bad_request, expected,
+                "The bad request message received was unexpected."
+            );
+        } else {
+            panic!("The error received, was not expected.");
+        }
+    }
+
+    fn make_total_document_limits_config(
+        minimum_total_document_count: usize,
+        minimum_total_document_size: usize,
+        maximum_total_document_count: usize,
+        maximum_total_document_size: usize,
+    ) -> Config {
+        Config::test_builder()
+            .size_limits(
+                SizeLimitConfig::test_builder()
+                    .minimum_total_document_count(minimum_total_document_count)
+                    .minimum_total_document_size(minimum_total_document_size)
+                    .maximum_total_document_count(maximum_total_document_count)
+                    .maximum_total_document_size(maximum_total_document_size)
+                    .build()
+                    .expect("Failed to build rate limits"),
+            )
+            .build()
+            .expect("Failed to build config.")
+    }
+
+    #[sqlx::test(fixtures(path = "../../tests/fixtures/", scripts("pastes", "documents")))]
+    async fn test_total_document_limits(pool: PgPool) {
+        let db = Database::from_pool(pool);
+
+        let mut transaction = db
+            .pool()
+            .begin()
+            .await
+            .expect("Failed to generate a transaction.");
+
+        total_document_limits(
+            &mut transaction,
+            &make_total_document_limits_config(1, 1, 10, 10_000_000),
+            &Snowflake::new(517_815_304_354_284_601),
+        )
+        .await
+        .expect("An error occurred.");
+    }
+
+    #[rstest]
+    #[case(
+        make_total_document_limits_config(5, 1, 5, 5000),
+        "Not enough documents were provided. Expected: 5, Received: 2"
+    )]
+    #[case(
+        make_total_document_limits_config(1, 1, 1, 5000),
+        "Too many documents were provided. Expected: 1, Received: 2"
+    )]
+    #[case(
+        make_total_document_limits_config(1, 2500, 5, 5000),
+        "One or more documents is below the minimum individual document size."
+    )]
+    #[case(
+        make_total_document_limits_config(1, 1, 5, 2000),
+        "One or more documents exceed the maximum individual document size."
+    )]
+    #[sqlx::test(fixtures(path = "../../tests/fixtures/", scripts("pastes", "documents")))]
+    async fn test_total_document_limits_errors(
+        #[ignore] pool: PgPool,
+        #[case] config: Config,
+        #[case] expected: &str,
+    ) {
+        use crate::app::database::Database;
+
+        let db = Database::from_pool(pool);
+
+        let mut transaction = db
+            .pool()
+            .begin()
+            .await
+            .expect("Failed to generate a transaction.");
+
+        let error = total_document_limits(
+            &mut transaction,
+            &config,
+            &Snowflake::new(517_815_304_354_284_602),
+        )
+        .await
+        .expect_err("No error received.");
+
+        if let RESTError::BadRequest(bad_request) = error {
+            assert_eq!(
+                bad_request, expected,
+                "The bad request message received was unexpected."
+            );
+        } else {
+            panic!("The error received, was not expected.");
+        }
+    }
 }

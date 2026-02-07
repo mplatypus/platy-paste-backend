@@ -6,7 +6,7 @@ use aws_sdk_s3::{
 };
 use bytes::{Bytes, BytesMut};
 use secrecy::ExposeSecret as _;
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 use tokio::sync::Mutex;
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 
 use super::application::ApplicationState;
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -27,8 +27,10 @@ const DOCUMENT_BUCKET: &str = "documents";
 const BUCKETS: [&str; 1] = [DOCUMENT_BUCKET];
 
 pub trait ObjectStoreExt: Sized {
+    /// Binds the application to the object store.
     fn bind_app(&mut self, app: Weak<ApplicationState>);
 
+    /// The application related to the object store.
     fn app(&self) -> Arc<ApplicationState>;
 
     /// Create buckets.
@@ -46,7 +48,7 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Arguments
     ///
-    /// - `document_path` - The built path of the document.
+    /// - `document` - The document object to fetch.
     ///
     /// ## Errors
     ///
@@ -54,7 +56,7 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Returns
     ///
-    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError>;
+    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError>;
 
     /// Create a document
     ///
@@ -62,8 +64,8 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Arguments
     ///
-    /// - `document`: The [`Document`].
-    /// - `content`: The content of the document.
+    /// - `document` - The [`Document`].
+    /// - `content` - The content of the document.
     ///
     /// ## Errors
     ///
@@ -80,18 +82,18 @@ pub trait ObjectStoreExt: Sized {
     ///
     /// ## Arguments
     ///
-    /// - `document_path`: The built path of the document.
+    /// - `document` - The document object to fetch.
     ///
     /// ## Errors
     ///
     /// - [`ObjectStoreError`] - When the document could not be deleted.
-    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError>;
+    async fn delete_document(&self, document: &Document) -> Result<(), ObjectStoreError>;
 }
 
 #[derive(Debug, Clone)]
 pub enum ObjectStore {
     S3(S3ObjectStore),
-    #[cfg(any(test, feature = "testing"))]
+    #[cfg(test)]
     Test(TestObjectStore),
 }
 
@@ -99,7 +101,7 @@ impl ObjectStore {
     pub fn from_config(config: &ObjectStoreConfig) -> Result<Self, ObjectStoreError> {
         match config {
             ObjectStoreConfig::S3(config) => Ok(Self::S3(S3ObjectStore::from_config(config))),
-            #[cfg(any(test, feature = "testing"))]
+            #[cfg(test)]
             ObjectStoreConfig::Test => Ok(ObjectStore::Test(TestObjectStore::new())),
         }
     }
@@ -109,7 +111,7 @@ impl ObjectStoreExt for ObjectStore {
     fn bind_app(&mut self, app: Weak<ApplicationState>) {
         match self {
             Self::S3(os) => os.bind_app(app),
-            #[cfg(any(test, feature = "testing"))]
+            #[cfg(test)]
             Self::Test(os) => os.bind_app(app),
         }
     }
@@ -117,7 +119,7 @@ impl ObjectStoreExt for ObjectStore {
     fn app(&self) -> Arc<ApplicationState> {
         match self {
             Self::S3(os) => os.app(),
-            #[cfg(any(test, feature = "testing"))]
+            #[cfg(test)]
             Self::Test(os) => os.app(),
         }
     }
@@ -125,16 +127,16 @@ impl ObjectStoreExt for ObjectStore {
     async fn create_buckets(&self) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.create_buckets().await,
-            #[cfg(any(test, feature = "testing"))]
+            #[cfg(test)]
             Self::Test(os) => os.create_buckets().await,
         }
     }
 
-    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError> {
+    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError> {
         match self {
-            Self::S3(os) => os.fetch_document(document_path).await,
-            #[cfg(any(test, feature = "testing"))]
-            Self::Test(os) => os.fetch_document(document_path).await,
+            Self::S3(os) => os.fetch_document(document).await,
+            #[cfg(test)]
+            Self::Test(os) => os.fetch_document(document).await,
         }
     }
 
@@ -145,16 +147,16 @@ impl ObjectStoreExt for ObjectStore {
     ) -> Result<(), ObjectStoreError> {
         match self {
             Self::S3(os) => os.create_document(document, content).await,
-            #[cfg(any(test, feature = "testing"))]
+            #[cfg(test)]
             Self::Test(os) => os.create_document(document, content).await,
         }
     }
 
-    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError> {
+    async fn delete_document(&self, document: &Document) -> Result<(), ObjectStoreError> {
         match self {
-            Self::S3(os) => os.delete_document(document_path).await,
-            #[cfg(any(test, feature = "testing"))]
-            Self::Test(os) => os.delete_document(document_path).await,
+            Self::S3(os) => os.delete_document(document).await,
+            #[cfg(test)]
+            Self::Test(os) => os.delete_document(document).await,
         }
     }
 }
@@ -256,12 +258,12 @@ impl ObjectStoreExt for S3ObjectStore {
         Ok(())
     }
 
-    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError> {
+    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError> {
         let mut data = self
             .client
             .get_object()
             .bucket(DOCUMENT_BUCKET)
-            .key(document_path)
+            .key(document.generate_path())
             .send()
             .await?;
 
@@ -290,11 +292,11 @@ impl ObjectStoreExt for S3ObjectStore {
         Ok(())
     }
 
-    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError> {
+    async fn delete_document(&self, document: &Document) -> Result<(), ObjectStoreError> {
         self.client
             .delete_object()
             .bucket(DOCUMENT_BUCKET)
-            .key(document_path)
+            .key(document.generate_path())
             .send()
             .await?;
 
@@ -302,7 +304,7 @@ impl ObjectStoreExt for S3ObjectStore {
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct TestObjectStore {
     app: Weak<ApplicationState>,
@@ -310,7 +312,7 @@ pub struct TestObjectStore {
     data: Arc<Mutex<HashMap<(String, String), Bytes>>>,
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 impl TestObjectStore {
     pub fn new() -> Self {
         use tokio::sync::Mutex;
@@ -323,7 +325,7 @@ impl TestObjectStore {
     }
 }
 
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 impl ObjectStoreExt for TestObjectStore {
     fn bind_app(&mut self, app: Weak<ApplicationState>) {
         self.app = app;
@@ -349,10 +351,11 @@ impl ObjectStoreExt for TestObjectStore {
         Ok(())
     }
 
-    async fn fetch_document(&self, document_path: String) -> Result<Bytes, ObjectStoreError> {
+    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError> {
         let data_lock = self.data.lock().await;
 
-        let document_contents = data_lock.get(&(DOCUMENT_BUCKET.to_string(), document_path));
+        let document_contents =
+            data_lock.get(&(DOCUMENT_BUCKET.to_string(), document.generate_path()));
 
         match document_contents {
             Some(contents) => Ok(contents.clone()),
@@ -380,10 +383,10 @@ impl ObjectStoreExt for TestObjectStore {
         Ok(())
     }
 
-    async fn delete_document(&self, document_path: String) -> Result<(), ObjectStoreError> {
+    async fn delete_document(&self, document: &Document) -> Result<(), ObjectStoreError> {
         let mut data_lock = self.data.lock().await;
 
-        data_lock.remove(&(DOCUMENT_BUCKET.to_string(), document_path));
+        data_lock.remove(&(DOCUMENT_BUCKET.to_string(), document.generate_path()));
 
         Ok(())
     }

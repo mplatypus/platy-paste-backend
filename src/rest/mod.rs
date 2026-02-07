@@ -5,7 +5,7 @@ pub mod paste;
 use std::time::Duration;
 
 use axum::Router;
-use http::{HeaderValue, Method, header};
+use http::{HeaderValue, Method, StatusCode, header};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
 use crate::{app::application::App, models::errors::RESTError};
@@ -34,7 +34,10 @@ pub fn generate_router(state: App) -> Router<()> {
         .nest("/v1", document::generate_router(&config))
         .nest("/v1", config::generate_router(&config))
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(Duration::from_secs(10)))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::GATEWAY_TIMEOUT,
+            Duration::from_secs(10),
+        )) // TODO: Not sure if gateway timeout makes sense for this.
         .layer(cors)
         .fallback(fallback)
         .with_state(state)

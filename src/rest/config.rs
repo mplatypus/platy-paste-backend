@@ -8,7 +8,7 @@ use http::StatusCode;
 
 use crate::{
     app::{application::App, config::Config},
-    models::{errors::RESTError, payload::ResponseConfig},
+    models::{errors::RESTError, payload::config::*},
 };
 
 pub fn generate_router(config: &Config) -> Router<App> {
@@ -35,17 +35,18 @@ mod tests {
         application::ApplicationState, config::Config, object_store::TestObjectStore,
     };
 
-    use crate::models::payload::ResponseConfig;
+    use crate::models::payload::config::ResponseConfig;
     use crate::rest::generate_router as main_generate_router;
 
     mod v1 {
         use super::*;
 
         mod get_config {
+
             use super::*;
 
             #[sqlx::test]
-            async fn test_working(pool: PgPool) {
+            async fn test_successful(pool: PgPool) {
                 let config = Config::test_builder()
                     .build()
                     .expect("Failed to build config.");

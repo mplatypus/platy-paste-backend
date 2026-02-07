@@ -1,9 +1,9 @@
-#[cfg(any(test, feature = "testing"))]
+#[cfg(test)]
 use derive_builder::Builder;
 use secrecy::SecretString;
 
-#[cfg_attr(any(test, feature = "testing"), derive(Builder, Default))]
-#[cfg_attr(any(test, feature = "testing"), builder(default))]
+#[cfg_attr(test, derive(Builder, Default))]
+#[cfg_attr(test, builder(default))]
 #[derive(Debug, Clone)]
 pub struct Config {
     /// The host to run on.
@@ -21,7 +21,7 @@ pub struct Config {
 }
 
 impl Config {
-    #[cfg(any(test, feature = "testing"))]
+    #[cfg(test)]
     pub fn test_builder() -> ConfigBuilder {
         ConfigBuilder::default()
     }
@@ -66,12 +66,12 @@ impl Config {
     }
 }
 
-#[cfg_attr(any(test, feature = "testing"), derive(Default))]
+#[cfg_attr(test, derive(Default))]
 #[derive(Debug, Clone)]
 pub enum ObjectStoreConfig {
     S3(S3ObjectStoreConfig),
-    #[cfg(any(test, feature = "testing"))]
-    #[cfg_attr(any(test, feature = "testing"), default)]
+    #[cfg(test)]
+    #[cfg_attr(test, default)]
     Test,
 }
 
@@ -125,8 +125,8 @@ impl S3ObjectStoreConfig {
     }
 }
 
-#[cfg_attr(any(test, feature = "testing"), derive(Builder))]
-#[cfg_attr(any(test, feature = "testing"), builder(default))]
+#[cfg_attr(test, derive(Builder))]
+#[cfg_attr(test, builder(default))]
 #[derive(Debug, Clone)]
 pub struct SizeLimitConfig {
     /// The default expiry for pastes.
@@ -162,7 +162,7 @@ pub struct SizeLimitConfig {
 }
 
 impl SizeLimitConfig {
-    #[cfg(any(test, feature = "testing"))]
+    #[cfg(test)]
     pub fn test_builder() -> SizeLimitConfigBuilder {
         SizeLimitConfigBuilder::default()
     }
@@ -363,11 +363,6 @@ impl SizeLimitConfig {
         assert!(
             value.minimum_document_name_size < value.maximum_document_name_size,
             "The MINIMUM_DOCUMENT_NAME_SIZE must be equal to or less than MAXIMUM_DOCUMENT_NAME_SIZE"
-        );
-
-        assert!(
-            value.minimum_document_name_size > 0,
-            "The MINIMUM_DOCUMENT_NAME_SIZE must be greater than 0."
         );
 
         value
