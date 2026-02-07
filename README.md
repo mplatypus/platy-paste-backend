@@ -97,7 +97,7 @@ On that page, press the `Create access key +` button.
 
 Fill out any information like `expiry` (not recommended) and the `name`/`description`.
 
-Press the `Create` button, and use the created `Access Key` and enter it in your environment file, under the `S3_ACCESS_KEY` and the `Secret Key under the `S3_SECRET_KEY` variable.
+Press the `Create` button, and use the created `Access Key` and enter it in your environment file, under the `OBS_ACCESS_KEY` and the Secret Key under the `OBS_SECRET_KEY` variable.
 
 ---
 </details>
