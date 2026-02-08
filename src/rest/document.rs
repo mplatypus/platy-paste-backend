@@ -8,7 +8,7 @@ use http::{HeaderName, HeaderValue, StatusCode};
 
 use crate::{
     app::{application::App, config::Config},
-    models::{document::Document, errors::RESTError, paste::Paste, payload::document::*},
+    models::{document::Document, errors::RESTError, paste::validate_paste, payload::document::*},
 };
 
 pub fn generate_router(config: &Config) -> Router<App> {
@@ -39,6 +39,8 @@ pub async fn get_document(
     State(app): State<App>,
     Path(path): Path<GetDocumentPath>,
 ) -> Result<(StatusCode, Json<Document>), RESTError> {
+    let mut paste = validate_paste(app.database(), path.paste_id(), None).await?;
+
     let document = Document::fetch(app.database().pool(), path.document_id())
         .await?
         .ok_or_else(|| RESTError::NotFound("Document not found.".to_string()))?;
@@ -49,7 +51,7 @@ pub async fn get_document(
         ));
     }
 
-    Paste::add_view(app.database().pool(), path.paste_id()).await?;
+    paste.add_view(app.database().pool()).await?;
 
     Ok((StatusCode::OK, Json(document)))
 }
@@ -214,7 +216,10 @@ mod test {
 
             #[rstest]
             #[case(Snowflake::new(517815304354284605), Some("Document not found."))]
-            #[case(Snowflake::new(1234567890), Some("Document not found."))]
+            #[case(
+                Snowflake::new(1234567890),
+                Some("The paste requested could not be found")
+            )]
             #[sqlx::test(fixtures(path = "../../tests/fixtures", scripts("pastes", "documents")))]
             async fn test_missing(
                 #[ignore] pool: PgPool,
