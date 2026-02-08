@@ -19,7 +19,7 @@ use crate::{
         authentication::Token,
         document::{Document, UNSUPPORTED_MIMES, contains_mime, document_limits},
         errors::RESTError,
-        paste::Paste,
+        paste::{Paste, PasteUpdateParameters},
         payload::document::{PatchPasteDocumentBody, PostPasteDocumentBody},
         snowflake::{PartialSnowflake, Snowflake},
         undefined::{Undefined, UndefinedOption},

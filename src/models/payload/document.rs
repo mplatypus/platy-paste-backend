@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 use crate::models::{
+    document::DocumentUpdateParameters,
     errors::RESTError,
     payload::paste::PastePath,
     snowflake::{PartialSnowflake, Snowflake},
@@ -102,6 +103,22 @@ impl TryFrom<PatchPasteDocumentBody> for PostPasteDocumentBody {
         };
 
         Ok(PostPasteDocumentBody { id: value.id, name })
+    }
+}
+
+impl From<PatchPasteDocumentBody> for DocumentUpdateParameters {
+    fn from(value: PatchPasteDocumentBody) -> Self {
+        Self::new(Undefined::Undefined, value.name, Undefined::Undefined)
+    }
+}
+
+impl From<&PatchPasteDocumentBody> for DocumentUpdateParameters {
+    fn from(value: &PatchPasteDocumentBody) -> Self {
+        Self::new(
+            Undefined::Undefined,
+            value.name.clone(),
+            Undefined::Undefined,
+        )
     }
 }
 

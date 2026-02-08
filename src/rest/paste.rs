@@ -11,9 +11,9 @@ use crate::{
     models::{
         DtUtc,
         authentication::{Token, generate_token},
-        document::{Document, total_document_limits},
+        document::{Document, DocumentUpdateParameters, total_document_limits},
         errors::{AuthenticationError, RESTError},
-        paste::{Paste, validate_paste},
+        paste::{Paste, PasteUpdateParameters, validate_paste},
         payload::{document::PostPasteDocumentBody, paste::*},
         snowflake::{PartialSnowflake, Snowflake},
         undefined::{Undefined, UndefinedOption},
@@ -51,9 +51,7 @@ pub async fn get_paste(
 
     let documents = Document::fetch_all(app.database().pool(), paste.id()).await?;
 
-    let view_count = Paste::add_view(app.database().pool(), path.paste_id()).await?;
-
-    paste.set_views(view_count);
+    paste.add_view(app.database().pool()).await?;
 
     let paste_response = ResponsePaste::from_paste(&paste, None, documents);
 
@@ -193,11 +191,11 @@ pub async fn patch_paste(
 ) -> Result<(StatusCode, Json<ResponsePaste>), RESTError> {
     let mut paste = validate_paste(app.database(), path.paste_id(), Some(token)).await?;
 
-    let new_expiry = validate_expiry(app.config(), body.payload.expiry())?;
+    let expiry = validate_expiry(app.config(), body.payload.expiry())?;
 
     let mut documents = Document::fetch_all(app.database().pool(), path.paste_id()).await?;
 
-    match body.payload.name() {
+    let name = match body.payload.name() {
         UndefinedOption::Some(name) => {
             let name = name.to_string();
 
@@ -213,35 +211,30 @@ pub async fn patch_paste(
                 ));
             }
 
-            paste.set_name(Some(name));
+            UndefinedOption::Some(name)
         }
-        UndefinedOption::None => {
-            paste.set_name(None);
-        }
-        UndefinedOption::Undefined => (),
-    }
+        other => other.map(ToString::to_string),
+    };
 
-    if !new_expiry.is_undefined() {
-        paste.set_expiry(new_expiry.into());
-    }
-
-    match body.payload.max_views() {
+    let max_views = match body.payload.max_views() {
         UndefinedOption::Some(max_views) => {
             if paste.views() >= max_views {
                 return Err(RESTError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
             }
 
-            paste.set_max_views(Some(max_views));
+            UndefinedOption::Some(max_views)
         }
-        UndefinedOption::None => paste.set_max_views(None),
-        UndefinedOption::Undefined => (),
-    }
+        other => other,
+    };
 
     let mut transaction = app.database().pool().begin().await?;
 
-    paste.set_edited()?;
-
-    paste.update(transaction.as_mut()).await?;
+    paste
+        .update(
+            transaction.as_mut(),
+            PasteUpdateParameters::new(name, expiry, Undefined::Undefined, max_views),
+        )
+        .await?;
 
     if let Undefined::Some(payload_documents) = body.payload.documents() {
         let mut new_documents = Vec::with_capacity(documents.len());
@@ -265,11 +258,10 @@ pub async fn patch_paste(
                 if *document.id() == PartialSnowflake::new(0) {
                     panic!("here 2");
                 }
-                if let Undefined::Some(name) = payload_document.name() {
-                    document.set_name(name);
-                }
 
-                document.update(transaction.as_mut()).await?;
+                document
+                    .update(transaction.as_mut(), payload_document.into())
+                    .await?;
                 new_documents.push(document);
             } else {
                 if *document.id() == PartialSnowflake::new(0) {
@@ -301,19 +293,18 @@ pub async fn patch_paste(
     }
 
     if let Undefined::Some(multipart_documents) = body.documents {
-        //let document_ids: Vec<Snowflake> = documents.iter().map(|v|*v.id()).collect();
-        //let mp_doc_ids: Vec<PartialSnowflake> = multipart_documents.iter().map(|v|*v.0.id()).collect();
-        //panic!("Document ID's: {document_ids:?}\nMP Document ID's: {mp_doc_ids:?}");
         for (body, content, mime) in multipart_documents {
             if let Some(document) = documents.iter_mut().find(|v| v.id() == body.id()) {
-                if let Undefined::Some(name) = body.name() {
-                    document.set_name(name);
-                }
-
-                document.set_doc_type(&mime.to_string());
-                document.set_size(content.len());
-
-                document.update(transaction.as_mut()).await?;
+                document
+                    .update(
+                        transaction.as_mut(),
+                        DocumentUpdateParameters::new(
+                            Undefined::Some(mime.to_string()),
+                            body.name().map(ToString::to_string),
+                            Undefined::Some(content.len()),
+                        ),
+                    )
+                    .await?;
 
                 app.object_store().delete_document(document).await?;
                 app.object_store()
@@ -1466,8 +1457,9 @@ mod tests {
 
                     let body: ResponsePaste = response.json();
 
-                    let body_document_ids: Vec<Snowflake> =
+                    let mut body_document_ids: Vec<Snowflake> =
                         body.documents().iter().map(|v| *v.id()).collect();
+                    body_document_ids.sort();
 
                     assert_eq!(
                         document_ids, body_document_ids,
@@ -1477,8 +1469,9 @@ mod tests {
                     let updated_documents = Document::fetch_all(&pool, &paste_id)
                         .await
                         .expect("Failed to make DB request");
-                    let updated_document_ids: Vec<Snowflake> =
+                    let mut updated_document_ids: Vec<Snowflake> =
                         updated_documents.iter().map(|v| *v.id()).collect();
+                    updated_document_ids.sort();
 
                     assert_eq!(
                         document_ids, updated_document_ids,

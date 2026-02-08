@@ -1,6 +1,6 @@
 use regex::Regex;
 use serde::Serialize;
-use sqlx::{PgExecutor, PgTransaction};
+use sqlx::{PgExecutor, PgTransaction, Postgres, QueryBuilder, Row};
 
 #[cfg(test)]
 use serde::Deserialize;
@@ -128,30 +128,6 @@ impl Document {
     #[inline]
     pub fn generate_path(&self) -> String {
         format!("{}/{}/{}", self.paste_id, self.id, self.name)
-    }
-
-    /// Set Document Type.
-    ///
-    /// Set the document type.
-    #[inline]
-    pub fn set_doc_type(&mut self, document_type: &str) {
-        self.doc_type = document_type.to_string();
-    }
-
-    /// Set Name.
-    ///
-    /// Set the document name.
-    #[inline]
-    pub fn set_name(&mut self, name: &str) {
-        self.name = name.to_string();
-    }
-
-    /// Set Size.
-    ///
-    /// Set the document size.
-    #[inline]
-    pub const fn set_size(&mut self, size: usize) {
-        self.size = size;
     }
 
     /// Fetch.
@@ -402,23 +378,72 @@ impl Document {
     /// ## Errors
     ///
     /// - [`DatabaseError`] - The database had an error.
-    pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), DatabaseError>
+    pub async fn update<'e, 'c: 'e, E>(
+        &mut self,
+        executor: E,
+        parameters: DocumentUpdateParameters,
+    ) -> Result<bool, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let document_id: i64 = self.id.into();
-        let paste_id: i64 = self.paste_id.into();
+        if parameters.is_empty() {
+            return Ok(false);
+        }
 
-        sqlx::query!(
-            "INSERT INTO documents(id, paste_id, type, name, size) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET type = $3, name = $4, size = $5",
-            document_id,
-            paste_id,
-            self.doc_type,
-            self.name,
-            self.size as i64
-        ).execute(executor).await?;
+        let id_val: i64 = self.id.into();
+        let paste_id_val: i64 = self.paste_id.into();
 
-        Ok(())
+        let mut builder: QueryBuilder<'_, Postgres> =
+            sqlx::QueryBuilder::new("UPDATE documents SET");
+        let mut requires_comma = false;
+
+        if let Undefined::Some(doc_type) = parameters.doc_type() {
+            if requires_comma {
+                builder.push(",");
+            } else {
+                requires_comma = true;
+            }
+
+            builder.push(" type = ");
+            builder.push_bind(doc_type);
+        }
+
+        if let Undefined::Some(name) = parameters.name() {
+            if requires_comma {
+                builder.push(",");
+            } else {
+                requires_comma = true;
+            }
+
+            builder.push(" name = ");
+            builder.push_bind(name);
+        }
+
+        if let Undefined::Some(size) = parameters.size() {
+            if requires_comma {
+                builder.push(",");
+            } else {
+                //requires_comma = true; // Left for future implementations
+            }
+
+            builder.push(" size = ");
+            builder.push_bind(size as i64);
+        }
+
+        builder.push(" WHERE paste_id = ");
+        builder.push_bind(paste_id_val);
+        builder.push(" AND id = ");
+        builder.push_bind(id_val);
+        builder.push(" RETURNING *");
+
+        let record = builder.build().fetch_one(executor).await?;
+
+        self.doc_type = record.get("type");
+        self.name = record.get("name");
+        let size: i64 = record.get("size");
+        self.size = size as usize;
+
+        Ok(true)
     }
 
     /// Delete.
@@ -443,6 +468,41 @@ impl Document {
             .await?;
 
         Ok(result.rows_affected() > 0)
+    }
+}
+
+pub struct DocumentUpdateParameters {
+    doc_type: Undefined<String>,
+    name: Undefined<String>,
+    size: Undefined<usize>,
+}
+
+impl DocumentUpdateParameters {
+    pub fn new(
+        doc_type: Undefined<String>,
+        name: Undefined<String>,
+        size: Undefined<usize>,
+    ) -> Self {
+        Self {
+            doc_type,
+            name,
+            size,
+        }
+    }
+    pub fn doc_type(&self) -> Undefined<&str> {
+        self.doc_type.as_deref()
+    }
+
+    pub fn name(&self) -> Undefined<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn size(&self) -> Undefined<usize> {
+        self.size
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.doc_type.is_undefined() && self.name.is_undefined() && self.size.is_undefined()
     }
 }
 

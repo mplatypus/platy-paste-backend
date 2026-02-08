@@ -1,5 +1,5 @@
-use chrono::{Timelike, Utc};
-use sqlx::PgExecutor;
+use chrono::Utc;
+use sqlx::{PgExecutor, Postgres, QueryBuilder, Row as _};
 use std::time::Duration;
 
 use crate::{
@@ -8,6 +8,7 @@ use crate::{
         DtUtc,
         document::Document,
         errors::{AuthenticationError, RESTError},
+        undefined::{Undefined, UndefinedOption},
     },
 };
 
@@ -95,53 +96,6 @@ impl Paste {
     #[inline]
     pub const fn max_views(&self) -> Option<usize> {
         self.max_views
-    }
-
-    /// Set Edited.
-    ///
-    /// Update the edited timestamp to the current time.
-    ///
-    /// ## Errors
-    ///
-    /// - [`DatabaseError`] - The database had an error.
-    #[inline]
-    pub fn set_edited(&mut self) -> Result<(), DatabaseError> {
-        self.edited = Some(Utc::now().with_nanosecond(0).ok_or(DatabaseError::Custom(
-            "Failed to strip nanosecond from date time object.".to_string(),
-        ))?);
-
-        Ok(())
-    }
-
-    /// Set Name.
-    ///
-    /// Set or remove the name of the paste.
-    pub fn set_name(&mut self, name: Option<String>) {
-        self.name = name;
-    }
-
-    /// Set Expiry.
-    ///
-    /// Set or remove the expiry on the paste.
-    #[inline]
-    pub const fn set_expiry(&mut self, expiry: Option<DtUtc>) {
-        self.expiry = expiry;
-    }
-
-    /// Set Max Views.
-    ///
-    /// Set or remove the maximum amount of views for a paste.
-    #[inline]
-    pub const fn set_max_views(&mut self, max_views: Option<usize>) {
-        self.max_views = max_views;
-    }
-
-    /// Set views.
-    ///
-    /// Allows for setting the view count of a paste, or updating it.
-    #[inline]
-    pub const fn set_views(&mut self, views: usize) {
-        self.views = views;
     }
 
     /// Fetch.
@@ -286,24 +240,66 @@ impl Paste {
     /// ## Errors
     ///
     /// - [`DatabaseError`] - The database had an error.
-    pub async fn update<'e, 'c: 'e, E>(&self, executor: E) -> Result<(), DatabaseError>
+    pub async fn update<'e, 'c: 'e, E>(
+        &mut self,
+        executor: E,
+        parameters: PasteUpdateParameters,
+    ) -> Result<bool, DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let paste_id: i64 = self.id.into();
+        if parameters.is_empty() {
+            return Ok(false);
+        }
 
-        sqlx::query!(
-            "INSERT INTO pastes(id, name, creation, edited, expiry, views, max_views) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO UPDATE SET name = $2, edited = $4, expiry = $5, views = $6, max_views = $7",
-            paste_id,
-            self.name,
-            self.creation,
-            self.edited,
-            self.expiry,
-            self.views as i64,
-            self.max_views.map(|v|v as i64)
-        ).execute(executor).await?;
+        let id_val: i64 = self.id.into();
 
-        Ok(())
+        let mut builder: QueryBuilder<'_, Postgres> =
+            sqlx::QueryBuilder::new("UPDATE pastes SET edited = ");
+        builder.push_bind(Utc::now());
+
+        if !parameters.name().is_undefined() {
+            let value: Option<&str> = parameters.name().into();
+
+            builder.push(", name = ");
+            builder.push_bind(value);
+        }
+
+        if !parameters.expiry().is_undefined() {
+            let value: Option<&DtUtc> = parameters.expiry().into();
+
+            builder.push(", expiry = ");
+            builder.push_bind(value);
+        }
+
+        if let Undefined::Some(size) = parameters.views() {
+            builder.push(", views = ");
+            builder.push_bind(size as i64);
+        }
+
+        if !parameters.max_views().is_undefined() {
+            let value: Option<usize> = parameters.max_views().into();
+
+            builder.push(", max_views = ");
+            builder.push_bind(value.map(|v| v as i64));
+        }
+
+        builder.push(" WHERE id = ");
+        builder.push_bind(id_val);
+        builder.push(" RETURNING *");
+
+        let record = builder.build().fetch_one(executor).await?;
+        println!("Here 1");
+
+        self.edited = record.get("edited");
+        self.name = record.get("name");
+        self.expiry = record.get("expiry");
+        let views: i64 = record.get("views");
+        self.views = views as usize;
+        let max_views: Option<i64> = record.get("max_views");
+        self.max_views = max_views.map(|v| v as usize);
+
+        Ok(true)
     }
 
     /// Add view.
@@ -318,23 +314,22 @@ impl Paste {
     /// ## Errors
     ///
     /// - [`DatabaseError`] - The database had an error.
-    pub async fn add_view<'e, 'c: 'e, E>(
-        executor: E,
-        id: &Snowflake,
-    ) -> Result<usize, DatabaseError>
+    pub async fn add_view<'e, 'c: 'e, E>(&mut self, executor: E) -> Result<(), DatabaseError>
     where
         E: 'e + PgExecutor<'c>,
     {
-        let id: i64 = (*id).into();
+        let id_val: i64 = self.id.into();
 
         let views = sqlx::query_scalar!(
             "UPDATE pastes SET views = views + 1 WHERE id = $1 RETURNING views",
-            id,
+            id_val,
         )
         .fetch_one(executor)
         .await?;
 
-        Ok(views as usize)
+        self.views = views as usize;
+
+        Ok(())
     }
 
     /// Delete.
@@ -359,6 +354,52 @@ impl Paste {
             .await?;
 
         Ok(result.rows_affected() > 0)
+    }
+}
+
+pub struct PasteUpdateParameters {
+    name: UndefinedOption<String>,
+    expiry: UndefinedOption<DtUtc>,
+    views: Undefined<usize>,
+    max_views: UndefinedOption<usize>,
+}
+
+impl PasteUpdateParameters {
+    pub fn new(
+        name: UndefinedOption<String>,
+        expiry: UndefinedOption<DtUtc>,
+        views: Undefined<usize>,
+        max_views: UndefinedOption<usize>,
+    ) -> Self {
+        Self {
+            name,
+            expiry,
+            views,
+            max_views,
+        }
+    }
+
+    pub fn name(&self) -> UndefinedOption<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn expiry(&self) -> UndefinedOption<&DtUtc> {
+        self.expiry.as_ref()
+    }
+
+    pub fn views(&self) -> Undefined<usize> {
+        self.views
+    }
+
+    pub fn max_views(&self) -> UndefinedOption<usize> {
+        self.max_views
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.name.is_undefined()
+            && self.expiry.is_undefined()
+            && self.views.is_undefined()
+            && self.max_views.is_undefined()
     }
 }
 
