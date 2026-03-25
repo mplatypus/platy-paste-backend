@@ -157,7 +157,7 @@ mod test {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let paste_id = Snowflake::new(517815304354284605);
                 let document_id = Snowflake::new(517815304354284708);
@@ -238,7 +238,7 @@ mod test {
                 let document_id = Snowflake::new(1234567890);
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let response = server
                     .get(&format!("/v1/pastes/{paste_id}/documents/{document_id}"))

@@ -524,7 +524,7 @@ mod tests {
                     .views();
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let response = server.get(&format!("/v1/pastes/{paste_id}")).await;
 
@@ -565,7 +565,7 @@ mod tests {
                 let paste_id = Snowflake::new(1234567890);
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let response = server.get(&format!("/v1/pastes/{paste_id}")).await;
 
@@ -603,7 +603,7 @@ mod tests {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let payload_expiry = Utc::now() + TimeDelta::days(1);
 
@@ -908,7 +908,7 @@ mod tests {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let payload =
                     serde_json::to_string(&payload).expect("Failed to build request body.");
@@ -1204,7 +1204,7 @@ mod tests {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let response = server.post("/v1/pastes").multipart(form).await;
 
@@ -1295,7 +1295,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -1346,7 +1346,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -1420,7 +1420,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -1568,7 +1568,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -1664,7 +1664,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -1722,7 +1722,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -1837,7 +1837,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -2165,7 +2165,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                     let app = main_generate_router(state);
-                    let server = TestServer::new(app).expect("Failed to build server.");
+                    let server = TestServer::new(app);
 
                     let paste_id = Snowflake::new(517815304354284605);
                     let token_string =
@@ -2220,7 +2220,7 @@ mod tests {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let mut request = server.patch(&format!("/v1/pastes/{paste_id}"));
 
@@ -2257,7 +2257,7 @@ mod tests {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let paste_id = Snowflake::new(517815304354284605);
                 let token_string =
@@ -2322,7 +2322,7 @@ mod tests {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let mut request = server.delete(&format!("/v1/pastes/{paste_id}"));
 
@@ -2359,7 +2359,7 @@ mod tests {
                         .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let paste_id = Snowflake::new(517815304354284605);
                 let token_string =

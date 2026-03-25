@@ -73,4 +73,4 @@ rstest = "0.26"
 derive_builder = "0.20"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-axum-test = "18.7"
+axum-test = "19.1"
