@@ -1,9 +1,10 @@
+//! Paths, Queries, Bodies and Responses related to the document endpoints.
+
 use serde::Deserialize;
 
 use crate::models::{
     document::DocumentUpdateParameters,
     errors::RESTError,
-    payload::paste::PastePath,
     snowflake::{PartialSnowflake, Snowflake},
     undefined::Undefined,
 };
@@ -12,6 +13,9 @@ use crate::models::{
 // Path //
 //------//
 
+/// ## Document Path
+///
+/// The values within the path of a document endpoint.
 #[derive(Deserialize)]
 pub struct DocumentPath {
     /// The paste ID.
@@ -21,29 +25,29 @@ pub struct DocumentPath {
 }
 
 impl DocumentPath {
+    /// The paste ID found within the path.
     #[inline]
     pub const fn paste_id(&self) -> &Snowflake {
         &self.paste_id
     }
 
+    /// The document ID found within the path.
     #[inline]
     pub const fn document_id(&self) -> &Snowflake {
         &self.document_id
     }
 }
 
-pub type PostDocumentPath = PastePath;
-
+/// Used for getting documents.
 pub type GetDocumentPath = DocumentPath;
-
-pub type PatchDocumentPath = DocumentPath;
-
-pub type DeleteDocumentPath = DocumentPath;
 
 //------//
 // Body //
 //------//
 
+/// ## Post Paste Document Body
+///
+/// The document body extracted from the actual body after parsing.
 #[derive(Deserialize, Clone)]
 pub struct PostPasteDocumentBody {
     /// The ID of the document.
@@ -56,17 +60,25 @@ pub struct PostPasteDocumentBody {
 }
 
 impl PostPasteDocumentBody {
+    /// The ID of the document.
+    ///
+    /// This is **not** a snowflake.
+    /// This is an integer, specifying which document it is referencing in the multipart form data.
     #[inline]
     pub const fn id(&self) -> &PartialSnowflake {
         &self.id
     }
 
+    /// The name of the document.
     #[inline]
     pub fn name(&self) -> &str {
         &self.name
     }
 }
 
+/// ## Patch Paste Document Body
+///
+/// The document body extracted from the actual body after parsing.
 #[derive(Deserialize, Clone)]
 pub struct PatchPasteDocumentBody {
     /// The ID of the document.
@@ -80,11 +92,16 @@ pub struct PatchPasteDocumentBody {
 }
 
 impl PatchPasteDocumentBody {
+    /// The ID of the document.
+    ///
+    /// This is **not** a snowflake.
+    /// This is an integer, specifying which document it is referencing in the multipart form data.
     #[inline]
     pub const fn id(&self) -> &PartialSnowflake {
         &self.id
     }
 
+    /// The name of the document.
     #[inline]
     pub fn name(&self) -> Undefined<&str> {
         self.name.as_deref()
@@ -121,7 +138,3 @@ impl From<&PatchPasteDocumentBody> for DocumentUpdateParameters {
         )
     }
 }
-
-//----------//
-// Response //
-//----------//

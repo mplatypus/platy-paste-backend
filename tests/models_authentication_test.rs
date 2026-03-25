@@ -1,3 +1,5 @@
+//! Tests for authentication model objects.
+
 use std::collections::HashSet;
 
 use base64::{Engine, prelude::BASE64_URL_SAFE};

@@ -1,3 +1,5 @@
+//! Tests for paste model objects.
+
 use chrono::{DateTime, TimeZone, Timelike as _, Utc};
 use platy_paste::{
     app::database::Database,

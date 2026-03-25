@@ -1,3 +1,5 @@
+//! Internal models and objects shared between items within the project.
+
 pub mod authentication;
 pub mod document;
 pub mod errors;

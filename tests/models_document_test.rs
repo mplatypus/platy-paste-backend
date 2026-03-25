@@ -1,3 +1,5 @@
+//! Tests for document model objects.
+
 use platy_paste::{
     app::database::Database,
     models::{document::*, snowflake::Snowflake, undefined::Undefined},

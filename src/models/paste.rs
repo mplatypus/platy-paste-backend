@@ -1,3 +1,5 @@
+//! Paste object and related items.
+
 use chrono::Utc;
 use sqlx::{PgExecutor, Postgres, QueryBuilder, Row as _};
 use std::time::Duration;
@@ -14,6 +16,9 @@ use crate::{
 
 use super::{authentication::Token, errors::DatabaseError, snowflake::Snowflake};
 
+/// ## Paste
+///
+/// The paste object stored in the database.
 #[derive(Debug, Clone)]
 pub struct Paste {
     /// The ID of the paste.
@@ -357,6 +362,9 @@ impl Paste {
     }
 }
 
+/// ## Paste Update Parameters
+///
+/// The parameters that can be used to update a paste.
 pub struct PasteUpdateParameters {
     name: UndefinedOption<String>,
     expiry: UndefinedOption<DtUtc>,
@@ -365,6 +373,9 @@ pub struct PasteUpdateParameters {
 }
 
 impl PasteUpdateParameters {
+    /// ## New.
+    ///
+    /// Create a new [`PasteUpdateParameters`] object.
     pub fn new(
         name: UndefinedOption<String>,
         expiry: UndefinedOption<DtUtc>,
@@ -379,22 +390,32 @@ impl PasteUpdateParameters {
         }
     }
 
+    /// The name to update the paste with.
     pub fn name(&self) -> UndefinedOption<&str> {
         self.name.as_deref()
     }
 
+    /// The expiry to update the paste with.
     pub fn expiry(&self) -> UndefinedOption<&DtUtc> {
         self.expiry.as_ref()
     }
 
+    /// The views to update the paste with.
     pub fn views(&self) -> Undefined<usize> {
         self.views
     }
 
+    /// The maximum views to update the paste with.
     pub fn max_views(&self) -> UndefinedOption<usize> {
         self.max_views
     }
 
+    /// ## Is Empty
+    ///
+    /// Used to check if the update parameters updates nothing.
+    ///
+    /// ## Returns
+    /// Returns [`true`] if all parameters are undefined, otherwise returns [`false`].
     pub fn is_empty(&self) -> bool {
         self.name.is_undefined()
             && self.expiry.is_undefined()
@@ -461,6 +482,9 @@ pub async fn validate_paste(
     Ok(paste)
 }
 
+/// ## Expiry Task Message
+///
+/// The messages that can be sent to the expiry task system.
 #[derive(Clone, Debug)]
 pub enum ExpiryTaskMessage {
     /// Cancel the expiry runners.

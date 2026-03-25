@@ -1,3 +1,5 @@
+//! Document related endpoints and router generator.
+
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, State},
@@ -11,6 +13,12 @@ use crate::{
     models::{document::Document, errors::RESTError, paste::validate_paste, payload::document::*},
 };
 
+/// ## Generate Router
+///
+/// Generates the router for document related endpoints.
+///
+/// ## Returns
+/// The router with all the document related endpoints attached.
 pub fn generate_router(config: &Config) -> Router<App> {
     Router::new()
         .route(
@@ -56,6 +64,9 @@ pub async fn get_document(
     Ok((StatusCode::OK, Json(document)))
 }
 
+/// ## Content Disposition
+///
+/// Custom content disposition header, with filename parser.
 #[derive(Debug, Clone)]
 pub struct ContentDisposition {
     disposition: String,
@@ -63,10 +74,12 @@ pub struct ContentDisposition {
 }
 
 impl ContentDisposition {
+    /// The contents disposition type.
     pub fn disposition(&self) -> &str {
         &self.disposition
     }
 
+    /// The content dispositions filename (if found).
     pub fn filename(&self) -> Option<&str> {
         self.filename.as_deref()
     }

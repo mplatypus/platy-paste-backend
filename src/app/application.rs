@@ -1,3 +1,4 @@
+//! The application state for holding references to all server related items.
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -12,8 +13,12 @@ use crate::{
 
 use super::{config::Config, database::Database};
 
+/// A short hand for [`Arc<ApplicationState>`]
 pub type App = Arc<ApplicationState>;
 
+/// ## Application State
+///
+/// The application state used to share items within the server.
 pub struct ApplicationState {
     config: Config,
     database: Database,
@@ -51,6 +56,8 @@ impl ApplicationState {
         }))
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     #[cfg(test)]
     pub async fn new_tests(
         config: Config,
@@ -64,16 +71,19 @@ impl ApplicationState {
         }))
     }
 
+    /// The configuration information about the server.
     #[inline]
     pub const fn config(&self) -> &Config {
         &self.config
     }
 
+    /// The database used by the server.
     #[inline]
     pub const fn database(&self) -> &Database {
         &self.database
     }
 
+    /// The object storage used by the server.
     #[inline]
     pub const fn object_store(&self) -> &ObjectStore {
         &self.object_store

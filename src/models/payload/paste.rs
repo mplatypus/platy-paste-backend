@@ -1,6 +1,4 @@
-//------//
-// Path //
-//------//
+//! Paths, Queries, Bodies and Responses related to the paste endpoints.
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,6 +24,13 @@ use crate::{
     },
 };
 
+//------//
+// Path //
+//------//
+
+/// ## Paste Path
+///
+/// The values within the path of a paste endpoint.
 #[derive(Deserialize)]
 pub struct PastePath {
     /// The paste ID.
@@ -33,22 +38,29 @@ pub struct PastePath {
 }
 
 impl PastePath {
+    /// The paste ID.
     #[inline]
     pub const fn paste_id(&self) -> &Snowflake {
         &self.paste_id
     }
 }
 
+/// Used for getting pastes.
 pub type GetPastePath = PastePath;
 
+/// Used for editing pastes.
 pub type PatchPastePath = PastePath;
 
+/// Used for deleting pastes.
 pub type DeletePastePath = PastePath;
 
 //------//
 // Body //
 //------//
 
+/// ## Post Paste Body Inner
+///
+/// The inner, or raw body of the paste, parsed directly from the client.
 #[derive(Deserialize)]
 pub struct PostPasteBodyInner {
     /// The name for the paste.
@@ -65,10 +77,17 @@ pub struct PostPasteBodyInner {
 }
 
 impl PostPasteBodyInner {
+    /// The documents within this paste.
     pub fn documents(&self) -> &[PostPasteDocumentBody] {
         &self.documents
     }
 
+    /// ## Into Parts
+    ///
+    /// Convert the paste body into its individual parts
+    ///
+    /// ## Returns
+    /// A tuple of the [`PostPasteBody`] and the documents within this paste.
     pub fn into_parts(self) -> (PostPasteBody, Vec<PostPasteDocumentBody>) {
         let body = PostPasteBody {
             name: self.name,
@@ -80,6 +99,9 @@ impl PostPasteBodyInner {
     }
 }
 
+/// ## Post Paste Body
+///
+/// The paste body extracted from the actual body after parsing.
 pub struct PostPasteBody {
     /// The name for the paste.
     name: UndefinedOption<String>,
@@ -90,22 +112,28 @@ pub struct PostPasteBody {
 }
 
 impl PostPasteBody {
+    /// The name for the paste.
     #[inline]
     pub fn name(&self) -> UndefinedOption<&str> {
         self.name.as_deref()
     }
 
+    /// The expiry time for the paste.
     #[inline]
     pub const fn expiry(&self) -> UndefinedOption<DtUtc> {
         self.expiry
     }
 
+    /// The maximum allowed views for the paste.
     #[inline]
     pub const fn max_views(&self) -> UndefinedOption<usize> {
         self.max_views
     }
 }
 
+/// ## Post Paste Body
+///
+/// The paste body extracted from the actual body after parsing.
 #[derive(Deserialize)]
 pub struct PatchPasteBody {
     /// The name for the paste.
@@ -123,21 +151,25 @@ pub struct PatchPasteBody {
 }
 
 impl PatchPasteBody {
+    /// The name for the paste.
     #[inline]
     pub fn name(&self) -> UndefinedOption<&str> {
         self.name.as_deref()
     }
 
+    /// The expiry time for the paste.
     #[inline]
     pub const fn expiry(&self) -> UndefinedOption<DtUtc> {
         self.expiry
     }
 
+    /// The maximum allowed views for the paste.
     #[inline]
     pub const fn max_views(&self) -> UndefinedOption<usize> {
         self.max_views
     }
 
+    /// The documents attached to the paste.
     #[inline]
     pub fn documents(&self) -> Undefined<&[PatchPasteDocumentBody]> {
         self.documents.as_deref()
@@ -148,6 +180,9 @@ impl PatchPasteBody {
 // Response //
 //----------//
 
+/// ## Response Paste
+///
+/// The paste returned when requested.
 #[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponsePaste {
@@ -236,38 +271,56 @@ impl ResponsePaste {
 
 #[cfg(test)]
 impl ResponsePaste {
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn id(&self) -> Snowflake {
         self.id
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn token(&self) -> Option<&str> {
         self.token.as_deref()
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn creation(&self) -> &DtUtc {
         &self.creation
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn edited(&self) -> Option<&DtUtc> {
         self.edited.as_ref()
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn expiry(&self) -> Option<&DtUtc> {
         self.expiry.as_ref()
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn views(&self) -> usize {
         self.views
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn max_views(&self) -> Option<usize> {
         self.max_views
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn documents(&self) -> &Vec<Document> {
         &self.documents
     }
@@ -277,8 +330,13 @@ impl ResponsePaste {
 // Extractors //
 //------------//
 
+/// ## Post Paste Multipart Body
+///
+/// The multipart extractor for a paste creation.
 pub struct PostPasteMultipartBody {
+    /// The payload of the multipart body.
     pub payload: PostPasteBody,
+    /// The documents attached to the multipart body.
     pub documents: Vec<(PostPasteDocumentBody, String, Mime)>,
 }
 
@@ -416,12 +474,26 @@ impl FromRequest<App> for PostPasteMultipartBody {
     }
 }
 
+/// ## Patch Paste Multipart Body
+///
+/// The multipart extractor for paste modification.
 pub struct PatchPasteMultipartBody {
+    /// The payload of the multipart body.
     pub payload: PatchPasteBody,
+    /// The documents attached to the multipart body.
     pub documents: Undefined<Vec<(PatchPasteDocumentBody, String, Mime)>>,
 }
 
 impl PatchPasteMultipartBody {
+    /// ## From Json
+    ///
+    /// Extracts the pastes body via JSON.
+    ///
+    /// ## Errors
+    /// Throws a [`RESTError`] if the body is not valid JSON, or does not parse into the expected data.
+    ///
+    /// ## Returns
+    /// The expected [`PatchPasteMultipartBody`] object.
     pub async fn from_json(req: axum::extract::Request, state: &App) -> Result<Self, RESTError> {
         let bytes = Bytes::from_request(req, state).await?;
 
@@ -445,6 +517,15 @@ impl PatchPasteMultipartBody {
         })
     }
 
+    /// ## From Multipart
+    ///
+    /// Extracts the pastes body via multipart.
+    ///
+    /// ## Errors
+    /// Throws a [`RESTError`] if the body is not valid multipart, or does not parse into the expected data.
+    ///
+    /// ## Returns
+    /// The expected [`PatchPasteMultipartBody`] object.
     pub async fn from_multipart(
         req: axum::extract::Request,
         state: &App,

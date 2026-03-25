@@ -1,3 +1,5 @@
+//! Paste related endpoints and router generator.
+
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, State},
@@ -20,6 +22,12 @@ use crate::{
     },
 };
 
+/// ## Generate Router
+///
+/// Generates the router for paste related endpoints.
+///
+/// ## Returns
+/// The router with all the paste related endpoints attached.
 pub fn generate_router(config: &Config) -> Router<App> {
     Router::new()
         .route("/pastes/{paste_id}", get(get_paste))
