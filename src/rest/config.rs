@@ -56,7 +56,7 @@ mod tests {
                     .expect("Failed to build application state.");
 
                 let app = main_generate_router(state);
-                let server = TestServer::new(app).expect("Failed to build server.");
+                let server = TestServer::new(app);
 
                 let response = server.get("/v1/config").await;
 
