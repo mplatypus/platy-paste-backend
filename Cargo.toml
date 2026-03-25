@@ -7,6 +7,8 @@ edition = "2024"
 unsafe_code = "forbid"
 # This is not really a library
 async_fn_in_trait = "allow"
+# Require documentation everywhere
+missing_docs = "deny"
 
 [lints.clippy]
 enum_glob_use = "deny"

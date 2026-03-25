@@ -1,3 +1,5 @@
+//! The main file for running the platy paste backend.
+
 pub mod app;
 pub mod models;
 pub mod rest;

@@ -1,3 +1,5 @@
+//! Tests for snowflake model objects.
+
 use std::collections::HashSet;
 
 use platy_paste::models::snowflake::Snowflake;

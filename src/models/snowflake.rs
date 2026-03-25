@@ -1,3 +1,8 @@
+//! ## Snowflake
+//!
+//! An implemention of a `Snowflake` type,
+//! used for unique identification of objects and items.
+
 use std::{fmt, num::ParseIntError, str::FromStr};
 
 use chrono::Utc;

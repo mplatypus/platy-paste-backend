@@ -1,3 +1,5 @@
+//! Paste object and related items.
+
 use regex::Regex;
 use serde::Serialize;
 use sqlx::{PgExecutor, PgTransaction, Postgres, QueryBuilder, Row};
@@ -36,6 +38,9 @@ const SUPPORTED_MIMES: &[&str] = &[
 pub const UNSUPPORTED_MIMES: &[&str] =
     &["image/*", "video/*", "audio/*", "font/*", "application/pdf"];
 
+/// ## Document
+///
+/// The document object stored in the database.
 #[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize, Clone, Debug)]
 pub struct Document {
@@ -471,6 +476,10 @@ impl Document {
     }
 }
 
+/// ## Document Update Parameters
+///
+/// The parameters that can be used to update a document.
+#[deny(missing_docs)]
 pub struct DocumentUpdateParameters {
     doc_type: Undefined<String>,
     name: Undefined<String>,
@@ -478,6 +487,9 @@ pub struct DocumentUpdateParameters {
 }
 
 impl DocumentUpdateParameters {
+    /// ## New
+    ///
+    /// Create a new [`DocumentUpdateParameters`] object.
     pub fn new(
         doc_type: Undefined<String>,
         name: Undefined<String>,
@@ -489,18 +501,28 @@ impl DocumentUpdateParameters {
             size,
         }
     }
+
+    /// The document type to update the document with.
     pub fn doc_type(&self) -> Undefined<&str> {
         self.doc_type.as_deref()
     }
 
+    /// The name to update the document with.
     pub fn name(&self) -> Undefined<&str> {
         self.name.as_deref()
     }
 
+    /// The size to update the document with.
     pub fn size(&self) -> Undefined<usize> {
         self.size
     }
 
+    /// ## Is Empty
+    ///
+    /// Used to check if the update parameters updates nothing.
+    ///
+    /// ## Returns
+    /// Returns [`true`] if all parameters are undefined, otherwise returns [`false`].
     pub fn is_empty(&self) -> bool {
         self.doc_type.is_undefined() && self.name.is_undefined() && self.size.is_undefined()
     }

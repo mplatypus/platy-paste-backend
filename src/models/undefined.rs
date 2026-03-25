@@ -1,3 +1,8 @@
+//! ## Undefined
+//!
+//! An implementation of the JSON's undefined type,
+//! where a parameter is completely missing from the JSON object.
+
 use core::fmt;
 use std::ops::Deref;
 
@@ -39,6 +44,9 @@ impl<T> UndefinedOption<T> {
         matches!(self, Self::Undefined)
     }
 
+    /// ## As Ref
+    ///
+    /// Converts from `&UndefinedOption<T>` to `UndefinedOption<&T>`.
     pub const fn as_ref(&self) -> UndefinedOption<&T> {
         match *self {
             Self::Some(ref x) => UndefinedOption::Some(x),
@@ -47,6 +55,9 @@ impl<T> UndefinedOption<T> {
         }
     }
 
+    /// ## As Deref
+    ///
+    /// Converts from `UndefinedOption<T>` (or `&UndefinedOption<T>`) to `UndefinedOption<&T::Target>`.
     pub fn as_deref(&self) -> UndefinedOption<&T::Target>
     where
         T: Deref,
@@ -54,6 +65,9 @@ impl<T> UndefinedOption<T> {
         self.as_ref().map(Deref::deref)
     }
 
+    /// ## Map
+    ///
+    /// Maps an `UndefinedOption<T>` to `UndefinedOption<U>` by applying a function to a contained value (if `Some`), `Undefined` (if `Undefined`) or returns `None` (if `None`).
     pub fn map<U, F>(self, f: F) -> UndefinedOption<U>
     where
         F: FnOnce(T) -> U,
@@ -65,6 +79,9 @@ impl<T> UndefinedOption<T> {
         }
     }
 
+    /// ## Is None Or
+    ///
+    /// Returns `true` if the option is a [`None`] or the value inside of it matches a predicate.
     #[expect(clippy::wrong_self_convention)]
     pub fn is_none_or(self, f: impl FnOnce(T) -> bool) -> bool {
         match self {
@@ -160,9 +177,18 @@ where
     }
 }
 
+/// Undefined
+///
+/// Indicates the difference between a value being undefined or some.
+///
+/// This option is identical to `Option<T>` however, this is used as a clear differentiation between `Option<T>` and `Undefined<T>`
+/// as `Undefined<T>` indicates that the parameter can be completely missing, whereas `Option<T>` indicates that the value must exist,
+/// but can be shown as null or the value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Undefined<T> {
+    /// The value extracted.
     Some(T),
+    /// The value was not defined.
     #[default]
     Undefined,
 }
@@ -182,6 +208,9 @@ impl<T> Undefined<T> {
         matches!(self, Self::Undefined)
     }
 
+    /// ## As Ref
+    ///
+    /// Converts from `&Undefined<T>` to `Undefined<&T>`.
     pub const fn as_ref(&self) -> Undefined<&T> {
         match *self {
             Self::Some(ref x) => Undefined::Some(x),
@@ -189,6 +218,9 @@ impl<T> Undefined<T> {
         }
     }
 
+    /// ## As Deref
+    ///
+    /// Converts from `Undefined<T>` (or `&Undefined<T>`) to `Undefined<&T::Target>`.
     pub fn as_deref(&self) -> Undefined<&T::Target>
     where
         T: Deref,
@@ -196,6 +228,9 @@ impl<T> Undefined<T> {
         self.as_ref().map(Deref::deref)
     }
 
+    /// ## Map
+    ///
+    /// Maps an `Undefined<T>` to `Undefined<U>` by applying a function to a contained value (if `Some`) or returns `Undefined` (if `Undefined`).
     pub fn map<U, F>(self, f: F) -> Undefined<U>
     where
         F: FnOnce(T) -> U,

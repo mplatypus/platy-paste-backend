@@ -1,3 +1,5 @@
+//! Configuration related endpoints and router generator.
+
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
@@ -11,6 +13,12 @@ use crate::{
     models::{errors::RESTError, payload::config::*},
 };
 
+/// ## Generate Router
+///
+/// Generates the router for config related endpoints.
+///
+/// ## Returns
+/// The router with all the config related endpoints attached.
 pub fn generate_router(config: &Config) -> Router<App> {
     Router::new()
         .route("/config", get(get_config))
@@ -19,6 +27,13 @@ pub fn generate_router(config: &Config) -> Router<App> {
         ))
 }
 
+/// Get Config.
+///
+/// Get the servers current configuration information.
+///
+/// ## Returns
+///
+/// - `200` - The [`ResponseConfig`] object.
 pub async fn get_config(State(app): State<App>) -> Result<Response, RESTError> {
     let response_config = ResponseConfig::from_config(app.config());
 

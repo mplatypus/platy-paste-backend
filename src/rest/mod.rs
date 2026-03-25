@@ -1,3 +1,5 @@
+//! REST related endpoints and router generators.
+
 pub mod config;
 pub mod document;
 pub mod paste;
@@ -10,6 +12,12 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
 use crate::{app::application::App, models::errors::RESTError};
 
+/// ## Generate Router
+///
+/// Generates the router for all application related endpoints.
+///
+/// ## Returns
+/// The router with all the application related endpoints attached.
 pub fn generate_router(state: App) -> Router<()> {
     let config = state.config().clone();
     let cors = CorsLayer::new()

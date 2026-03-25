@@ -1,3 +1,5 @@
+//! Authentication object and related items.
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
@@ -15,6 +17,9 @@ use sqlx::PgExecutor;
 
 use super::snowflake::Snowflake;
 
+/// ## Token
+///
+/// A pastes token used for modification and deletion.
 #[derive(Clone, Debug)]
 pub struct Token {
     /// The paste ID the token is attached to.

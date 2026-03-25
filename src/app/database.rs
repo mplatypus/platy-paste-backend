@@ -1,3 +1,5 @@
+//! The database object used for creating and holding the database pool and information.
+
 use std::sync::{Arc, Weak};
 
 use sqlx::{migrate, postgres::PgPool};
@@ -6,6 +8,9 @@ use crate::models::errors::DatabaseError;
 
 use super::application::ApplicationState;
 
+/// ## Database
+///
+/// The database used to store information about pastes and documents.
 #[derive(Clone, Debug)]
 pub struct Database {
     pool: Option<PgPool>,
@@ -39,10 +44,12 @@ impl Database {
         }
     }
 
+    /// Binds the application to the database.
     pub fn bind_to(&mut self, app: Weak<ApplicationState>) {
         self.app = app;
     }
 
+    /// The application connected to this database.
     pub fn app(&self) -> Arc<ApplicationState> {
         self.app
             .upgrade()

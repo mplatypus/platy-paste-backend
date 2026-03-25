@@ -1,3 +1,7 @@
+//! ## Errors
+//!
+//! Errors related to the application, and objects.
+
 use axum::{
     Json,
     http::StatusCode,
@@ -7,20 +11,41 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// ## Application Error
+///
+/// Errors related to the applictions creation and lifetime.
 #[derive(Error, Debug)]
 pub enum ApplicationError {
+    /// ## Database
+    ///
+    /// Errors from [`DatabaseError`].
     #[error(transparent)]
     Database(#[from] DatabaseError),
+    /// ## Object Store
+    ///
+    /// Errors from [`ObjectStoreError`].
     #[error(transparent)]
     ObjectStore(#[from] ObjectStoreError),
 }
 
+/// ## Databse Error
+///
+/// Errors related to the database.
 #[derive(Error, Debug)]
 pub enum DatabaseError {
+    /// ## SQLX
+    ///
+    /// Errors from [`sqlx::Error`].
     #[error("SQLX Error: {0}")]
     Sqlx(#[from] sqlx::Error),
+    /// ## Migrate
+    ///
+    /// Errors from [`sqlx::migrate::MigrateError`].
     #[error("Migrate Error: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+    /// ## Custom
+    ///
+    /// Custom database errors.
     #[error("Database Custom: {0}")]
     Custom(String),
 }
@@ -50,8 +75,14 @@ impl IntoResponse for DatabaseError {
     }
 }
 
+/// ## Object Store Error
+///
+/// Errors related to the object storage used.
 #[derive(Error, Debug)]
 pub enum ObjectStoreError {
+    /// ## S3
+    ///
+    /// Errors from [`aws_sdk_s3::error::SdkError<E, R>`].
     #[error("S3 Error: {0}")]
     S3(String),
 }
@@ -92,8 +123,14 @@ impl IntoResponse for ObjectStoreError {
     }
 }
 
+/// ## Generate Error
+///
+/// Errors related to the generation of custom values.
 #[derive(Error, Debug)]
 pub enum GenerateError {
+    /// ## Get Random
+    ///
+    /// Errors from [`getrandom::Error`].
     #[error("Get Random Error: {0}")]
     GetRandom(#[from] getrandom::Error),
 }
@@ -117,20 +154,44 @@ impl IntoResponse for GenerateError {
     }
 }
 
+/// ## Parse Error
+///
+/// Errors related to the parsing of different values to certain types.
 #[derive(Error, Debug)]
 pub enum ParseError {
+    /// ## JSON
+    ///
+    /// Errors from [`serde_json::Error`].
     #[error("JSON Error: {0}")]
     Json(#[from] serde_json::Error),
+    /// ## Regex
+    ///
+    /// Errors from [`regex::Error`].
     #[error("Regex Error: {0}")]
     Regex(#[from] regex::Error),
+    /// ## Header To String
+    ///
+    /// Errors from [`http::header::ToStrError`].
     #[error("Header To String Error: {0}")]
     HeaderToStr(#[from] http::header::ToStrError),
+    /// ## Mime From String
+    ///
+    /// Errors from [`mime::FromStrError`].
     #[error("Mime From String Error: {0}")]
     MimeFromStr(#[from] mime::FromStrError),
+    /// ## From UTF-8
+    ///
+    /// Errors from [`std::string::FromUtf8Error`].
     #[error("From UTF-8 Error: {0}")]
     FromUtf8(#[from] std::string::FromUtf8Error),
+    /// ## Parse Integer
+    ///
+    /// Errors from [`std::num::ParseIntError`].
     #[error("Parse Integer Error: {0}")]
     ParseInt(#[from] std::num::ParseIntError),
+    /// ## Parse Snowflake
+    ///
+    /// Used to validate that a snowflake is not just a random number.
     #[error("Parse Snowflake Error: {0}")]
     ParseSnowflake(String),
 }
@@ -218,10 +279,19 @@ impl IntoResponse for ParseError {
     }
 }
 
+/// ## Rejection Error
+///
+/// Errors related to the parsing of different axum body types.
 #[derive(Error, Debug)]
 pub enum RejectionError {
+    /// ## Multipart
+    ///
+    /// Errors from [`axum::extract::multipart::MultipartRejection`].
     #[error("Multipart Rejection Error: {0}")]
     Multipart(#[from] axum::extract::multipart::MultipartRejection),
+    /// ## Bytes
+    ///
+    /// Errors from [`axum::extract::rejection::BytesRejection`].
     #[error("Bytes Rejection Error: {0}")]
     Bytes(#[from] axum::extract::rejection::BytesRejection),
 }
@@ -249,29 +319,62 @@ impl IntoResponse for RejectionError {
     }
 }
 
+/// ## REST Error
+///
+/// All error types that can be returned when making a REST request.
 #[derive(Error, Debug)]
 pub enum RESTError {
     // Library Errors
+    /// ## Authentication
+    ///
+    /// Errors from [`AuthenticationError`].
     #[error(transparent)]
     Authentication(#[from] AuthenticationError),
+    /// ## Database
+    ///
+    /// Errors from [`DatabaseError`].
     #[error(transparent)]
     Database(#[from] DatabaseError),
+    /// ## Object Store
+    ///
+    /// Errors from [`ObjectStoreError`].
     #[error(transparent)]
     ObjectStore(#[from] ObjectStoreError),
+    /// ## Generate
+    ///
+    /// Errors from [`GenerateError`].
     #[error(transparent)]
     Generate(#[from] GenerateError),
+    /// ## Parse
+    ///
+    /// Errors from [`ParseError`].
     #[error(transparent)]
     Parse(#[from] ParseError),
+    /// ## Rejection
+    ///
+    /// Errors from [`RejectionError`].
     #[error(transparent)]
     Rejection(#[from] RejectionError),
     // Crate Errors
+    /// ## Multipart
+    ///
+    /// Errors from [`axum::extract::multipart::MultipartError`].
     #[error(transparent)]
     Multipart(#[from] axum::extract::multipart::MultipartError),
     // Custom Errors
+    /// ## Internal Server
+    ///
+    /// Custom errors related to internal server issues (500).
     #[error("Internal Server Error: {0}")]
     InternalServer(String),
+    /// ## Bad Request
+    ///
+    /// Custom errors related to bad requests (400).
     #[error("Bad Request Error: {0}")]
     BadRequest(String),
+    /// ## Not Found
+    ///
+    /// Custom errors related to unfound items or endpoints (404).
     #[error("Not Found: {0}")]
     NotFound(String),
 }
@@ -304,12 +407,20 @@ impl IntoResponse for RESTError {
     }
 }
 
-/// Authentication Errors
+/// ## Authentication Errors
+///
+/// Errors related to authenticating to the server.
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum AuthenticationError {
+    /// ## Missing Credentials
+    ///
+    /// The user did not provide credentials.
     #[error("Credentials are invalid and/or missing")]
     MissingCredentials,
+    /// ## Invalid Credentials
+    ///
+    /// The credentials that have been provided are invalid.
     #[error("Invalid Token and/or mismatched paste ID")]
     InvalidCredentials,
 }
@@ -330,6 +441,9 @@ impl IntoResponse for AuthenticationError {
     }
 }
 
+/// ## REST Error Response
+///
+/// The JSON response sent when an error occurs.
 #[derive(Serialize, Deserialize)]
 pub struct RESTErrorResponse {
     /// The reason for the error.
@@ -341,6 +455,9 @@ pub struct RESTErrorResponse {
 }
 
 impl RESTErrorResponse {
+    /// ## New
+    ///
+    /// Create a new [`RESTErrorResponse`] object.
     pub fn new(reason: impl ToString, trace: Option<String>) -> Self {
         Self {
             reason: reason.to_string(),
@@ -352,14 +469,20 @@ impl RESTErrorResponse {
 
 #[cfg(test)]
 impl RESTErrorResponse {
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn reason(&self) -> &str {
         &self.reason
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn trace(&self) -> Option<&str> {
         self.trace.as_deref()
     }
 
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     pub fn timestamp(&self) -> u64 {
         self.timestamp
     }

@@ -1,19 +1,18 @@
-use secrecy::ExposeSecret as _;
+//! Paths, Queries, Bodies and Responses related to the configuration endpoints.
+
 #[cfg(test)]
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::{
-    app::config::Config,
-    models::{
-        DtUtc, authentication::Token, document::Document, paste::Paste, snowflake::Snowflake,
-    },
-};
+use crate::app::config::Config;
 
 //----------//
 // Response //
 //----------//
 
+/// ## Response Config
+///
+/// The configuration object returned when requested.
 #[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseConfig {
@@ -48,6 +47,9 @@ impl ResponseConfig {
     }
 }
 
+/// ## Response Defaults Config
+///
+/// The default values for configuration information.
 #[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseDefaultsConfig {
@@ -89,6 +91,9 @@ impl ResponseDefaultsConfig {
     }
 }
 
+/// ## Response Size Limits Config
+///
+/// The size limits for configuration information.
 #[cfg_attr(test, derive(Deserialize))]
 #[derive(Serialize)]
 pub struct ResponseSizeLimitsConfig {
@@ -172,130 +177,5 @@ impl ResponseSizeLimitsConfig {
             size_limits.maximum_total_document_size(),
             size_limits.maximum_document_name_size(),
         )
-    }
-}
-
-#[cfg_attr(test, derive(Deserialize))]
-#[derive(Serialize)]
-pub struct ResponsePaste {
-    /// The ID for the paste.
-    id: Snowflake,
-    /// The name for the paste.
-    name: Option<String>,
-    /// The token attached to the paste.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    token: Option<String>,
-    /// The time at which the paste was created.
-    #[serde(rename = "timestamp")]
-    creation: DtUtc,
-    /// Whether the paste has been edited.
-    #[serde(rename = "edited_timestamp")]
-    edited: Option<DtUtc>,
-    /// The expiry time of the paste.
-    #[serde(rename = "expiry_timestamp")]
-    expiry: Option<DtUtc>,
-    /// The view count for the paste.
-    views: usize,
-    /// The maximum amount of views the paste can have.
-    max_views: Option<usize>,
-    /// The documents attached to the paste.
-    documents: Vec<Document>,
-}
-
-impl ResponsePaste {
-    /// New.
-    ///
-    /// Create a new [`ResponsePaste`] object.
-    #[expect(clippy::too_many_arguments)]
-    pub const fn new(
-        id: Snowflake,
-        name: Option<String>,
-        token: Option<String>,
-        creation: DtUtc,
-        edited: Option<DtUtc>,
-        expiry: Option<DtUtc>,
-        views: usize,
-        max_views: Option<usize>,
-        documents: Vec<Document>,
-    ) -> Self {
-        Self {
-            id,
-            name,
-            token,
-            creation,
-            edited,
-            expiry,
-            views,
-            max_views,
-            documents,
-        }
-    }
-
-    /// From Paste.
-    ///
-    /// Create a new [`ResponsePaste`] from a [`Paste`] and [`ResponseDocument`]'s
-    ///
-    /// ## Arguments
-    ///
-    /// - `paste` - The paste to extract from.
-    /// - `token` - The token to use (if provided).
-    /// - `documents` - The documents to attach.
-    ///
-    /// ## Returns
-    ///
-    /// The [`ResponsePaste`].
-    pub fn from_paste(paste: &Paste, token: Option<Token>, documents: Vec<Document>) -> Self {
-        let token_value: Option<String> = { token.map(|t| t.token().expose_secret().to_string()) };
-
-        Self::new(
-            *paste.id(),
-            paste.name().map(ToString::to_string),
-            token_value,
-            *paste.creation(),
-            paste.edited().copied(),
-            paste.expiry().copied(),
-            paste.views(),
-            paste.max_views(),
-            documents,
-        )
-    }
-}
-
-#[cfg(test)]
-impl ResponsePaste {
-    pub fn id(&self) -> Snowflake {
-        self.id
-    }
-
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
-    }
-
-    pub fn token(&self) -> Option<&str> {
-        self.token.as_deref()
-    }
-
-    pub fn creation(&self) -> &DtUtc {
-        &self.creation
-    }
-
-    pub fn edited(&self) -> Option<&DtUtc> {
-        self.edited.as_ref()
-    }
-
-    pub fn expiry(&self) -> Option<&DtUtc> {
-        self.expiry.as_ref()
-    }
-
-    pub fn views(&self) -> usize {
-        self.views
-    }
-
-    pub fn max_views(&self) -> Option<usize> {
-        self.max_views
-    }
-
-    pub fn documents(&self) -> &Vec<Document> {
-        &self.documents
     }
 }

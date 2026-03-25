@@ -1,7 +1,12 @@
+//! The configuration objects for the server.
+
 #[cfg(test)]
 use derive_builder::Builder;
 use secrecy::SecretString;
 
+/// ## Config
+///
+/// The base configuration that stores all other configuration items.
 #[cfg_attr(test, derive(Builder, Default))]
 #[cfg_attr(test, builder(default))]
 #[derive(Debug, Clone)]
@@ -21,11 +26,22 @@ pub struct Config {
 }
 
 impl Config {
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     #[cfg(test)]
     pub fn test_builder() -> ConfigBuilder {
         ConfigBuilder::default()
     }
 
+    /// ## From Env
+    ///
+    /// Create the configuration from environment values
+    ///
+    /// ## Panics
+    /// Panics if an environment value is not set, or cannot be parsed to the expected type.
+    ///
+    /// ## Returns
+    /// Returns the [`Config`] object.
     pub fn from_env() -> Self {
         Self {
             host: std::env::var("HOST").expect("HOST environment variable must be set."),
@@ -41,41 +57,64 @@ impl Config {
         }
     }
 
+    /// The host to run on.
     pub fn host(&self) -> &str {
         &self.host
     }
 
+    /// The port to run on.
     pub const fn port(&self) -> u16 {
         self.port
     }
 
+    /// The database URL.
     pub fn database_url(&self) -> &str {
         &self.database_url
     }
 
+    /// The domain to use for cors.
     pub fn domain(&self) -> &str {
         &self.domain
     }
 
+    /// Object store information.
     pub const fn object_store(&self) -> &ObjectStoreConfig {
         &self.object_store
     }
 
+    /// Size limits.
     pub const fn size_limits(&self) -> &SizeLimitConfig {
         &self.size_limits
     }
 }
 
+/// ## Object Store Config
+///
+/// The object storage configuration.
 #[cfg_attr(test, derive(Default))]
 #[derive(Debug, Clone)]
 pub enum ObjectStoreConfig {
+    /// ## S3
+    ///
+    /// The S3 Object Storage information.
     S3(S3ObjectStoreConfig),
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     #[cfg(test)]
     #[cfg_attr(test, default)]
     Test,
 }
 
 impl ObjectStoreConfig {
+    /// ## From Env
+    ///
+    /// Create the configuration from environment values
+    ///
+    /// ## Panics
+    /// Panics if an environment value is not set, or cannot be parsed to the expected type.
+    ///
+    /// ## Returns
+    /// Returns the [`ObjectStoreConfig`] object.
     #[expect(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         let obs_type =
@@ -88,6 +127,9 @@ impl ObjectStoreConfig {
     }
 }
 
+/// ## S3 Object Store Config
+///
+/// The S3 Object Storage information.
 #[derive(Debug, Clone)]
 pub struct S3ObjectStoreConfig {
     /// The S3 Service URL.
@@ -99,6 +141,15 @@ pub struct S3ObjectStoreConfig {
 }
 
 impl S3ObjectStoreConfig {
+    /// ## From Env
+    ///
+    /// Create the configuration from environment values
+    ///
+    /// ## Panics
+    /// Panics if an environment value is not set, or cannot be parsed to the expected type.
+    ///
+    /// ## Returns
+    /// Returns the [`S3ObjectStoreConfig`] object.
     #[expect(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         Self {
@@ -112,19 +163,25 @@ impl S3ObjectStoreConfig {
         }
     }
 
+    /// The S3 Service URL.
     pub fn url(&self) -> &str {
         &self.url
     }
 
+    /// The S3 Service Access Key.
     pub const fn access_key(&self) -> &SecretString {
         &self.access_key
     }
 
+    /// The S3 Service Secret Key.
     pub const fn secret_key(&self) -> &SecretString {
         &self.secret_key
     }
 }
 
+/// ## Size Limit Config
+///
+/// The configuration information about size limits.
 #[cfg_attr(test, derive(Builder))]
 #[cfg_attr(test, builder(default))]
 #[derive(Debug, Clone)]
@@ -162,11 +219,22 @@ pub struct SizeLimitConfig {
 }
 
 impl SizeLimitConfig {
+    // Testing item, docs not needed.
+    #[expect(missing_docs)]
     #[cfg(test)]
     pub fn test_builder() -> SizeLimitConfigBuilder {
         SizeLimitConfigBuilder::default()
     }
 
+    /// ## From Env
+    ///
+    /// Create the configuration from environment values
+    ///
+    /// ## Panics
+    /// Panics if an environment value is not set, or cannot be parsed to the expected type.
+    ///
+    /// ## Returns
+    /// Returns the [`S3ObjectStoreConfig`] object.
     #[expect(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         let defaults = Self::default();
@@ -368,62 +436,77 @@ impl SizeLimitConfig {
         value
     }
 
+    /// The default expiry for pastes.
     pub const fn default_expiry_hours(&self) -> Option<usize> {
         self.default_expiry_hours
     }
 
+    /// The default value for maximum views.
     pub const fn default_maximum_views(&self) -> Option<usize> {
         self.default_maximum_views
     }
 
+    /// The default value for the pastes name.
     pub fn default_paste_name(&self) -> Option<&str> {
         self.default_paste_name.as_deref()
     }
 
+    /// The minimum expiry hours for pastes.
     pub const fn minimum_expiry_hours(&self) -> Option<usize> {
         self.minimum_expiry_hours
     }
 
+    /// The minimum allowed documents in a paste.
     pub const fn minimum_total_document_count(&self) -> usize {
         self.minimum_total_document_count
     }
 
+    /// The minimum document size (bytes).
     pub const fn minimum_document_size(&self) -> usize {
         self.minimum_document_size
     }
 
+    /// The minimum total document size (bytes).
     pub const fn minimum_total_document_size(&self) -> usize {
         self.minimum_total_document_size
     }
 
+    /// The minimum size of a document name (bytes).
     pub const fn minimum_document_name_size(&self) -> usize {
         self.minimum_document_name_size
     }
 
+    /// The minimum size of a paste name (bytes).
     pub const fn minimum_paste_name_size(&self) -> usize {
         self.minimum_paste_name_size
     }
 
+    /// The maximum expiry for pastes.
     pub const fn maximum_expiry_hours(&self) -> Option<usize> {
         self.maximum_expiry_hours
     }
 
+    /// The maximum allowed documents in a paste.
     pub const fn maximum_total_document_count(&self) -> usize {
         self.maximum_total_document_count
     }
 
+    /// The maximum document size.
     pub const fn maximum_document_size(&self) -> usize {
         self.maximum_document_size
     }
 
+    /// The maximum total document size (bytes).
     pub const fn maximum_total_document_size(&self) -> usize {
         self.maximum_total_document_size
     }
 
+    /// The maximum size of a document name (bytes).
     pub const fn maximum_document_name_size(&self) -> usize {
         self.maximum_document_name_size
     }
 
+    /// The maximum size of the paste name (bytes).
     pub const fn maximum_paste_name_size(&self) -> usize {
         self.maximum_paste_name_size
     }

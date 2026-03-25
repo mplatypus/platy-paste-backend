@@ -1,3 +1,4 @@
+//! Object storage used for storing documents contents.
 use aws_config::{BehaviorVersion, Region};
 
 use aws_sdk_s3::{
@@ -26,6 +27,9 @@ const DOCUMENT_BUCKET: &str = "documents";
 /// All the buckets that this application uses.
 const BUCKETS: [&str; 1] = [DOCUMENT_BUCKET];
 
+/// ## Object Store Extension
+///
+/// The extension used, to easily implement all required functions used by object storage implementations.
 pub trait ObjectStoreExt: Sized {
     /// Binds the application to the object store.
     fn bind_app(&mut self, app: Weak<ApplicationState>);
@@ -90,14 +94,33 @@ pub trait ObjectStoreExt: Sized {
     async fn delete_document(&self, document: &Document) -> Result<(), ObjectStoreError>;
 }
 
+/// ## Object Store
+///
+/// The enum of all avaliable object storage options.
 #[derive(Debug, Clone)]
 pub enum ObjectStore {
+    /// ## S3
+    ///
+    /// The S3 Storage option.
     S3(S3ObjectStore),
+    /// The testing storage option.
+    ///
+    /// This should not be used unless testing, as it is in memory only.
     #[cfg(test)]
     Test(TestObjectStore),
 }
 
 impl ObjectStore {
+    /// ## From Config
+    ///
+    /// Create an object storage from its configuration information.
+    ///
+    /// ## Errors
+    /// The [`ObjectStoreError`] returned if the object store could not be created.
+    ///
+    /// ## Returns
+    ///
+    /// The created object storage.
     pub fn from_config(config: &ObjectStoreConfig) -> Result<Self, ObjectStoreError> {
         match config {
             ObjectStoreConfig::S3(config) => Ok(Self::S3(S3ObjectStore::from_config(config))),
@@ -161,6 +184,9 @@ impl ObjectStoreExt for ObjectStore {
     }
 }
 
+/// ## S3 Object Store
+///
+/// The S3 Object Storage implementation.
 #[derive(Debug, Clone)]
 pub struct S3ObjectStore {
     app: Weak<ApplicationState>,
@@ -182,6 +208,13 @@ impl S3ObjectStore {
     }
     "#;
 
+    /// ## From Config
+    ///
+    /// Create the S3 Object Store from the relevant configuration data.
+    ///
+    /// ## Returns
+    ///
+    /// The created object storage.
     pub fn from_config(config: &S3ObjectStoreConfig) -> Self {
         let s3creds = Credentials::new(
             config.access_key().expose_secret(),
@@ -304,6 +337,11 @@ impl ObjectStoreExt for S3ObjectStore {
     }
 }
 
+/// ## Test Object Store
+///
+/// The testing object storage.
+///
+/// This object store is completely in memory.
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct TestObjectStore {
@@ -314,9 +352,10 @@ pub struct TestObjectStore {
 
 #[cfg(test)]
 impl TestObjectStore {
+    /// ## New
+    ///
+    /// Create a new [`TestObjectStore`] object.
     pub fn new() -> Self {
-        use tokio::sync::Mutex;
-
         Self {
             app: Weak::new(),
             buckets: Arc::new(Mutex::new(Vec::new())),
