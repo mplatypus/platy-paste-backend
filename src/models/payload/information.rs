@@ -10,11 +10,150 @@ use crate::app::config::Config;
 // Response //
 //----------//
 
+/// ## Response Status
+///
+/// The status object returned when requested.
+#[cfg_attr(test, derive(Deserialize))]
+#[derive(Serialize, Debug)]
+pub struct ResponseStatus {
+    /// The current status of the server.
+    status: String,
+}
+
+impl ResponseStatus {
+    /// New.
+    ///
+    /// Create a new [`ResponseStatus`] object.
+    pub const fn new(status: String) -> Self {
+        Self { status }
+    }
+}
+
+/// ## Response Information
+///
+/// The information object returned when requested.
+#[cfg_attr(test, derive(Deserialize))]
+#[derive(Serialize, Debug)]
+pub struct ResponseInformation {
+    version: ResponseVersionInformation,
+}
+
+impl ResponseInformation {
+    /// From Env.
+    ///
+    /// Creates a new [`ResponseInformation`] object from environment variables.
+    ///
+    /// ## Errors
+    /// This will return an error if a environment variable was expected, but was unset.
+    /// The error value is the name of the missing environment variable.
+    ///
+    /// ## Returns
+    /// The [`ResponseInformation`] object built from environment variables.
+    pub fn from_env() -> Result<Self, Vec<String>> {
+        let mut errors = Vec::new();
+
+        let version = ResponseVersionInformation::from_env()
+            .map_err(|e| errors.extend_from_slice(&e))
+            .ok();
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        Ok(Self {
+            version: version.expect("Expected version information."),
+        })
+    }
+}
+
+/// ## Response Rust Information
+///
+/// The rust information object returned when requested.
+#[cfg_attr(test, derive(Deserialize))]
+#[derive(Serialize, Debug)]
+pub struct ResponseVersionInformation {
+    /// The semantic versioning of the current server.
+    semver: String,
+    /// The major version.
+    major: usize,
+    /// The minor version.
+    minor: usize,
+    /// The patch version.
+    patch: usize,
+}
+
+impl ResponseVersionInformation {
+    /// From Env.
+    ///
+    /// Creates a new [`ResponseVersionInformation`] object from environment variables.
+    ///
+    /// ## Errors
+    /// This will return an error if a environment variable was expected, but was unset.
+    /// The error value is the name of the missing environment variable.
+    ///
+    /// ## Returns
+    /// The [`ResponseVersionInformation`] object built from environment variables.
+    pub fn from_env() -> Result<Self, Vec<String>> {
+        let mut errors: Vec<String> = Vec::new();
+
+        let semver = std::env::var("CARGO_PKG_VERSION")
+            .map_err(|_| errors.push("CARGO_PKG_VERSION missing.".to_string()))
+            .ok();
+
+        let major = std::env::var("CARGO_PKG_VERSION_MAJOR")
+            .map_err(|_| errors.push("CARGO_PKG_VERSION_MAJOR missing.".to_string()))
+            .ok()
+            .and_then(|v| {
+                v.parse::<usize>()
+                    .map_err(|_| {
+                        errors
+                            .push("CARGO_PKG_VERSION_MAJOR Failed to parse to integer.".to_string())
+                    })
+                    .ok()
+            });
+
+        let minor = std::env::var("CARGO_PKG_VERSION_MINOR")
+            .map_err(|_| errors.push("CARGO_PKG_VERSION_MINOR missing.".to_string()))
+            .ok()
+            .and_then(|v| {
+                v.parse::<usize>()
+                    .map_err(|_| {
+                        errors
+                            .push("CARGO_PKG_VERSION_MINOR Failed to parse to integer.".to_string())
+                    })
+                    .ok()
+            });
+
+        let patch = std::env::var("CARGO_PKG_VERSION_PATCH")
+            .map_err(|_| errors.push("CARGO_PKG_VERSION_PATCH missing.".to_string()))
+            .ok()
+            .and_then(|v| {
+                v.parse::<usize>()
+                    .map_err(|_| {
+                        errors
+                            .push("CARGO_PKG_VERSION_PATCH Failed to parse to integer.".to_string())
+                    })
+                    .ok()
+            });
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        Ok(Self {
+            semver: semver.expect("Expected CARGO_PKG_VERSION environment variable."),
+            major: major.expect("Expected CARGO_PKG_VERSION_MAJOR environment variable."),
+            minor: minor.expect("Expected CARGO_PKG_VERSION_MINOR environment variable."),
+            patch: patch.expect("Expected CARGO_PKG_VERSION_PATCH environment variable."),
+        })
+    }
+}
+
 /// ## Response Config
 ///
 /// The configuration object returned when requested.
 #[cfg_attr(test, derive(Deserialize))]
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ResponseConfig {
     /// Defaults.
     defaults: ResponseDefaultsConfig,
@@ -51,7 +190,7 @@ impl ResponseConfig {
 ///
 /// The default values for configuration information.
 #[cfg_attr(test, derive(Deserialize))]
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ResponseDefaultsConfig {
     /// The default expiry for pastes.
     expiry_hours: Option<usize>,
@@ -95,7 +234,7 @@ impl ResponseDefaultsConfig {
 ///
 /// The size limits for configuration information.
 #[cfg_attr(test, derive(Deserialize))]
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct ResponseSizeLimitsConfig {
     /// The minimum size of a paste name.
     minimum_paste_name_size: usize,
