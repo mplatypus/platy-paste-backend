@@ -11,8 +11,6 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::models::DtUtc;
-
 /// ## Application Error
 ///
 /// Errors related to the applictions creation and lifetime.
@@ -578,11 +576,11 @@ impl RESTErrorResponse {
     /// ## New
     ///
     /// Create a new [`RESTErrorResponse`] object.
-    pub const fn new(reason: String, message: String, timestamp: DtUtc) -> Self {
+    pub fn new<R: std::fmt::Display, M: std::fmt::Display>(reason: R, message: M) -> Self {
         Self {
-            reason,
-            message,
-            timestamp: timestamp.timestamp() as u64,
+            reason: reason.to_string(),
+            message: message.to_string(),
+            timestamp: Utc::now().timestamp() as u64,
         }
     }
 

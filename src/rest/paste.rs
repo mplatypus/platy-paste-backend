@@ -977,7 +977,8 @@ mod tests {
                     .expect("Failed to build config."),
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Json Parse Error", "missing field `documents` at line 1 column 2"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Json Parse Error", "missing field `documents` at line 1 column 2"),
             )]
             #[case(
                 Config::test_builder()
@@ -986,7 +987,8 @@ mod tests {
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Json Parse Error", "missing field `documents` at line 1 column 2"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Json Parse Error", "missing field `documents` at line 1 column 2"),
             )]
             #[case(
                 Config::test_builder()
@@ -996,7 +998,8 @@ mod tests {
                     .add_part("payload", Part::bytes(Bytes::from(serde_json::to_vec(&json!({
                         "documents": []
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST,"Bad Request", "Not enough documents were provided. Expected: 1, Received: 0"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Not enough documents were provided. Expected: 1, Received: 0"),
             )]
             #[case(
                 Config::test_builder()
@@ -1008,7 +1011,8 @@ mod tests {
                             {"id": 0, "name": "test.txt"}
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "A document with the ID of 0 was not found"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "A document with the ID of 0 was not found"),
             )]
             #[case(
                 Config::test_builder()
@@ -1019,7 +1023,8 @@ mod tests {
                         "documents": []
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "More files were provided, than listed inside the payload"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "More files were provided, than listed inside the payload"),
             )]
             #[case(
                 Config::test_builder()
@@ -1027,7 +1032,8 @@ mod tests {
                     .expect("Failed to build config."),
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from("{}"))),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST,"Bad Request", "Payload must have a content type of application/json"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Payload must have a content type of application/json"),
             )]
             #[case(
                 Config::test_builder()
@@ -1040,7 +1046,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::new()).add_header("Content-Type", "image/png")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Invalid mime type: image/png received for the document: 0"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Invalid mime type: image/png received for the document: 0"),
             )]
             #[case(
                 Config::test_builder()
@@ -1059,7 +1066,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0`'s name: `test.txt` is too small."),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test.txt` is too small."),
             )]
             #[case(
                 Config::test_builder()
@@ -1078,7 +1086,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0`'s name: `test_file.txt` is too large."),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test_file.txt` is too large."),
             )]
             #[case(
                 Config::test_builder()
@@ -1097,7 +1106,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::new()).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0` is too small."),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0` is too small."),
             )]
             #[case(
                 Config::test_builder()
@@ -1116,7 +1126,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from(vec![0; 110])).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0` is too large."),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0` is too large."),
             )]
             #[case(
                 Config::test_builder()
@@ -1135,7 +1146,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Not enough documents were provided. Expected: 2, Received: 1"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Not enough documents were provided. Expected: 2, Received: 1"),
             )]
             #[case(
                 Config::test_builder()
@@ -1156,7 +1168,8 @@ mod tests {
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain"))
                     .add_part("files[1]", Part::bytes(Bytes::from("test2")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Too many documents were provided. Expected: 1, Received: 2"),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Too many documents were provided. Expected: 1, Received: 2"),
             )]
             #[case(
                 Config::test_builder()
@@ -1175,7 +1188,8 @@ mod tests {
                         "documents": [{"id": 0, "name": "test.txt"}]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The timestamp provided has already passed."),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "The timestamp provided has already passed."),
             )]
             #[case(
                 Config::test_builder()
@@ -1194,14 +1208,16 @@ mod tests {
                         "documents": [{"id": 0, "name": "test.txt"}]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The timestamp provided is above the maximum."),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "The timestamp provided is above the maximum."),
             )]
             #[sqlx::test]
             async fn test_failures(
                 #[ignore] pool: PgPool,
                 #[case] config: Config,
                 #[case] form: MultipartForm,
-                #[case] expected_response: axum::response::Response,
+                #[case] expected_status: StatusCode,
+                #[case] expected_response: RESTErrorResponse,
             ) {
                 let object_store = TestObjectStore::new();
                 let state =
@@ -1214,15 +1230,23 @@ mod tests {
 
                 let response = server.post("/v1/pastes").multipart(form).await;
 
-                response.assert_status(expected_response.status());
+                response.assert_status(expected_status);
 
                 response.assert_header("Content-Type", "application/json");
 
-                let expected_body = axum::body::to_bytes(expected_response.into_body(), usize::MAX)
-                    .await
-                    .expect("Failed to read expected response body");
+                let body: RESTErrorResponse = response.json();
 
-                assert_eq!(response.as_bytes(), &expected_body);
+                assert_eq!(
+                    body.reason(),
+                    expected_response.reason(),
+                    "Mismatched response reason."
+                );
+
+                assert_eq!(
+                    body.message(),
+                    expected_response.message(),
+                    "Mismatched response message."
+                );
             }
         }
 
@@ -1516,7 +1540,8 @@ mod tests {
                     json!({
                         "expiry_timestamp": null,
                     }),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The expiry timestamp parameter cannot be none."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "The expiry timestamp parameter cannot be none."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -1532,7 +1557,8 @@ mod tests {
                     json!({
                         "expiry_timestamp": Utc::now().to_rfc3339(),
                     }),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The timestamp provided has already passed."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided has already passed."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -1548,7 +1574,8 @@ mod tests {
                     json!({
                         "expiry_timestamp": (Utc::now() + TimeDelta::hours(6)).to_rfc3339(),
                     }),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The timestamp provided is above the maximum."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided is above the maximum."),
                 )]
                 #[sqlx::test(fixtures(
                     path = "../../tests/fixtures",
@@ -1558,7 +1585,8 @@ mod tests {
                     #[ignore] pool: PgPool,
                     #[case] config: Config,
                     #[case] body: serde_json::Value,
-                    #[case] expected_response: axum::response::Response,
+                    #[case] expected_status: StatusCode,
+                    #[case] expected_response: RESTErrorResponse,
                 ) {
                     let object_store = TestObjectStore::new();
                     let state = ApplicationState::new_tests(
@@ -1582,16 +1610,23 @@ mod tests {
                         .json(&body)
                         .await;
 
-                    response.assert_status(expected_response.status());
+                    response.assert_status(expected_status);
 
                     response.assert_header("Content-Type", "application/json");
 
-                    let expected_body =
-                        axum::body::to_bytes(expected_response.into_body(), usize::MAX)
-                            .await
-                            .expect("Failed to read expected response body");
+                    let body: RESTErrorResponse = response.json();
 
-                    assert_eq!(response.as_bytes(), &expected_body);
+                    assert_eq!(
+                        body.reason(),
+                        expected_response.reason(),
+                        "Mismatched response reason."
+                    );
+
+                    assert_eq!(
+                        body.message(),
+                        expected_response.message(),
+                        "Mismatched response message."
+                    );
                 }
             }
 
@@ -1965,7 +2000,8 @@ mod tests {
                                 {"id": "517815304354284709"}
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The expiry timestamp parameter cannot be none."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "The expiry timestamp parameter cannot be none."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -1986,7 +2022,8 @@ mod tests {
                                 {"id": "517815304354284709"}
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The timestamp provided has already passed."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided has already passed."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2007,7 +2044,8 @@ mod tests {
                                 {"id": "517815304354284709"}
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The timestamp provided is above the maximum."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided is above the maximum."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2021,7 +2059,8 @@ mod tests {
                                 {"id": 0}
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document(s) were provided that do not exist or do not have contents"),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "Document(s) were provided that do not exist or do not have contents"),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2035,7 +2074,8 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "A document with the ID of 0 was not found"),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "A document with the ID of 0 was not found"),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2050,7 +2090,8 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "The new document 0 requires the `name` parameter."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "The new document 0 requires the `name` parameter."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2071,7 +2112,8 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0`'s name: `test.txt` is too small."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test.txt` is too small."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2092,7 +2134,8 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0`'s name: `test_file.txt` is too large."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test_file.txt` is too large."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2113,7 +2156,8 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0` is too small."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "Document `0` is too small."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2134,7 +2178,8 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("some random contents")).add_header("Content-Type", "text/plain")),
-                    RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", "Document `0` is too large."),
+                    StatusCode::BAD_REQUEST,
+                    RESTErrorResponse::new("Bad Request", "Document `0` is too large."),
                 )]
                 #[sqlx::test(fixtures(
                     path = "../../tests/fixtures",
@@ -2144,7 +2189,8 @@ mod tests {
                     #[ignore] pool: PgPool,
                     #[case] config: Config,
                     #[case] form: MultipartForm,
-                    #[case] expected_response: axum::response::Response,
+                    #[case] expected_status: StatusCode,
+                    #[case] expected_response: RESTErrorResponse,
                 ) {
                     let object_store = TestObjectStore::new();
                     let state = ApplicationState::new_tests(
@@ -2168,16 +2214,23 @@ mod tests {
                         .multipart(form)
                         .await;
 
-                    response.assert_status(expected_response.status());
+                    response.assert_status(expected_status);
 
                     response.assert_header("Content-Type", "application/json");
 
-                    let expected_body =
-                        axum::body::to_bytes(expected_response.into_body(), usize::MAX)
-                            .await
-                            .expect("Failed to read expected response body");
+                    let body: RESTErrorResponse = response.json();
 
-                    assert_eq!(response.as_bytes(), &expected_body);
+                    assert_eq!(
+                        body.reason(),
+                        expected_response.reason(),
+                        "Mismatched response reason."
+                    );
+
+                    assert_eq!(
+                        body.message(),
+                        expected_response.message(),
+                        "Mismatched response message."
+                    );
                 }
             }
 
