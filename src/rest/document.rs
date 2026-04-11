@@ -10,7 +10,10 @@ use http::{HeaderName, HeaderValue, StatusCode};
 
 use crate::{
     app::{application::App, config::Config},
-    models::{document::Document, errors::RESTError, paste::validate_paste, payload::document::*},
+    models::{
+        document::Document, errors::RESTError, paste::validate_paste,
+        payload::document::GetDocumentPath,
+    },
 };
 
 /// ## Generate Router
@@ -38,6 +41,9 @@ pub fn generate_router(config: &Config) -> Router<App> {
 ///
 /// - `paste_id` - The pastes ID.
 /// - `document_id` - The documents ID.
+///
+/// ## Errors
+/// Returns an error if the request failed.
 ///
 /// ## Returns
 ///
@@ -172,8 +178,8 @@ mod test {
                 let app = main_generate_router(state);
                 let server = TestServer::new(app);
 
-                let paste_id = Snowflake::new(517815304354284605);
-                let document_id = Snowflake::new(517815304354284708);
+                let paste_id = Snowflake::new(517_815_304_354_284_605);
+                let document_id = Snowflake::new(517_815_304_354_284_708);
 
                 let views = Paste::fetch(&pool, &paste_id)
                     .await
@@ -228,9 +234,9 @@ mod test {
             }
 
             #[rstest]
-            #[case(Snowflake::new(517815304354284605), Some("Document not found."))]
+            #[case(Snowflake::new(517_815_304_354_284_605), Some("Document not found."))]
             #[case(
-                Snowflake::new(1234567890),
+                Snowflake::new(1_234_567_890),
                 Some("The paste requested could not be found")
             )]
             #[sqlx::test(fixtures(path = "../../tests/fixtures", scripts("pastes", "documents")))]
@@ -248,7 +254,7 @@ mod test {
                         .await
                         .expect("Failed to build application state.");
 
-                let document_id = Snowflake::new(1234567890);
+                let document_id = Snowflake::new(1_234_567_890);
 
                 let app = main_generate_router(state);
                 let server = TestServer::new(app);

@@ -119,7 +119,7 @@ impl TryFrom<PatchPasteDocumentBody> for PostPasteDocumentBody {
             )));
         };
 
-        Ok(PostPasteDocumentBody { id: value.id, name })
+        Ok(Self { id: value.id, name })
     }
 }
 

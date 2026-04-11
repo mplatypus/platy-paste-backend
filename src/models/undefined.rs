@@ -82,7 +82,6 @@ impl<T> UndefinedOption<T> {
     /// ## Is None Or
     ///
     /// Returns `true` if the option is a [`None`] or the value inside of it matches a predicate.
-    #[expect(clippy::wrong_self_convention)]
     pub fn is_none_or(self, f: impl FnOnce(T) -> bool) -> bool {
         match self {
             Self::Undefined | Self::None => true,
@@ -136,8 +135,8 @@ impl<T> From<UndefinedOption<T>> for Option<T> {
 impl<T> From<UndefinedOption<T>> for Undefined<T> {
     fn from(value: UndefinedOption<T>) -> Self {
         match value {
-            UndefinedOption::Some(v) => Undefined::Some(v),
-            UndefinedOption::Undefined | UndefinedOption::None => Undefined::Undefined,
+            UndefinedOption::Some(v) => Self::Some(v),
+            UndefinedOption::Undefined | UndefinedOption::None => Self::Undefined,
         }
     }
 }

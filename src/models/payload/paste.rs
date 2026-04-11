@@ -392,13 +392,13 @@ impl FromRequest<App> for PostPasteMultipartBody {
                 }
 
                 let data = field.bytes().await?;
-                let json: PostPasteBodyInner = serde_json::from_slice(&data.to_vec())?;
+                let json: PostPasteBodyInner = serde_json::from_slice(&data)?;
 
                 let document_ids: Vec<PartialSnowflake> =
                     json.documents().iter().map(|v| *v.id()).collect();
 
                 let document_ids_set: HashSet<PartialSnowflake> =
-                    HashSet::from_iter(document_ids.clone().into_iter());
+                    document_ids.clone().into_iter().collect::<HashSet<_>>();
                 if document_ids.len() != document_ids_set.len() {
                     return Err(RESTError::BadRequest(
                         "One or more documents provided has the same ID".to_string(),
@@ -464,7 +464,7 @@ impl FromRequest<App> for PostPasteMultipartBody {
             documents.push((document, content, mime));
         }
 
-        if document_contents.len() > 0 {
+        if !document_contents.is_empty() {
             return Err(RESTError::BadRequest(
                 "More files were provided, than listed inside the payload".to_string(),
             ));
@@ -497,13 +497,13 @@ impl PatchPasteMultipartBody {
     pub async fn from_json(req: axum::extract::Request, state: &App) -> Result<Self, RESTError> {
         let bytes = Bytes::from_request(req, state).await?;
 
-        let json: PatchPasteBody = serde_json::from_slice(&bytes.to_vec())?;
+        let json: PatchPasteBody = serde_json::from_slice(&bytes)?;
 
         if let Undefined::Some(documents) = json.documents() {
             let document_ids: Vec<PartialSnowflake> = documents.iter().map(|v| *v.id()).collect();
 
             let document_ids_set: HashSet<PartialSnowflake> =
-                HashSet::from_iter(document_ids.clone().into_iter());
+                document_ids.clone().into_iter().collect::<HashSet<_>>();
             if document_ids.len() != document_ids_set.len() {
                 return Err(RESTError::BadRequest(
                     "One or more documents provided has the same ID".to_string(),
@@ -526,6 +526,7 @@ impl PatchPasteMultipartBody {
     ///
     /// ## Returns
     /// The expected [`PatchPasteMultipartBody`] object.
+    #[expect(clippy::too_many_lines)]
     pub async fn from_multipart(
         req: axum::extract::Request,
         state: &App,
@@ -560,14 +561,14 @@ impl PatchPasteMultipartBody {
                 }
 
                 let data = field.bytes().await?;
-                let json: PatchPasteBody = serde_json::from_slice(&data.to_vec())?;
+                let json: PatchPasteBody = serde_json::from_slice(&data)?;
 
                 if let Undefined::Some(documents) = json.documents() {
                     let document_ids: Vec<PartialSnowflake> =
                         documents.iter().map(|v| *v.id()).collect();
 
                     let document_ids_set: HashSet<PartialSnowflake> =
-                        HashSet::from_iter(document_ids.clone().into_iter());
+                        document_ids.clone().into_iter().collect::<HashSet<_>>();
                     if document_ids.len() != document_ids_set.len() {
                         return Err(RESTError::BadRequest(
                             "One or more documents provided has the same ID".to_string(),
@@ -588,12 +589,12 @@ impl PatchPasteMultipartBody {
 
                 let id: PartialSnowflake = (&captures["id"]).try_into()?;
 
-                if let Some(document_contents) = &document_contents {
-                    if document_contents.contains_key(&id) {
-                        return Err(RESTError::BadRequest(
-                            "A duplicate ID was found in the form data".to_string(),
-                        ));
-                    }
+                if let Some(document_contents) = &document_contents
+                    && document_contents.contains_key(&id)
+                {
+                    return Err(RESTError::BadRequest(
+                        "A duplicate ID was found in the form data".to_string(),
+                    ));
                 }
 
                 let data = field.bytes().await?;
@@ -630,8 +631,7 @@ impl PatchPasteMultipartBody {
                     for (id, (content, mime)) in document_contents {
                         let Some(body) = docs_map.remove(&id) else {
                             return Err(RESTError::BadRequest(format!(
-                                "A document with the ID of {} was not found",
-                                id
+                                "A document with the ID of {id} was not found"
                             )));
                         };
 
@@ -691,11 +691,11 @@ impl FromRequest<App> for PatchPasteMultipartBody {
         } else if mime.type_() == mime::MULTIPART && mime.subtype() == mime::FORM_DATA {
             Self::from_multipart(req, state).await
         } else {
-            return Err(RESTError::BadRequest(format!(
+            Err(RESTError::BadRequest(format!(
                 "Expected {} or {} as content type.",
                 mime::APPLICATION_JSON,
                 mime::MULTIPART_FORM_DATA
-            )));
+            )))
         }
     }
 }

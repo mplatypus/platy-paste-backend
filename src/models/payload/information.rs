@@ -106,8 +106,9 @@ impl ResponseVersionInformation {
             .and_then(|v| {
                 v.parse::<usize>()
                     .map_err(|_| {
-                        errors
-                            .push("CARGO_PKG_VERSION_MAJOR Failed to parse to integer.".to_string())
+                        errors.push(
+                            "CARGO_PKG_VERSION_MAJOR Failed to parse to integer.".to_string(),
+                        );
                     })
                     .ok()
             });
@@ -118,8 +119,9 @@ impl ResponseVersionInformation {
             .and_then(|v| {
                 v.parse::<usize>()
                     .map_err(|_| {
-                        errors
-                            .push("CARGO_PKG_VERSION_MINOR Failed to parse to integer.".to_string())
+                        errors.push(
+                            "CARGO_PKG_VERSION_MINOR Failed to parse to integer.".to_string(),
+                        );
                     })
                     .ok()
             });
@@ -130,8 +132,9 @@ impl ResponseVersionInformation {
             .and_then(|v| {
                 v.parse::<usize>()
                     .map_err(|_| {
-                        errors
-                            .push("CARGO_PKG_VERSION_PATCH Failed to parse to integer.".to_string())
+                        errors.push(
+                            "CARGO_PKG_VERSION_PATCH Failed to parse to integer.".to_string(),
+                        );
                     })
                     .ok()
             });

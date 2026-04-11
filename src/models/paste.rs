@@ -374,7 +374,7 @@ impl PasteUpdateParameters {
     /// ## New.
     ///
     /// Create a new [`PasteUpdateParameters`] object.
-    pub fn new(
+    pub const fn new(
         name: UndefinedOption<String>,
         expiry: UndefinedOption<DtUtc>,
         views: Undefined<usize>,
@@ -394,17 +394,17 @@ impl PasteUpdateParameters {
     }
 
     /// The expiry to update the paste with.
-    pub fn expiry(&self) -> UndefinedOption<&DtUtc> {
+    pub const fn expiry(&self) -> UndefinedOption<&DtUtc> {
         self.expiry.as_ref()
     }
 
     /// The views to update the paste with.
-    pub fn views(&self) -> Undefined<usize> {
+    pub const fn views(&self) -> Undefined<usize> {
         self.views
     }
 
     /// The maximum views to update the paste with.
-    pub fn max_views(&self) -> UndefinedOption<usize> {
+    pub const fn max_views(&self) -> UndefinedOption<usize> {
         self.max_views
     }
 
@@ -414,7 +414,7 @@ impl PasteUpdateParameters {
     ///
     /// ## Returns
     /// Returns [`true`] if all parameters are undefined, otherwise returns [`false`].
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.name.is_undefined()
             && self.expiry.is_undefined()
             && self.views.is_undefined()

@@ -230,7 +230,7 @@ impl S3ObjectStore {
             .credentials_provider(s3creds)
             .region(Region::new("direct"))
             .force_path_style(true) // MinIO does not support virtual hosts
-            .behavior_version(BehaviorVersion::v2025_08_07())
+            .behavior_version(BehaviorVersion::v2026_01_12())
             .build();
 
         Self {
@@ -367,6 +367,7 @@ impl TestObjectStore {
     /// ## New
     ///
     /// Create a new [`TestObjectStore`] object.
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             app: Weak::new(),
@@ -408,10 +409,7 @@ impl ObjectStoreExt for TestObjectStore {
         let document_contents =
             data_lock.get(&(DOCUMENT_BUCKET.to_string(), document.generate_path()));
 
-        match document_contents {
-            Some(contents) => Ok(Some(contents.clone())),
-            None => Ok(None),
-        }
+        document_contents.map_or_else(|| Ok(None), |contents| Ok(Some(contents.clone())))
     }
 
     async fn create_document(
@@ -422,9 +420,10 @@ impl ObjectStoreExt for TestObjectStore {
         // FIXME: Check bucket exists.
         let mut data_lock = self.data.lock().await;
 
-        if data_lock.contains_key(&(DOCUMENT_BUCKET.to_string(), document.generate_path())) {
-            panic!("Key already exists!")
-        }
+        assert!(
+            !data_lock.contains_key(&(DOCUMENT_BUCKET.to_string(), document.generate_path())),
+            "Key already exists!"
+        );
 
         data_lock.insert(
             (DOCUMENT_BUCKET.to_string(), document.generate_path()),

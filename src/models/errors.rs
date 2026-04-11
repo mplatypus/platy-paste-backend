@@ -182,7 +182,8 @@ impl IntoResponse for DatabaseError {
                 "Migration Error",
                 &error.to_string(),
             ),
-            Self::Custom(error) => (StatusCode::BAD_REQUEST, "Error", &error.to_string()),
+            #[expect(clippy::redundant_clone)]
+            Self::Custom(error) => (StatusCode::BAD_REQUEST, "Custom Error", &error.clone()),
         };
 
         let body = Json(RESTErrorResponse {
@@ -229,7 +230,8 @@ impl IntoResponse for ObjectStoreError {
             Self::S3(error) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "S3 Service Error",
-                &error.to_string(),
+                #[expect(clippy::redundant_clone)]
+                &error.clone(),
             ),
         };
 
@@ -385,7 +387,8 @@ impl IntoResponse for ParseError {
             Self::ParseSnowflake(e) => (
                 StatusCode::BAD_REQUEST,
                 "Parse Snowflake Error",
-                &e.to_string(),
+                #[allow(clippy::redundant_clone)]
+                &e.clone(),
             ),
         };
 
@@ -524,7 +527,7 @@ impl IntoResponse for RESTError {
         };
 
         let body = Json(RESTErrorResponse::new(
-            reason,
+            &reason,
             Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
         ));
 
@@ -560,7 +563,7 @@ impl IntoResponse for AuthenticationError {
             ),
         };
 
-        let body = Json(RESTErrorResponse::new(reason, None));
+        let body = Json(RESTErrorResponse::new(&reason, None));
 
         (status, body).into_response()
     }
@@ -583,10 +586,10 @@ impl RESTErrorResponse {
     /// ## New
     ///
     /// Create a new [`RESTErrorResponse`] object.
-    pub fn new(reason: impl ToString, trace: Option<String>) -> Self {
+    pub fn new(reason: &impl ToString, trace: Option<String>) -> Self {
         Self {
             reason: reason.to_string(),
-            trace: trace,
+            trace,
             timestamp: Utc::now().timestamp() as u64,
         }
     }
