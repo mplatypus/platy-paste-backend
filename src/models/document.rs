@@ -595,13 +595,13 @@ pub fn document_limits(
         let content_length = content.len();
 
         if size_limits.minimum_document_size() > content_length {
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "Document `{id}` is too small."
             )));
         }
 
         if size_limits.maximum_document_size() < content_length {
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "Document `{id}` is too large."
             )));
         }
@@ -611,20 +611,20 @@ pub fn document_limits(
         let name_length = name.len();
 
         if size_limits.minimum_document_name_size() > name_length {
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "Document `{id}`'s name: `{name}` is too small."
             )));
         }
 
         if size_limits.maximum_document_name_size() < name_length {
             if name_length > 50 {
-                return Err(RESTError::BadRequest(format!(
+                return Err(RESTError::bad_request(format!(
                     "Document `{}`'s name: `{}`... is too large.",
                     id,
                     &name[..name.char_indices().nth(47).map_or(name.len(), |(i, _)| i)]
                 )));
             }
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "Document `{id}`'s name: `{name}` is too large."
             )));
         }
@@ -657,7 +657,7 @@ pub async fn total_document_limits(
         Document::fetch_total_document_count(transaction.as_mut(), paste_id).await?;
 
     if size_limits.minimum_total_document_count() > total_document_count {
-        return Err(RESTError::BadRequest(format!(
+        return Err(RESTError::bad_request(format!(
             "Not enough documents were provided. Expected: {}, Received: {}",
             size_limits.minimum_total_document_count(),
             total_document_count,
@@ -665,7 +665,7 @@ pub async fn total_document_limits(
     }
 
     if size_limits.maximum_total_document_count() < total_document_count {
-        return Err(RESTError::BadRequest(format!(
+        return Err(RESTError::bad_request(format!(
             "Too many documents were provided. Expected: {}, Received: {}",
             size_limits.maximum_total_document_count(),
             total_document_count,
@@ -676,14 +676,14 @@ pub async fn total_document_limits(
         Document::fetch_total_document_size(transaction.as_mut(), paste_id).await?;
 
     if size_limits.minimum_total_document_size() > total_document_size {
-        return Err(RESTError::BadRequest(
-            "One or more documents is below the minimum individual document size.".to_string(),
+        return Err(RESTError::bad_request(
+            "One or more documents is below the minimum individual document size.",
         ));
     }
 
     if size_limits.maximum_total_document_size() < total_document_size {
-        return Err(RESTError::BadRequest(
-            "One or more documents exceed the maximum individual document size.".to_string(),
+        return Err(RESTError::bad_request(
+            "One or more documents exceed the maximum individual document size.",
         ));
     }
 

@@ -29,6 +29,8 @@ missing_panics_doc = "allow"
 future_not_send = "allow"
 # Doesn't play nicely with tokio::select!
 redundant_pub_crate = "allow"
+# No print statements.
+print_stdout = "warn"
 
 [features]
 testing-database = []

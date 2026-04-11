@@ -113,7 +113,7 @@ impl TryFrom<PatchPasteDocumentBody> for PostPasteDocumentBody {
 
     fn try_from(value: PatchPasteDocumentBody) -> Result<Self, Self::Error> {
         let Undefined::Some(name) = value.name else {
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "The new document {} requires the `name` parameter.",
                 value.id()
             )));

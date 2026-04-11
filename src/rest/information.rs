@@ -61,7 +61,7 @@ pub async fn get_status() -> Result<Response, RESTError> {
 /// - `500` - An internal server error occurred.
 pub async fn get_information(State(_app): State<App>) -> Result<Response, RESTError> {
     let response_config = ResponseInformation::from_env()
-        .map_err(|err| RESTError::InternalServer(format!("Errors: {}", err.join(", "))))?;
+        .map_err(|err| RESTError::internal_server(format!("Errors: {}", err.join(", "))))?;
 
     Ok((StatusCode::OK, Json(response_config)).into_response())
 }

@@ -292,7 +292,6 @@ impl Paste {
         builder.push(" RETURNING *");
 
         let record = builder.build().fetch_one(executor).await?;
-        println!("Here 1");
 
         self.edited = record.get("edited");
         self.name = record.get("name");
@@ -446,8 +445,8 @@ pub async fn validate_paste(
     token: Option<Token>,
 ) -> Result<Paste, RESTError> {
     let Some(paste) = Paste::fetch(db.pool(), paste_id).await? else {
-        return Err(RESTError::NotFound(
-            "The paste requested could not be found".to_string(),
+        return Err(RESTError::not_found(
+            "The paste requested could not be found",
         ));
     };
 
@@ -455,8 +454,8 @@ pub async fn validate_paste(
         && expiry < Utc::now()
     {
         Paste::delete(db.pool(), paste_id).await?;
-        return Err(RESTError::NotFound(
-            "The paste requested could not be found".to_string(),
+        return Err(RESTError::not_found(
+            "The paste requested could not be found",
         ));
     }
 
@@ -464,8 +463,8 @@ pub async fn validate_paste(
         && paste.views >= max_views
     {
         Paste::delete(db.pool(), paste_id).await?;
-        return Err(RESTError::NotFound(
-            "The paste requested could not be found".to_string(),
+        return Err(RESTError::not_found(
+            "The paste requested could not be found",
         ));
     }
 
