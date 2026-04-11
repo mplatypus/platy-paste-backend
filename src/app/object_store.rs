@@ -59,8 +59,8 @@ pub trait ObjectStoreExt: Sized {
     /// - [`ObjectStoreError`] - When the document cannot be found, or a read failure happens.
     ///
     /// ## Returns
-    ///
-    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError>;
+    /// [`None`] if the document does not exist, or [`Bytes`] of the documents content.
+    async fn fetch_document(&self, document: &Document) -> Result<Option<Bytes>, ObjectStoreError>;
 
     /// Create a document
     ///
@@ -155,7 +155,7 @@ impl ObjectStoreExt for ObjectStore {
         }
     }
 
-    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError> {
+    async fn fetch_document(&self, document: &Document) -> Result<Option<Bytes>, ObjectStoreError> {
         match self {
             Self::S3(os) => os.fetch_document(document).await,
             #[cfg(test)]
@@ -291,21 +291,33 @@ impl ObjectStoreExt for S3ObjectStore {
         Ok(())
     }
 
-    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError> {
-        let mut data = self
+    async fn fetch_document(&self, document: &Document) -> Result<Option<Bytes>, ObjectStoreError> {
+        let mut data = match self
             .client
             .get_object()
             .bucket(DOCUMENT_BUCKET)
             .key(document.generate_path())
             .send()
-            .await?;
+            .await
+        {
+            Ok(data) => data,
+            Err(SdkError::ServiceError(err))
+                if matches!(
+                    err.err(),
+                    aws_sdk_s3::operation::get_object::GetObjectError::NoSuchKey(_)
+                ) =>
+            {
+                return Ok(None);
+            }
+            Err(err) => return Err(ObjectStoreError::from(err)),
+        };
 
         let mut bytes = BytesMut::new();
         while let Some(chunk) = data.body.next().await {
             bytes.extend_from_slice(&chunk.expect("Failed to read S3 object chunk"));
         }
 
-        Ok(bytes.freeze())
+        Ok(Some(bytes.freeze()))
     }
 
     async fn create_document(
@@ -390,15 +402,15 @@ impl ObjectStoreExt for TestObjectStore {
         Ok(())
     }
 
-    async fn fetch_document(&self, document: &Document) -> Result<Bytes, ObjectStoreError> {
+    async fn fetch_document(&self, document: &Document) -> Result<Option<Bytes>, ObjectStoreError> {
         let data_lock = self.data.lock().await;
 
         let document_contents =
             data_lock.get(&(DOCUMENT_BUCKET.to_string(), document.generate_path()));
 
         match document_contents {
-            Some(contents) => Ok(contents.clone()),
-            None => Ok(Bytes::new()),
+            Some(contents) => Ok(Some(contents.clone())),
+            None => Ok(None),
         }
     }
 
