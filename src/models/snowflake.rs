@@ -51,7 +51,7 @@ impl TryFrom<PartialSnowflake> for Snowflake {
             return Err(ParseError::ParseSnowflake("ID cannot be zero.".to_string()));
         }
 
-        Ok(Snowflake::new(value.id()))
+        Ok(Self::new(value.id()))
     }
 }
 

@@ -490,7 +490,7 @@ impl DocumentUpdateParameters {
     /// ## New
     ///
     /// Create a new [`DocumentUpdateParameters`] object.
-    pub fn new(
+    pub const fn new(
         doc_type: Undefined<String>,
         name: Undefined<String>,
         size: Undefined<usize>,
@@ -513,7 +513,7 @@ impl DocumentUpdateParameters {
     }
 
     /// The size to update the document with.
-    pub fn size(&self) -> Undefined<usize> {
+    pub const fn size(&self) -> Undefined<usize> {
         self.size
     }
 
@@ -523,7 +523,7 @@ impl DocumentUpdateParameters {
     ///
     /// ## Returns
     /// Returns [`true`] if all parameters are undefined, otherwise returns [`false`].
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.doc_type.is_undefined() && self.name.is_undefined() && self.size.is_undefined()
     }
 }
@@ -596,15 +596,13 @@ pub fn document_limits(
 
         if size_limits.minimum_document_size() > content_length {
             return Err(RESTError::BadRequest(format!(
-                "Document `{}` is too small.",
-                id
+                "Document `{id}` is too small."
             )));
         }
 
         if size_limits.maximum_document_size() < content_length {
             return Err(RESTError::BadRequest(format!(
-                "Document `{}` is too large.",
-                id
+                "Document `{id}` is too large."
             )));
         }
     }
@@ -614,8 +612,7 @@ pub fn document_limits(
 
         if size_limits.minimum_document_name_size() > name_length {
             return Err(RESTError::BadRequest(format!(
-                "Document `{}`'s name: `{}` is too small.",
-                id, name
+                "Document `{id}`'s name: `{name}` is too small."
             )));
         }
 
@@ -624,16 +621,11 @@ pub fn document_limits(
                 return Err(RESTError::BadRequest(format!(
                     "Document `{}`'s name: `{}`... is too large.",
                     id,
-                    &name[..name
-                        .char_indices()
-                        .nth(47)
-                        .map(|(i, _)| i)
-                        .unwrap_or(name.len())]
+                    &name[..name.char_indices().nth(47).map_or(name.len(), |(i, _)| i)]
                 )));
             }
             return Err(RESTError::BadRequest(format!(
-                "Document `{}`'s name: `{}` is too large.",
-                id, name
+                "Document `{id}`'s name: `{name}` is too large."
             )));
         }
     }

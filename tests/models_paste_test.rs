@@ -102,7 +102,7 @@ fn test_fetch_between(pool: PgPool) {
 
     assert_eq!(results.len(), 1, "Not enough or too many results received.");
 
-    assert_eq!(results[0].id(), &Snowflake::new(517815304354284601),);
+    assert_eq!(results[0].id(), &Snowflake::new(517_815_304_354_284_601),);
 
     assert_eq!(
         results[0].expiry(),
@@ -184,7 +184,7 @@ fn test_insert(pool: PgPool) {
         UndefinedOption::Undefined
     ),
     Some("Test 1"),
-    Some(DateTime::from_timestamp(172800, 0).unwrap()),
+    Some(DateTime::from_timestamp(172_800, 0).expect("Failed to create timestamp.")),
     567,
     Some(1000),
     false,
@@ -197,7 +197,7 @@ fn test_insert(pool: PgPool) {
         UndefinedOption::Undefined
     ),
     Some("New Name"),
-    Some(DateTime::from_timestamp(172800, 0).unwrap()),
+    Some(DateTime::from_timestamp(172_800, 0).expect("Failed to create timestamp.")),
     567,
     Some(1000),
     true,
@@ -205,12 +205,12 @@ fn test_insert(pool: PgPool) {
 #[case(
     PasteUpdateParameters::new(
         UndefinedOption::Undefined,
-        UndefinedOption::Some(DateTime::from_timestamp(1000000, 0).unwrap()),
+        UndefinedOption::Some(DateTime::from_timestamp(1_000_000, 0).expect("Failed to create timestamp.")),
         Undefined::Undefined,
         UndefinedOption::Undefined
     ),
     Some("Test 1"),
-    Some(DateTime::from_timestamp(1000000, 0).unwrap()),
+    Some(DateTime::from_timestamp(1_000_000, 0).expect("Failed to create timestamp.")),
     567,
     Some(1000),
     true,
@@ -223,7 +223,7 @@ fn test_insert(pool: PgPool) {
         UndefinedOption::Undefined
     ),
     Some("Test 1"),
-    Some(DateTime::from_timestamp(172800, 0).unwrap()),
+    Some(DateTime::from_timestamp(172_800, 0).expect("Failed to create timestamp.")),
     20000,
     Some(1000),
     true,
@@ -236,7 +236,7 @@ fn test_insert(pool: PgPool) {
         UndefinedOption::Some(80000)
     ),
     Some("Test 1"),
-    Some(DateTime::from_timestamp(172800, 0).unwrap()),
+    Some(DateTime::from_timestamp(172_800, 0).expect("Failed to create timestamp.")),
     567,
     Some(80000),
     true,
@@ -249,7 +249,7 @@ fn test_insert(pool: PgPool) {
         UndefinedOption::Undefined
     ),
     None,
-    Some(DateTime::from_timestamp(172800, 0).unwrap()),
+    Some(DateTime::from_timestamp(172_800, 0).expect("Failed to create timestamp.")),
     567,
     Some(1000),
     true,
@@ -275,7 +275,7 @@ fn test_insert(pool: PgPool) {
         UndefinedOption::None
     ),
     Some("Test 1"),
-    Some(DateTime::from_timestamp(172800, 0).unwrap()),
+    Some(DateTime::from_timestamp(172_800, 0).expect("Failed to create timestamp.")),
     567,
     None,
     true,
@@ -283,12 +283,12 @@ fn test_insert(pool: PgPool) {
 #[case(
     PasteUpdateParameters::new(
         UndefinedOption::Some("New Name".to_string()),
-        UndefinedOption::Some(DateTime::from_timestamp(1000000, 0).unwrap()),
+        UndefinedOption::Some(DateTime::from_timestamp(1_000_000, 0).expect("Failed to create timestamp.")),
         Undefined::Some(20000),
         UndefinedOption::Some(80000)
     ),
     Some("New Name"),
-    Some(DateTime::from_timestamp(1000000, 0).unwrap()),
+    Some(DateTime::from_timestamp(1_000_000, 0).expect("Failed to create timestamp.")),
     20000,
     Some(80000),
     true,
@@ -345,11 +345,12 @@ async fn test_update(
 
     assert_eq!(paste.max_views(), Some(1000), "Mismatched max views.");
 
-    let edited_timestamp = match was_updated {
-        true => Utc::now()
+    let edited_timestamp = if was_updated {
+        Utc::now()
             .with_nanosecond(0)
-            .expect("Failed to build current time with reset nanosecond."),
-        false => old_edited_timestamp,
+            .expect("Failed to build current time with reset nanosecond.")
+    } else {
+        old_edited_timestamp
     };
 
     let updated = paste

@@ -36,6 +36,9 @@ pub fn generate_router(config: &Config) -> Router<App> {
 ///
 /// Get the servers current status.
 ///
+/// ## Errors
+/// Returns an error if the request failed.
+///
 /// ## Returns
 ///
 /// - `200` - The [`ResponseStatus`] object.
@@ -48,6 +51,9 @@ pub async fn get_status() -> Result<Response, RESTError> {
 /// Get Information.
 ///
 /// Get information about the server.
+///
+/// ## Errors
+/// Returns an error if the request failed.
 ///
 /// ## Returns
 ///
@@ -63,6 +69,9 @@ pub async fn get_information(State(_app): State<App>) -> Result<Response, RESTEr
 /// Get Configuration.
 ///
 /// Get the servers current configuration information.
+///
+/// ## Errors
+/// Returns an error if the request failed.
 ///
 /// ## Returns
 ///

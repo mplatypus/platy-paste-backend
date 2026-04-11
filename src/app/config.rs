@@ -115,7 +115,6 @@ impl ObjectStoreConfig {
     ///
     /// ## Returns
     /// Returns the [`ObjectStoreConfig`] object.
-    #[expect(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         let obs_type =
             std::env::var("OBS_TYPE").expect("OBS_TYPE environment variable must be set.");
@@ -150,7 +149,6 @@ impl S3ObjectStoreConfig {
     ///
     /// ## Returns
     /// Returns the [`S3ObjectStoreConfig`] object.
-    #[expect(clippy::too_many_lines)]
     pub fn from_env() -> Self {
         Self {
             url: std::env::var("OBS_URL").expect("OBS_URL environment variable must be set."),
@@ -261,7 +259,7 @@ impl SizeLimitConfig {
                 ),
                 default_paste_name: std::env::var("DEFAULT_PASTE_NAME")
                     .ok()
-                    .map_or(defaults.default_paste_name, |v| Some(v)),
+                    .map_or(defaults.default_paste_name, Some),
                 minimum_expiry_hours: std::env::var("MINIMUM_EXPIRY_HOURS").ok().map_or(
                     defaults.minimum_expiry_hours,
                     |v| {
