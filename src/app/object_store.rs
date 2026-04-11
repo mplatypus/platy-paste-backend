@@ -125,7 +125,7 @@ impl ObjectStore {
         match config {
             ObjectStoreConfig::S3(config) => Ok(Self::S3(S3ObjectStore::from_config(config))),
             #[cfg(test)]
-            ObjectStoreConfig::Test => Ok(ObjectStore::Test(TestObjectStore::new())),
+            ObjectStoreConfig::Test => Ok(Self::Test(TestObjectStore::new())),
         }
     }
 }

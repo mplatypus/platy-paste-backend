@@ -26,9 +26,128 @@ pub enum ApplicationError {
     /// Errors from [`ObjectStoreError`].
     #[error(transparent)]
     ObjectStore(#[from] ObjectStoreError),
+    /// ## Handler
+    ///
+    /// Errors from [`HandlerError`].
+    #[error(transparent)]
+    Handler(#[from] HandlerError),
 }
 
-/// ## Databse Error
+/// ## Handler Error
+///
+/// Errors related to the handler.
+#[derive(Error, Debug)]
+pub enum HandlerError {
+    /// ## Database
+    ///
+    /// Errors from [`DatabaseError`].
+    #[error("Database: {0}")]
+    Database(#[from] DatabaseError),
+    /// ## Object Store
+    ///
+    /// Errors from [`ObjectStoreError`].
+    #[error(transparent)]
+    ObjectStore(#[from] ObjectStoreError),
+    /// ## Generate
+    ///
+    /// Errors from [`GenerateError`].
+    #[error(transparent)]
+    Generate(#[from] GenerateError),
+    /// ## MPSC
+    ///
+    /// Errors from [`tokio::sync::mpsc::error::SendError<T>`].
+    #[error("MPSC Error: {0}")]
+    Mpsc(String),
+    /// ## Oneshot
+    ///
+    /// Errors from [`tokio::sync::oneshot::error::RecvError`].
+    #[error("Oneshot Error: {0}")]
+    Oneshot(String),
+    /// The handler actor has already been started.
+    #[error("The handler actor has already been started")]
+    AlreadyStarted,
+    /// The handler actor has not been started.
+    #[error("The handler actor has not been started.")]
+    NotStarted,
+    /// The handler actor has been closed.
+    #[error("The handler actor has been closed.")]
+    Closed,
+    /// The handler actor timed out.
+    #[error("The handler actor timed out.")]
+    Timeout,
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl<T> From<tokio::sync::mpsc::error::SendError<T>> for HandlerError {
+    fn from(value: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        Self::Mpsc(value.to_string())
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<tokio::sync::oneshot::error::RecvError> for HandlerError {
+    fn from(value: tokio::sync::oneshot::error::RecvError) -> Self {
+        Self::Oneshot(value.to_string())
+    }
+}
+
+/// Implemented for easy conversion without mapping error type.
+impl From<tokio::time::error::Elapsed> for HandlerError {
+    fn from(_value: tokio::time::error::Elapsed) -> Self {
+        Self::Timeout
+    }
+}
+
+impl IntoResponse for HandlerError {
+    fn into_response(self) -> Response {
+        let (status, reason, trace): (StatusCode, &str, &str) = match self {
+            Self::Database(error) => return error.into_response(),
+            Self::ObjectStore(error) => return error.into_response(),
+            Self::Generate(error) => return error.into_response(),
+            Self::Mpsc(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "MPSC Error",
+                #[expect(clippy::redundant_clone)]
+                &error.clone(),
+            ),
+            Self::Oneshot(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Oneshot Error",
+                #[expect(clippy::redundant_clone)]
+                &error.clone(),
+            ),
+            Self::AlreadyStarted => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Handler Error",
+                "This handler has already been started.",
+            ),
+            Self::NotStarted => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Handler Error",
+                "This handler has not yet been started.",
+            ),
+            Self::Closed => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Handler Error",
+                "This handler has been closed.",
+            ),
+            Self::Timeout => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Handler Error",
+                "A request to the handler timed out.",
+            ),
+        };
+
+        let body = Json(RESTErrorResponse {
+            timestamp: Utc::now().timestamp() as u64,
+            reason: String::from(reason),
+            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
+        });
+        (status, body).into_response()
+    }
+}
+
+/// ## Database Error
 ///
 /// Errors related to the database.
 #[derive(Error, Debug)]
@@ -340,6 +459,11 @@ pub enum RESTError {
     /// Errors from [`ObjectStoreError`].
     #[error(transparent)]
     ObjectStore(#[from] ObjectStoreError),
+    /// ## Handler
+    ///
+    /// Errors from [`HandlerError`].
+    #[error(transparent)]
+    Handler(#[from] HandlerError),
     /// ## Generate
     ///
     /// Errors from [`GenerateError`].
@@ -385,6 +509,7 @@ impl IntoResponse for RESTError {
             Self::Authentication(error) => return error.into_response(),
             Self::Database(error) => return error.into_response(),
             Self::ObjectStore(error) => return error.into_response(),
+            Self::Handler(error) => return error.into_response(),
             Self::Generate(error) => return error.into_response(),
             Self::Parse(error) => return error.into_response(),
             Self::Rejection(error) => return error.into_response(),
