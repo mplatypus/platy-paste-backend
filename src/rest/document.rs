@@ -57,10 +57,10 @@ pub async fn get_document(
 
     let document = Document::fetch(app.database().pool(), path.document_id())
         .await?
-        .ok_or_else(|| RESTError::NotFound("Document not found.".to_string()))?;
+        .ok_or_else(|| RESTError::not_found("Document not found."))?;
 
     if document.paste_id() != path.paste_id() {
-        return Err(RESTError::BadRequest(
+        return Err(RESTError::bad_request(
             "The document ID does not belong to that paste.".to_string(),
         ));
     }
@@ -234,16 +234,16 @@ mod test {
             }
 
             #[rstest]
-            #[case(Snowflake::new(517_815_304_354_284_605), Some("Document not found."))]
+            #[case(Snowflake::new(517_815_304_354_284_605), "Document not found.")]
             #[case(
                 Snowflake::new(1_234_567_890),
-                Some("The paste requested could not be found")
+                "The paste requested could not be found"
             )]
             #[sqlx::test(fixtures(path = "../../tests/fixtures", scripts("pastes", "documents")))]
             async fn test_missing(
                 #[ignore] pool: PgPool,
                 #[case] paste_id: Snowflake,
-                #[case] trace: Option<&str>,
+                #[case] message: &str,
             ) {
                 let config = Config::test_builder()
                     .build()
@@ -271,7 +271,7 @@ mod test {
 
                 assert_eq!(body.reason(), "Not Found", "Reason does not match.");
 
-                assert_eq!(body.trace(), trace, "Trace does not match.");
+                assert_eq!(body.message(), message, "Trace does not match.");
             }
         }
     }

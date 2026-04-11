@@ -52,5 +52,5 @@ pub fn generate_router(state: App) -> Router<()> {
 }
 
 async fn fallback() -> RESTError {
-    RESTError::NotFound("This endpoint does not exist.".to_string())
+    RESTError::not_found("This endpoint does not exist.")
 }

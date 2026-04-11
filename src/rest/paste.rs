@@ -111,15 +111,11 @@ pub async fn post_paste(
                 let name = name.to_string();
 
                 if name.len() > app.config().size_limits().maximum_paste_name_size() {
-                    return Err(RESTError::BadRequest(
-                        "The pastes name is too long.".to_string(),
-                    ));
+                    return Err(RESTError::bad_request("The pastes name is too long."));
                 }
 
                 if name.len() < app.config().size_limits().minimum_paste_name_size() {
-                    return Err(RESTError::BadRequest(
-                        "The pastes name is too short.".to_string(),
-                    ));
+                    return Err(RESTError::bad_request("The pastes name is too short."));
                 }
 
                 Some(name)
@@ -141,11 +137,9 @@ pub async fn post_paste(
     let paste = Paste::new(
         Snowflake::generate()?,
         name,
-        Utc::now()
-            .with_nanosecond(0)
-            .ok_or(RESTError::InternalServer(
-                "Failed to strip nanosecond from date time object.".to_string(),
-            ))?,
+        Utc::now().with_nanosecond(0).ok_or_else(|| {
+            RESTError::internal_server("Failed to strip nanosecond from date time object.")
+        })?,
         None,
         expiry.into(),
         0,
@@ -228,15 +222,11 @@ pub async fn patch_paste(
             let name = name.to_string();
 
             if name.len() > app.config().size_limits().maximum_paste_name_size() {
-                return Err(RESTError::BadRequest(
-                    "The pastes name is too long.".to_string(),
-                ));
+                return Err(RESTError::bad_request("The pastes name is too long."));
             }
 
             if name.len() < app.config().size_limits().minimum_paste_name_size() {
-                return Err(RESTError::BadRequest(
-                    "The pastes name is too short.".to_string(),
-                ));
+                return Err(RESTError::bad_request("The pastes name is too short."));
             }
 
             UndefinedOption::Some(name)
@@ -247,7 +237,9 @@ pub async fn patch_paste(
     let max_views = match body.payload.max_views() {
         UndefinedOption::Some(max_views) => {
             if paste.views() >= max_views {
-                return Err(RESTError::BadRequest("You cannot set the maximum views to a value equal to or lower than the current view count.".to_string()));
+                return Err(RESTError::bad_request(
+                    "You cannot set the maximum views to a value equal to or lower than the current view count.",
+                ));
             }
 
             UndefinedOption::Some(max_views)
@@ -302,8 +294,8 @@ pub async fn patch_paste(
         );
 
         if !unknown_ids.is_empty() {
-            return Err(RESTError::BadRequest(
-                "Document(s) were provided that do not exist or do not have contents".to_string(),
+            return Err(RESTError::bad_request(
+                "Document(s) were provided that do not exist or do not have contents",
             ));
         }
 
@@ -398,7 +390,7 @@ pub async fn delete_paste(
     let mut transaction = app.database().pool().begin().await?;
 
     if !Paste::delete(transaction.as_mut(), path.paste_id()).await? {
-        return Err(RESTError::NotFound("The paste was not found.".to_string()));
+        return Err(RESTError::not_found("The paste was not found."));
     }
 
     app.handler().remove(path.paste_id()).await?;
@@ -436,36 +428,34 @@ fn validate_expiry(
     let size_limits = config.size_limits();
     match expiry {
         UndefinedOption::Some(expiry) => {
-            let expiry = expiry.with_nanosecond(0).ok_or(RESTError::InternalServer(
-                "Failed to strip nanosecond from date time object.".to_string(),
-            ))?;
-            let now = Utc::now()
-                .with_nanosecond(0)
-                .ok_or(RESTError::InternalServer(
-                    "Failed to strip nanosecond from date time object.".to_string(),
-                ))?;
+            let expiry = expiry.with_nanosecond(0).ok_or_else(|| {
+                RESTError::internal_server("Failed to strip nanosecond from date time object.")
+            })?;
+            let now = Utc::now().with_nanosecond(0).ok_or_else(|| {
+                RESTError::internal_server("Failed to strip nanosecond from date time object.")
+            })?;
 
             let difference = expiry - now;
 
             if difference.num_seconds() <= 0 {
-                return Err(RESTError::BadRequest(
-                    "The timestamp provided has already passed.".to_string(),
+                return Err(RESTError::bad_request(
+                    "The timestamp provided has already passed.",
                 ));
             }
 
             if let Some(minimum_expiry_hours) = size_limits.minimum_expiry_hours()
                 && difference < TimeDelta::hours(minimum_expiry_hours as i64)
             {
-                return Err(RESTError::BadRequest(
-                    "The timestamp provided is below the minimum.".to_string(),
+                return Err(RESTError::bad_request(
+                    "The timestamp provided is below the minimum.",
                 ));
             }
 
             if let Some(maximum_expiry_hours) = size_limits.maximum_expiry_hours()
                 && difference > TimeDelta::hours(maximum_expiry_hours as i64)
             {
-                return Err(RESTError::BadRequest(
-                    "The timestamp provided is above the maximum.".to_string(),
+                return Err(RESTError::bad_request(
+                    "The timestamp provided is above the maximum.",
                 ));
             }
 
@@ -474,20 +464,19 @@ fn validate_expiry(
         UndefinedOption::Undefined => {
             if let Some(default_expiry_hours) = size_limits.default_expiry_hours() {
                 return Ok(UndefinedOption::Some(
-                    Utc::now()
-                        .with_nanosecond(0)
-                        .ok_or(RESTError::InternalServer(
-                            "Failed to strip nanosecond from date time object.".to_string(),
-                        ))?
-                        + TimeDelta::hours(default_expiry_hours as i64),
+                    Utc::now().with_nanosecond(0).ok_or_else(|| {
+                        RESTError::internal_server(
+                            "Failed to strip nanosecond from date time object.",
+                        )
+                    })? + TimeDelta::hours(default_expiry_hours as i64),
                 ));
             }
 
             if size_limits.minimum_expiry_hours().is_some()
                 || size_limits.maximum_expiry_hours().is_some()
             {
-                return Err(RESTError::BadRequest(
-                    "The expiry timestamp parameter is required.".to_string(),
+                return Err(RESTError::bad_request(
+                    "The expiry timestamp parameter is required.",
                 ));
             }
 
@@ -497,8 +486,8 @@ fn validate_expiry(
             if size_limits.minimum_expiry_hours().is_some()
                 || size_limits.maximum_expiry_hours().is_some()
             {
-                return Err(RESTError::BadRequest(
-                    "The expiry timestamp parameter cannot be none.".to_string(),
+                return Err(RESTError::bad_request(
+                    "The expiry timestamp parameter cannot be none.",
                 ));
             }
 
@@ -609,9 +598,9 @@ mod tests {
                 assert_eq!(body.reason(), "Not Found", "Reason does not match.");
 
                 assert_eq!(
-                    body.trace(),
-                    Some("The paste requested could not be found"),
-                    "Trace does not match."
+                    body.message(),
+                    "The paste requested could not be found",
+                    "Message does not match."
                 );
             }
         }
@@ -989,7 +978,7 @@ mod tests {
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json")),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Json Parse Error", Some("missing field `documents` at line 1 column 2".to_string())),
+                RESTErrorResponse::new("Json Parse Error", "missing field `documents` at line 1 column 2"),
             )]
             #[case(
                 Config::test_builder()
@@ -999,7 +988,7 @@ mod tests {
                     .add_part("payload", Part::bytes(Bytes::from("{}")).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Json Parse Error", Some("missing field `documents` at line 1 column 2".to_string())),
+                RESTErrorResponse::new("Json Parse Error", "missing field `documents` at line 1 column 2"),
             )]
             #[case(
                 Config::test_builder()
@@ -1010,7 +999,7 @@ mod tests {
                         "documents": []
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Not enough documents were provided. Expected: 1, Received: 0".to_string())),
+                RESTErrorResponse::new("Bad Request", "Not enough documents were provided. Expected: 1, Received: 0"),
             )]
             #[case(
                 Config::test_builder()
@@ -1023,7 +1012,7 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("A document with the ID of 0 was not found".to_string())),
+                RESTErrorResponse::new("Bad Request", "A document with the ID of 0 was not found"),
             )]
             #[case(
                 Config::test_builder()
@@ -1035,7 +1024,7 @@ mod tests {
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("More files were provided, than listed inside the payload".to_string())),
+                RESTErrorResponse::new("Bad Request", "More files were provided, than listed inside the payload"),
             )]
             #[case(
                 Config::test_builder()
@@ -1044,7 +1033,7 @@ mod tests {
                 MultipartForm::new()
                     .add_part("payload", Part::bytes(Bytes::from("{}"))),
                 StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Payload must have a content type of application/json".to_string())),
+                RESTErrorResponse::new("Bad Request", "Payload must have a content type of application/json"),
             )]
             #[case(
                 Config::test_builder()
@@ -1057,8 +1046,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::new()).add_header("Content-Type", "image/png")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Invalid mime type: image/png received for the document: 0".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Invalid mime type: image/png received for the document: 0"),
             )]
             #[case(
                 Config::test_builder()
@@ -1077,8 +1066,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Document `0`'s name: `test.txt` is too small.".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test.txt` is too small."),
             )]
             #[case(
                 Config::test_builder()
@@ -1097,8 +1086,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Document `0`'s name: `test_file.txt` is too large.".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test_file.txt` is too large."),
             )]
             #[case(
                 Config::test_builder()
@@ -1117,8 +1106,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::new()).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Document `0` is too small.".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0` is too small."),
             )]
             #[case(
                 Config::test_builder()
@@ -1137,8 +1126,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from(vec![0; 110])).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Document `0` is too large.".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Document `0` is too large."),
             )]
             #[case(
                 Config::test_builder()
@@ -1157,8 +1146,8 @@ mod tests {
                         ]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Not enough documents were provided. Expected: 2, Received: 1".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Not enough documents were provided. Expected: 2, Received: 1"),
             )]
             #[case(
                 Config::test_builder()
@@ -1179,8 +1168,8 @@ mod tests {
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain"))
                     .add_part("files[1]", Part::bytes(Bytes::from("test2")).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("Too many documents were provided. Expected: 1, Received: 2".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "Too many documents were provided. Expected: 1, Received: 2"),
             )]
             #[case(
                 Config::test_builder()
@@ -1199,8 +1188,8 @@ mod tests {
                         "documents": [{"id": 0, "name": "test.txt"}]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("The timestamp provided has already passed.".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "The timestamp provided has already passed."),
             )]
             #[case(
                 Config::test_builder()
@@ -1219,8 +1208,8 @@ mod tests {
                         "documents": [{"id": 0, "name": "test.txt"}]
                     })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                     .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
-                    StatusCode::BAD_REQUEST,
-                RESTErrorResponse::new(&"Bad Request", Some("The timestamp provided is above the maximum.".to_string())),
+                StatusCode::BAD_REQUEST,
+                RESTErrorResponse::new("Bad Request", "The timestamp provided is above the maximum."),
             )]
             #[sqlx::test]
             async fn test_failures(
@@ -1228,7 +1217,7 @@ mod tests {
                 #[case] config: Config,
                 #[case] form: MultipartForm,
                 #[case] expected_status: StatusCode,
-                #[case] expected_body: RESTErrorResponse,
+                #[case] expected_response: RESTErrorResponse,
             ) {
                 let object_store = TestObjectStore::new();
                 let state =
@@ -1249,11 +1238,15 @@ mod tests {
 
                 assert_eq!(
                     body.reason(),
-                    expected_body.reason(),
-                    "Reason does not match."
+                    expected_response.reason(),
+                    "Mismatched response reason."
                 );
 
-                assert_eq!(body.trace(), expected_body.trace(), "Trace does not match.");
+                assert_eq!(
+                    body.message(),
+                    expected_response.message(),
+                    "Mismatched response message."
+                );
             }
         }
 
@@ -1548,7 +1541,7 @@ mod tests {
                         "expiry_timestamp": null,
                     }),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("The expiry timestamp parameter cannot be none.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "The expiry timestamp parameter cannot be none."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -1565,7 +1558,7 @@ mod tests {
                         "expiry_timestamp": Utc::now().to_rfc3339(),
                     }),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("The timestamp provided has already passed.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided has already passed."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -1582,7 +1575,7 @@ mod tests {
                         "expiry_timestamp": (Utc::now() + TimeDelta::hours(6)).to_rfc3339(),
                     }),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("The timestamp provided is above the maximum.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided is above the maximum."),
                 )]
                 #[sqlx::test(fixtures(
                     path = "../../tests/fixtures",
@@ -1593,7 +1586,7 @@ mod tests {
                     #[case] config: Config,
                     #[case] body: serde_json::Value,
                     #[case] expected_status: StatusCode,
-                    #[case] expected_body: RESTErrorResponse,
+                    #[case] expected_response: RESTErrorResponse,
                 ) {
                     let object_store = TestObjectStore::new();
                     let state = ApplicationState::new_tests(
@@ -1625,11 +1618,15 @@ mod tests {
 
                     assert_eq!(
                         body.reason(),
-                        expected_body.reason(),
-                        "Reason does not match."
+                        expected_response.reason(),
+                        "Mismatched response reason."
                     );
 
-                    assert_eq!(body.trace(), expected_body.trace(), "Trace does not match.");
+                    assert_eq!(
+                        body.message(),
+                        expected_response.message(),
+                        "Mismatched response message."
+                    );
                 }
             }
 
@@ -2004,7 +2001,7 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("The expiry timestamp parameter cannot be none.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "The expiry timestamp parameter cannot be none."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2026,7 +2023,7 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("The timestamp provided has already passed.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided has already passed."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2048,7 +2045,7 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("The timestamp provided is above the maximum.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "The timestamp provided is above the maximum."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2063,7 +2060,7 @@ mod tests {
                             ]
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("Document(s) were provided that do not exist or do not have contents".to_string())),
+                    RESTErrorResponse::new("Bad Request", "Document(s) were provided that do not exist or do not have contents"),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2078,7 +2075,7 @@ mod tests {
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("A document with the ID of 0 was not found".to_string())),
+                    RESTErrorResponse::new("Bad Request", "A document with the ID of 0 was not found"),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2094,7 +2091,7 @@ mod tests {
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("The new document 0 requires the `name` parameter.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "The new document 0 requires the `name` parameter."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2116,7 +2113,7 @@ mod tests {
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("Document `0`'s name: `test.txt` is too small.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test.txt` is too small."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2138,7 +2135,7 @@ mod tests {
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("Document `0`'s name: `test_file.txt` is too large.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "Document `0`'s name: `test_file.txt` is too large."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2160,7 +2157,7 @@ mod tests {
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("test")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("Document `0` is too small.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "Document `0` is too small."),
                 )]
                 #[case(
                     Config::test_builder()
@@ -2182,7 +2179,7 @@ mod tests {
                         })).expect("Failed to build payload"))).add_header("Content-Type", "application/json"))
                         .add_part("files[0]", Part::bytes(Bytes::from("some random contents")).add_header("Content-Type", "text/plain")),
                     StatusCode::BAD_REQUEST,
-                    RESTErrorResponse::new(&"Bad Request", Some("Document `0` is too large.".to_string())),
+                    RESTErrorResponse::new("Bad Request", "Document `0` is too large."),
                 )]
                 #[sqlx::test(fixtures(
                     path = "../../tests/fixtures",
@@ -2193,7 +2190,7 @@ mod tests {
                     #[case] config: Config,
                     #[case] form: MultipartForm,
                     #[case] expected_status: StatusCode,
-                    #[case] expected_body: RESTErrorResponse,
+                    #[case] expected_response: RESTErrorResponse,
                 ) {
                     let object_store = TestObjectStore::new();
                     let state = ApplicationState::new_tests(
@@ -2225,11 +2222,15 @@ mod tests {
 
                     assert_eq!(
                         body.reason(),
-                        expected_body.reason(),
-                        "Reason does not match."
+                        expected_response.reason(),
+                        "Mismatched response reason."
                     );
 
-                    assert_eq!(body.trace(), expected_body.trace(), "Trace does not match.");
+                    assert_eq!(
+                        body.message(),
+                        expected_response.message(),
+                        "Mismatched response message."
+                    );
                 }
             }
 
@@ -2237,9 +2238,15 @@ mod tests {
             #[case(
                 Snowflake::new(517_815_304_354_284_605),
                 Some("beans"),
+                "Invalid Credentials",
                 "Invalid Token and/or mismatched paste ID"
             )]
-            #[case(Snowflake::new(517_815_304_354_284_605), None, "Missing Credentials")]
+            #[case(
+                Snowflake::new(517_815_304_354_284_605),
+                None,
+                "Missing Credentials",
+                "Missing Token"
+            )]
             #[sqlx::test(fixtures(
                 path = "../../tests/fixtures",
                 scripts("pastes", "documents", "tokens")
@@ -2249,6 +2256,7 @@ mod tests {
                 #[case] paste_id: Snowflake,
                 #[case] authentication: Option<&str>,
                 #[case] reason: &str,
+                #[case] message: &str,
             ) {
                 let config = Config::test_builder()
                     .build()
@@ -2279,7 +2287,7 @@ mod tests {
 
                 assert_eq!(body.reason(), reason, "Reason does not match.");
 
-                assert_eq!(body.trace(), None, "Trace does not match.");
+                assert_eq!(body.message(), message, "Message does not match.");
             }
 
             #[sqlx::test(fixtures(
@@ -2320,8 +2328,8 @@ mod tests {
                 assert_eq!(body.reason(), "Bad Request", "Reason does not match.");
 
                 assert_eq!(
-                    body.trace(),
-                    Some("Expected application/json or multipart/form-data as content type."),
+                    body.message(),
+                    "Expected application/json or multipart/form-data as content type.",
                     "Trace does not match."
                 );
             }
@@ -2334,14 +2342,21 @@ mod tests {
             #[case(
                 Snowflake::new(1_234_567_890),
                 Some("NTE3ODE1MzA0MzU0Mjg0NjA1.MTc3MDQzODc5Mw==.ozlKKwEEZpoGVuNzPDCyOMRGv"),
+                "Invalid Credentials",
                 "Invalid Token and/or mismatched paste ID"
             )]
             #[case(
                 Snowflake::new(517_815_304_354_284_605),
                 Some("beans"),
+                "Invalid Credentials",
                 "Invalid Token and/or mismatched paste ID"
             )]
-            #[case(Snowflake::new(517_815_304_354_284_605), None, "Missing Credentials")]
+            #[case(
+                Snowflake::new(517_815_304_354_284_605),
+                None,
+                "Missing Credentials",
+                "Missing Token"
+            )]
             #[sqlx::test(fixtures(
                 path = "../../tests/fixtures",
                 scripts("pastes", "documents", "tokens")
@@ -2351,6 +2366,7 @@ mod tests {
                 #[case] paste_id: Snowflake,
                 #[case] authentication: Option<&str>,
                 #[case] reason: &str,
+                #[case] message: &str,
             ) {
                 let config = Config::test_builder()
                     .build()
@@ -2381,7 +2397,7 @@ mod tests {
 
                 assert_eq!(body.reason(), reason, "Reason does not match.");
 
-                assert_eq!(body.trace(), None, "Trace does not match.");
+                assert_eq!(body.message(), message, "Message does not match.");
             }
 
             #[sqlx::test(fixtures(

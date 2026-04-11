@@ -350,15 +350,15 @@ impl FromRequest<App> for PostPasteMultipartBody {
         let name_regex = Regex::new(r"^files\[(?P<id>[0-9]+)\]$")?;
 
         let Some(content_type) = req.headers().get(CONTENT_TYPE) else {
-            return Err(RESTError::BadRequest(
-                "The content type header is expected.".to_string(),
+            return Err(RESTError::bad_request(
+                "The content type header is expected.",
             ));
         };
 
         let mime: mime::Mime = content_type.to_str()?.parse()?;
 
         if mime.type_() != mime::MULTIPART || mime.subtype() != mime::FORM_DATA {
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "Expected {} as content type.",
                 mime::MULTIPART_FORM_DATA
             )));
@@ -371,14 +371,14 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
         while let Some(field) = multipart.next_field().await? {
             let Some(name) = field.name() else {
-                return Err(RESTError::BadRequest(
-                    "All multipart fields require a name.".to_string(),
+                return Err(RESTError::bad_request(
+                    "All multipart fields require a name.",
                 ));
             };
 
             let Some(content_type) = field.content_type() else {
-                return Err(RESTError::BadRequest(
-                    "All multipart fields require a content type.".to_string(),
+                return Err(RESTError::bad_request(
+                    "All multipart fields require a content type.",
                 ));
             };
 
@@ -386,8 +386,8 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
             if name == "payload" {
                 if content_type != mime::APPLICATION_JSON {
-                    return Err(RESTError::BadRequest(
-                        "Payload must have a content type of application/json".to_string(),
+                    return Err(RESTError::bad_request(
+                        "Payload must have a content type of application/json",
                     ));
                 }
 
@@ -400,8 +400,8 @@ impl FromRequest<App> for PostPasteMultipartBody {
                 let document_ids_set: HashSet<PartialSnowflake> =
                     document_ids.clone().into_iter().collect::<HashSet<_>>();
                 if document_ids.len() != document_ids_set.len() {
-                    return Err(RESTError::BadRequest(
-                        "One or more documents provided has the same ID".to_string(),
+                    return Err(RESTError::bad_request(
+                        "One or more documents provided has the same ID",
                     ));
                 }
 
@@ -411,7 +411,7 @@ impl FromRequest<App> for PostPasteMultipartBody {
 
             if let Some(captures) = name_regex.captures(name) {
                 if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                    return Err(RESTError::BadRequest(format!(
+                    return Err(RESTError::bad_request(format!(
                         "Invalid mime type: {content_type} received for the document: {}",
                         &captures["id"]
                     )));
@@ -420,8 +420,8 @@ impl FromRequest<App> for PostPasteMultipartBody {
                 let id: PartialSnowflake = (&captures["id"]).try_into()?;
 
                 if document_contents.contains_key(&id) {
-                    return Err(RESTError::BadRequest(
-                        "A duplicate ID was found in the form data".to_string(),
+                    return Err(RESTError::bad_request(
+                        "A duplicate ID was found in the form data",
                     ));
                 }
 
@@ -432,14 +432,14 @@ impl FromRequest<App> for PostPasteMultipartBody {
                 continue;
             }
 
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "An unknown multipart item was received: {name}"
             )));
         }
 
         let Some(payload) = payload else {
-            return Err(RESTError::BadRequest(
-                "Payload was not found in the form data".to_string(),
+            return Err(RESTError::bad_request(
+                "Payload was not found in the form data",
             ));
         };
 
@@ -448,7 +448,7 @@ impl FromRequest<App> for PostPasteMultipartBody {
         let mut documents = Vec::new();
         for document in body_documents {
             let Some((content, mime)) = document_contents.remove(document.id()) else {
-                return Err(RESTError::BadRequest(format!(
+                return Err(RESTError::bad_request(format!(
                     "A document with the ID of {} was not found",
                     document.id()
                 )));
@@ -465,8 +465,8 @@ impl FromRequest<App> for PostPasteMultipartBody {
         }
 
         if !document_contents.is_empty() {
-            return Err(RESTError::BadRequest(
-                "More files were provided, than listed inside the payload".to_string(),
+            return Err(RESTError::bad_request(
+                "More files were provided, than listed inside the payload",
             ));
         }
 
@@ -505,8 +505,8 @@ impl PatchPasteMultipartBody {
             let document_ids_set: HashSet<PartialSnowflake> =
                 document_ids.clone().into_iter().collect::<HashSet<_>>();
             if document_ids.len() != document_ids_set.len() {
-                return Err(RESTError::BadRequest(
-                    "One or more documents provided has the same ID".to_string(),
+                return Err(RESTError::bad_request(
+                    "One or more documents provided has the same ID",
                 ));
             }
         }
@@ -540,14 +540,14 @@ impl PatchPasteMultipartBody {
 
         while let Some(field) = multipart.next_field().await? {
             let Some(name) = field.name() else {
-                return Err(RESTError::BadRequest(
-                    "All multipart fields require a name.".to_string(),
+                return Err(RESTError::bad_request(
+                    "All multipart fields require a name.",
                 ));
             };
 
             let Some(content_type) = field.content_type() else {
-                return Err(RESTError::BadRequest(
-                    "All multipart fields require a content type.".to_string(),
+                return Err(RESTError::bad_request(
+                    "All multipart fields require a content type.",
                 ));
             };
 
@@ -555,8 +555,8 @@ impl PatchPasteMultipartBody {
 
             if name == "payload" {
                 if content_type != mime::APPLICATION_JSON {
-                    return Err(RESTError::BadRequest(
-                        "Payload must have a content type of application/json".to_string(),
+                    return Err(RESTError::bad_request(
+                        "Payload must have a content type of application/json",
                     ));
                 }
 
@@ -570,8 +570,8 @@ impl PatchPasteMultipartBody {
                     let document_ids_set: HashSet<PartialSnowflake> =
                         document_ids.clone().into_iter().collect::<HashSet<_>>();
                     if document_ids.len() != document_ids_set.len() {
-                        return Err(RESTError::BadRequest(
-                            "One or more documents provided has the same ID".to_string(),
+                        return Err(RESTError::bad_request(
+                            "One or more documents provided has the same ID",
                         ));
                     }
                 }
@@ -582,7 +582,7 @@ impl PatchPasteMultipartBody {
 
             if let Some(captures) = name_regex.captures(name) {
                 if contains_mime(UNSUPPORTED_MIMES, content_type) {
-                    return Err(RESTError::BadRequest(format!(
+                    return Err(RESTError::bad_request(format!(
                         "Invalid mime type received for a document: {content_type}"
                     )));
                 }
@@ -592,8 +592,8 @@ impl PatchPasteMultipartBody {
                 if let Some(document_contents) = &document_contents
                     && document_contents.contains_key(&id)
                 {
-                    return Err(RESTError::BadRequest(
-                        "A duplicate ID was found in the form data".to_string(),
+                    return Err(RESTError::bad_request(
+                        "A duplicate ID was found in the form data",
                     ));
                 }
 
@@ -606,14 +606,14 @@ impl PatchPasteMultipartBody {
                 continue;
             }
 
-            return Err(RESTError::BadRequest(format!(
+            return Err(RESTError::bad_request(format!(
                 "An unknown multipart item was received: {name}"
             )));
         }
 
         let Some(payload) = payload else {
-            return Err(RESTError::BadRequest(
-                "Payload was not found in the form data".to_string(),
+            return Err(RESTError::bad_request(
+                "Payload was not found in the form data",
             ));
         };
 
@@ -630,7 +630,7 @@ impl PatchPasteMultipartBody {
                 if let Some(document_contents) = document_contents {
                     for (id, (content, mime)) in document_contents {
                         let Some(body) = docs_map.remove(&id) else {
-                            return Err(RESTError::BadRequest(format!(
+                            return Err(RESTError::bad_request(format!(
                                 "A document with the ID of {id} was not found"
                             )));
                         };
@@ -679,8 +679,8 @@ impl FromRequest<App> for PatchPasteMultipartBody {
         state: &App,
     ) -> Result<Self, Self::Rejection> {
         let Some(content_type) = req.headers().get(CONTENT_TYPE) else {
-            return Err(RESTError::BadRequest(
-                "The content type header is expected.".to_string(),
+            return Err(RESTError::bad_request(
+                "The content type header is expected.",
             ));
         };
 
@@ -691,7 +691,7 @@ impl FromRequest<App> for PatchPasteMultipartBody {
         } else if mime.type_() == mime::MULTIPART && mime.subtype() == mime::FORM_DATA {
             Self::from_multipart(req, state).await
         } else {
-            Err(RESTError::BadRequest(format!(
+            Err(RESTError::bad_request(format!(
                 "Expected {} or {} as content type.",
                 mime::APPLICATION_JSON,
                 mime::MULTIPART_FORM_DATA

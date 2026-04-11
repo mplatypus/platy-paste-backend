@@ -100,50 +100,41 @@ impl From<tokio::time::error::Elapsed> for HandlerError {
 
 impl IntoResponse for HandlerError {
     fn into_response(self) -> Response {
-        let (status, reason, trace): (StatusCode, &str, &str) = match self {
-            Self::Database(error) => return error.into_response(),
-            Self::ObjectStore(error) => return error.into_response(),
-            Self::Generate(error) => return error.into_response(),
-            Self::Mpsc(error) => (
+        match self {
+            Self::Database(error) => error.into_response(),
+            Self::ObjectStore(error) => error.into_response(),
+            Self::Generate(error) => error.into_response(),
+            Self::Mpsc(error) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "MPSC Error",
-                #[expect(clippy::redundant_clone)]
-                &error.clone(),
+                error,
             ),
-            Self::Oneshot(error) => (
+            Self::Oneshot(error) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Oneshot Error",
-                #[expect(clippy::redundant_clone)]
-                &error.clone(),
+                error,
             ),
-            Self::AlreadyStarted => (
+            Self::AlreadyStarted => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Handler Error",
                 "This handler has already been started.",
             ),
-            Self::NotStarted => (
+            Self::NotStarted => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Handler Error",
                 "This handler has not yet been started.",
             ),
-            Self::Closed => (
+            Self::Closed => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Handler Error",
                 "This handler has been closed.",
             ),
-            Self::Timeout => (
+            Self::Timeout => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Handler Error",
                 "A request to the handler timed out.",
             ),
-        };
-
-        let body = Json(RESTErrorResponse {
-            timestamp: Utc::now().timestamp() as u64,
-            reason: String::from(reason),
-            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
-        });
-        (status, body).into_response()
+        }
     }
 }
 
@@ -171,27 +162,21 @@ pub enum DatabaseError {
 
 impl IntoResponse for DatabaseError {
     fn into_response(self) -> Response {
-        let (status, reason, trace): (StatusCode, &str, &str) = match self {
-            Self::Sqlx(error) => (
+        match self {
+            Self::Sqlx(error) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "SQLX Error",
-                &error.to_string(),
+                error,
             ),
-            Self::Migrate(error) => (
+            Self::Migrate(error) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Migration Error",
-                &error.to_string(),
+                error,
             ),
-            #[expect(clippy::redundant_clone)]
-            Self::Custom(error) => (StatusCode::BAD_REQUEST, "Custom Error", &error.clone()),
-        };
-
-        let body = Json(RESTErrorResponse {
-            timestamp: Utc::now().timestamp() as u64,
-            reason: String::from(reason),
-            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
-        });
-        (status, body).into_response()
+            Self::Custom(error) => {
+                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Custom Error", error)
+            }
+        }
     }
 }
 
@@ -212,8 +197,8 @@ where
     E: std::error::Error + Send + Sync + 'static,
     R: std::fmt::Debug,
 {
-    fn from(e: aws_sdk_s3::error::SdkError<E, R>) -> Self {
-        Self::S3(aws_sdk_s3::error::DisplayErrorContext(e).to_string())
+    fn from(error: aws_sdk_s3::error::SdkError<E, R>) -> Self {
+        Self::S3(aws_sdk_s3::error::DisplayErrorContext(error).to_string())
     }
 }
 
@@ -226,21 +211,13 @@ impl From<sqlx::Error> for RESTError {
 
 impl IntoResponse for ObjectStoreError {
     fn into_response(self) -> Response {
-        let (status, reason, trace): (StatusCode, &str, &str) = match self {
-            Self::S3(error) => (
+        match self {
+            Self::S3(error) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "S3 Service Error",
-                #[expect(clippy::redundant_clone)]
-                &error.clone(),
+                error,
             ),
-        };
-
-        let body = Json(RESTErrorResponse {
-            timestamp: Utc::now().timestamp() as u64,
-            reason: String::from(reason),
-            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
-        });
-        (status, body).into_response()
+        }
     }
 }
 
@@ -258,20 +235,13 @@ pub enum GenerateError {
 
 impl IntoResponse for GenerateError {
     fn into_response(self) -> Response {
-        let (status, reason, trace): (StatusCode, &str, &str) = match self {
-            Self::GetRandom(error) => (
+        match self {
+            Self::GetRandom(error) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Get Random Value Error",
-                &error.to_string(),
+                error,
             ),
-        };
-
-        let body = Json(RESTErrorResponse {
-            timestamp: Utc::now().timestamp() as u64,
-            reason: String::from(reason),
-            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
-        });
-        (status, body).into_response()
+        }
     }
 }
 
@@ -361,43 +331,39 @@ impl From<std::num::ParseIntError> for RESTError {
 
 impl IntoResponse for ParseError {
     fn into_response(self) -> Response {
-        let (status, reason, trace): (StatusCode, &str, &str) = match self {
-            Self::Json(e) => (StatusCode::BAD_REQUEST, "Json Parse Error", &e.to_string()),
-            Self::Regex(e) => (
+        match self {
+            Self::Json(error) => {
+                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Json Parse Error", error)
+            }
+            Self::Regex(error) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Regex Error",
-                &e.to_string(),
+                error,
             ),
-            Self::HeaderToStr(e) => (
+            Self::HeaderToStr(error) => RESTErrorResponse::new_response(
                 StatusCode::BAD_REQUEST,
                 "Header To String Error",
-                &e.to_string(),
+                error,
             ),
-            Self::MimeFromStr(e) => (
+            Self::MimeFromStr(error) => RESTErrorResponse::new_response(
                 StatusCode::BAD_REQUEST,
                 "Mime From String Error",
-                &e.to_string(),
+                error,
             ),
-            Self::FromUtf8(e) => (StatusCode::BAD_REQUEST, "From UTF-8 Error", &e.to_string()),
-            Self::ParseInt(e) => (
+            Self::FromUtf8(error) => {
+                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "From UTF-8 Error", error)
+            }
+            Self::ParseInt(error) => RESTErrorResponse::new_response(
                 StatusCode::BAD_REQUEST,
                 "Parse Integer Error",
-                &e.to_string(),
+                error,
             ),
-            Self::ParseSnowflake(e) => (
+            Self::ParseSnowflake(error) => RESTErrorResponse::new_response(
                 StatusCode::BAD_REQUEST,
                 "Parse Snowflake Error",
-                #[allow(clippy::redundant_clone)]
-                &e.clone(),
+                error,
             ),
-        };
-
-        let body = Json(RESTErrorResponse {
-            timestamp: Utc::now().timestamp() as u64,
-            reason: String::from(reason),
-            trace: Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
-        });
-        (status, body).into_response()
+        }
     }
 }
 
@@ -437,6 +403,41 @@ impl IntoResponse for RejectionError {
         match self {
             Self::Multipart(error) => error.into_response(),
             Self::Bytes(error) => error.into_response(),
+        }
+    }
+}
+
+/// ## Authentication Errors
+///
+/// Errors related to authenticating to the server.
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum AuthenticationError {
+    /// ## Missing Credentials
+    ///
+    /// The user did not provide credentials.
+    #[error("Credentials are invalid and/or missing")]
+    MissingCredentials,
+    /// ## Invalid Credentials
+    ///
+    /// The credentials that have been provided are invalid.
+    #[error("Invalid Token and/or mismatched paste ID")]
+    InvalidCredentials,
+}
+
+impl IntoResponse for AuthenticationError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::MissingCredentials => RESTErrorResponse::new_response(
+                StatusCode::UNAUTHORIZED,
+                "Missing Credentials",
+                "Missing Token",
+            ),
+            Self::InvalidCredentials => RESTErrorResponse::new_response(
+                StatusCode::UNAUTHORIZED,
+                "Invalid Credentials",
+                "Invalid Token and/or mismatched paste ID",
+            ),
         }
     }
 }
@@ -506,66 +507,55 @@ pub enum RESTError {
     NotFound(String),
 }
 
+impl RESTError {
+    /// The easier method of using [`Self::InternalServer`] that takes any value that can be displayed.
+    pub fn internal_server<T>(e: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Self::InternalServer(e.to_string())
+    }
+
+    /// The easier method of using [`Self::BadRequest`] that takes any value that can be displayed.
+    pub fn bad_request<T>(e: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Self::BadRequest(e.to_string())
+    }
+
+    /// The easier method of using [`Self::NotFound`] that takes any value that can be displayed.
+    pub fn not_found<T>(e: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        Self::NotFound(e.to_string())
+    }
+}
+
 impl IntoResponse for RESTError {
     fn into_response(self) -> Response {
-        let (status, reason, trace): (StatusCode, &str, &str) = match self {
-            Self::Authentication(error) => return error.into_response(),
-            Self::Database(error) => return error.into_response(),
-            Self::ObjectStore(error) => return error.into_response(),
-            Self::Handler(error) => return error.into_response(),
-            Self::Generate(error) => return error.into_response(),
-            Self::Parse(error) => return error.into_response(),
-            Self::Rejection(error) => return error.into_response(),
-            Self::Multipart(error) => return error.into_response(),
-            Self::InternalServer(ref e) => (
+        match self {
+            Self::Authentication(error) => error.into_response(),
+            Self::Database(error) => error.into_response(),
+            Self::ObjectStore(error) => error.into_response(),
+            Self::Handler(error) => error.into_response(),
+            Self::Generate(error) => error.into_response(),
+            Self::Parse(error) => error.into_response(),
+            Self::Rejection(error) => error.into_response(),
+            Self::Multipart(error) => error.into_response(),
+            Self::InternalServer(ref e) => RESTErrorResponse::new_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error",
                 e,
             ),
-            Self::BadRequest(ref e) => (StatusCode::BAD_REQUEST, "Bad Request", e),
-            Self::NotFound(ref e) => (StatusCode::NOT_FOUND, "Not Found", e),
-        };
-
-        let body = Json(RESTErrorResponse::new(
-            &reason,
-            Some(trace.to_string()), // TODO: This should only appear if the trace is requested (the query contains trace=True)
-        ));
-
-        (status, body).into_response()
-    }
-}
-
-/// ## Authentication Errors
-///
-/// Errors related to authenticating to the server.
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum AuthenticationError {
-    /// ## Missing Credentials
-    ///
-    /// The user did not provide credentials.
-    #[error("Credentials are invalid and/or missing")]
-    MissingCredentials,
-    /// ## Invalid Credentials
-    ///
-    /// The credentials that have been provided are invalid.
-    #[error("Invalid Token and/or mismatched paste ID")]
-    InvalidCredentials,
-}
-
-impl IntoResponse for AuthenticationError {
-    fn into_response(self) -> Response {
-        let (status, reason): (StatusCode, &str) = match self {
-            Self::MissingCredentials => (StatusCode::UNAUTHORIZED, "Missing Credentials"),
-            Self::InvalidCredentials => (
-                StatusCode::UNAUTHORIZED,
-                "Invalid Token and/or mismatched paste ID",
-            ),
-        };
-
-        let body = Json(RESTErrorResponse::new(&reason, None));
-
-        (status, body).into_response()
+            Self::BadRequest(ref e) => {
+                RESTErrorResponse::new_response(StatusCode::BAD_REQUEST, "Bad Request", e)
+            }
+            Self::NotFound(ref e) => {
+                RESTErrorResponse::new_response(StatusCode::NOT_FOUND, "Not Found", e)
+            }
+        }
     }
 }
 
@@ -576,8 +566,8 @@ impl IntoResponse for AuthenticationError {
 pub struct RESTErrorResponse {
     /// The reason for the error.
     reason: String,
-    /// The trace (more information) of the error.
-    trace: Option<String>,
+    /// The message about the error.
+    message: String,
     /// Time since epoch of when the error occurred.
     timestamp: u64,
 }
@@ -586,12 +576,36 @@ impl RESTErrorResponse {
     /// ## New
     ///
     /// Create a new [`RESTErrorResponse`] object.
-    pub fn new(reason: &impl ToString, trace: Option<String>) -> Self {
+    pub fn new<R: std::fmt::Display, M: std::fmt::Display>(reason: R, message: M) -> Self {
         Self {
             reason: reason.to_string(),
-            trace,
+            message: message.to_string(),
             timestamp: Utc::now().timestamp() as u64,
         }
+    }
+
+    /// ## New Response
+    ///
+    /// Creates a new [`Response`] object where the body is a [`RESTErrorResponse`] as JSON.
+    ///
+    /// ## Parameters
+    /// - `status_code` - The status code to set the response to.
+    /// - `reason` - The reason this error occurred.
+    /// - `message` - The full error message.
+    pub fn new_response<R: std::fmt::Display, M: std::fmt::Display>(
+        status_code: StatusCode,
+        reason: R,
+        message: M,
+    ) -> Response {
+        (
+            status_code,
+            Json(Self {
+                reason: reason.to_string(),
+                message: message.to_string(),
+                timestamp: Utc::now().timestamp() as u64,
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -605,8 +619,8 @@ impl RESTErrorResponse {
 
     // Testing item, docs not needed.
     #[expect(missing_docs)]
-    pub fn trace(&self) -> Option<&str> {
-        self.trace.as_deref()
+    pub fn message(&self) -> &str {
+        &self.message
     }
 
     // Testing item, docs not needed.
