@@ -169,6 +169,10 @@ pub async fn post_paste(
 
     paste_token.insert(transaction.as_mut()).await?;
 
+    if let Some(expiry) = paste.expiry() {
+        app.handler().add(paste.id(), *expiry).await?;
+    }
+
     transaction.commit().await?;
 
     let response = ResponsePaste::from_paste(&paste, Some(paste_token), response_documents);
@@ -340,6 +344,10 @@ pub async fn patch_paste(
         }
     }
 
+    if let Some(expiry) = paste.expiry() {
+        app.handler().add(paste.id(), *expiry).await?;
+    }
+
     transaction.commit().await?;
 
     let paste_response = ResponsePaste::from_paste(&paste, None, documents);
@@ -378,9 +386,15 @@ pub async fn delete_paste(
         ));
     }
 
-    if !Paste::delete(app.database().pool(), path.paste_id()).await? {
+    let mut transaction = app.database().pool().begin().await?;
+
+    if !Paste::delete(transaction.as_mut(), path.paste_id()).await? {
         return Err(RESTError::NotFound("The paste was not found.".to_string()));
     }
+
+    app.handler().remove(path.paste_id()).await?;
+
+    transaction.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -5,7 +5,6 @@ pub mod models;
 pub mod rest;
 
 use chrono::Local;
-use models::paste::expiry_tasks;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt::time::FormatTime, layer::SubscriberExt};
 
@@ -60,7 +59,7 @@ async fn main() {
         Err(err) => panic!("Failed to build state: {err}"),
     };
 
-    let expiry_state = state.clone();
+    let handler = state.handler().clone();
 
     let config = state.config().clone();
 
@@ -77,8 +76,6 @@ async fn main() {
         host,
         port
     );
-
-    let expiry_task = tokio::task::spawn(expiry_tasks(expiry_state));
 
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}"))
         .await
@@ -97,8 +94,11 @@ async fn main() {
 
     tokio::select! {
         _ = server.with_graceful_shutdown(shutdown_signal) => {
-            expiry_task.abort();
-            tracing::info!("Successfully shutdown expiry task and server.");
+            if let Err(err) = handler.close().await {
+                tracing::error!("Failed to cleanly shutdown handler. Error: {err}");
+            } else {
+                tracing::info!("Successfully shutdown server.");
+            }
         },
     }
 }

@@ -7,7 +7,10 @@ use sqlx::PgPool;
 #[cfg(test)]
 use crate::app::object_store::TestObjectStore;
 use crate::{
-    app::object_store::{ObjectStore, ObjectStoreExt as _},
+    app::{
+        handler::Handler,
+        object_store::{ObjectStore, ObjectStoreExt as _},
+    },
     models::errors::ApplicationError,
 };
 
@@ -23,6 +26,7 @@ pub struct ApplicationState {
     config: Config,
     database: Database,
     object_store: ObjectStore,
+    handler: Handler,
 }
 
 impl ApplicationState {
@@ -46,6 +50,7 @@ impl ApplicationState {
             config: config.clone(),
             database: Database::new(),
             object_store: ObjectStore::from_config(config.object_store())?,
+            handler: Handler::new(),
         };
 
         state.init().await?;
@@ -58,16 +63,26 @@ impl ApplicationState {
 
     // Testing item, docs not needed.
     #[expect(missing_docs)]
+    #[expect(clippy::missing_errors_doc)]
+    #[expect(clippy::unused_async)]
     #[cfg(test)]
     pub async fn new_tests(
         config: Config,
         pool: PgPool,
         object_store: TestObjectStore,
     ) -> Result<Arc<Self>, ApplicationError> {
+        let database = Database::from_pool(pool);
+        let object_store = ObjectStore::Test(object_store);
+
+        let mut handler = Handler::new();
+
+        handler.start(database.clone(), object_store.clone(), config.clone())?;
+
         Ok(Arc::new(Self {
             config,
-            database: Database::from_pool(pool),
-            object_store: ObjectStore::Test(object_store),
+            database,
+            object_store,
+            handler,
         }))
     }
 
@@ -89,10 +104,22 @@ impl ApplicationState {
         &self.object_store
     }
 
+    /// The handler used by the server.
+    #[inline]
+    pub const fn handler(&self) -> &Handler {
+        &self.handler
+    }
+
     async fn init(&mut self) -> Result<(), ApplicationError> {
         self.database.connect(self.config.database_url()).await?;
 
         self.object_store.create_buckets().await?;
+
+        self.handler.start(
+            self.database.clone(),
+            self.object_store.clone(),
+            self.config.clone(),
+        )?;
 
         Ok(())
     }

@@ -2,13 +2,11 @@
 
 use chrono::Utc;
 use sqlx::{PgExecutor, Postgres, QueryBuilder, Row as _};
-use std::time::Duration;
 
 use crate::{
-    app::{application::App, database::Database, object_store::ObjectStoreExt as _},
+    app::database::Database,
     models::{
         DtUtc,
-        document::Document,
         errors::{AuthenticationError, RESTError},
         undefined::{Undefined, UndefinedOption},
     },
@@ -480,129 +478,4 @@ pub async fn validate_paste(
     }
 
     Ok(paste)
-}
-
-/// ## Expiry Task Message
-///
-/// The messages that can be sent to the expiry task system.
-#[derive(Clone, Debug)]
-pub enum ExpiryTaskMessage {
-    /// Cancel the expiry runners.
-    Cancel,
-}
-
-/// Expiry Tasks.
-///
-/// A task that deletes pastes (and their documents) when required.
-///
-/// ## Arguments
-///
-/// - `app` - The application to use.
-/// - `rx` - The [`Receiver`] to listen for messages.
-#[expect(clippy::cognitive_complexity)]
-pub async fn expiry_tasks(app: App) {
-    const MINUTES: u64 = 50;
-
-    let pastes = match collect_nearby_expired_tasks(app.database()).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to collect all pastes to expire. Reason: {e}");
-            panic!("Failed to collect all pastes to expire. Reason: {e}")
-        }
-    };
-
-    for paste in pastes {
-        let documents = match Document::fetch_all(app.database().pool(), &paste.id).await {
-            Ok(documents) => documents,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to fetch documents for paste {}. Reason: {}",
-                    paste.id,
-                    e
-                );
-                continue;
-            }
-        };
-
-        for document in documents {
-            match app.object_store().delete_document(&document).await {
-                Ok(()) => tracing::trace!(
-                    "Successfully deleted paste document (minio): {}",
-                    document.id()
-                ),
-                Err(e) => tracing::trace!(
-                    "Failed to delete paste document: {} (minio). Reason: {}",
-                    document.id(),
-                    e
-                ),
-            }
-        }
-
-        match Paste::delete(app.database().pool(), &paste.id).await {
-            Ok(_) => tracing::trace!("Successfully deleted paste: {}", paste.id),
-            Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e),
-        }
-    }
-
-    let mut interval = tokio::time::interval(Duration::from_secs(MINUTES * 60));
-
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {
-                let pastes = match collect_nearby_expired_tasks(app.database()).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::error!("Failed to collect all pastes to expire. Reason: {e}");
-                        panic!("Failed to collect all pastes to expire. Reason: {e}")
-                    }
-                };
-
-                // FIXME: Please tell me there is a cleaner way of doing this.
-                for paste in pastes {
-                    let documents = match Document::fetch_all(app.database().pool(), &paste.id).await {
-                        Ok(documents) => documents,
-                        Err(e) => {
-                            tracing::warn!("Failed to fetch documents for paste {}. Reason: {}", paste.id, e);
-                            continue
-                        }
-                    };
-
-                    for document in documents {
-                        match app.object_store().delete_document(&document).await {
-                            Ok(()) => tracing::trace!("Successfully deleted paste document (minio): {}", document.id()),
-                            Err(e) => tracing::trace!("Failed to delete paste document: {} (minio). Reason: {}", document.id(), e)
-                        }
-                    }
-
-                    match Paste::delete(app.database().pool(), &paste.id).await {
-                        Ok(_) => tracing::trace!("Successfully deleted paste: {}", paste.id),
-                        Err(e) => tracing::warn!("Failure to delete paste: {}. Reason: {}", paste.id, e)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Collect Nearby Expired Tasks.
-///
-/// Fetch all the pastes, from EPOCH 0, to the current time.
-///
-/// ## Arguments
-///
-/// - `db` - The database to make the request to.
-///
-/// ## Errors
-///
-/// - [`DatabaseError`] - The database had an error.
-///
-/// ## Returns
-///
-/// A [`Vec`] of [`Paste`]'s.
-async fn collect_nearby_expired_tasks(db: &Database) -> Result<Vec<Paste>, DatabaseError> {
-    let start = chrono::DateTime::from_timestamp(0, 0)
-        .expect("Failed to make a timestamp with the time of 0.");
-    let end = Utc::now();
-
-    Paste::fetch_between(db.pool(), &start, &end).await
 }
