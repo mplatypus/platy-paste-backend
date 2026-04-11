@@ -230,7 +230,7 @@ impl S3ObjectStore {
             .credentials_provider(s3creds)
             .region(Region::new("direct"))
             .force_path_style(true) // MinIO does not support virtual hosts
-            .behavior_version(BehaviorVersion::v2025_08_07())
+            .behavior_version(BehaviorVersion::v2026_01_12())
             .build();
 
         Self {
