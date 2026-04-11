@@ -720,7 +720,8 @@ mod tests {
                     .expect("Failed to find document_1's contents.");
 
                 assert_eq!(
-                    document_1_contents, document_1_content,
+                    document_1_contents,
+                    Some(document_1_content),
                     "Document 1 contents do not match.",
                 );
 
@@ -752,7 +753,8 @@ mod tests {
                     .expect("Failed to find document_1's contents.");
 
                 assert_eq!(
-                    document_2_contents, document_2_content,
+                    document_2_contents,
+                    Some(document_2_content),
                     "Document 2 contents do not match.",
                 );
             }
@@ -1824,7 +1826,11 @@ mod tests {
                         .await
                         .expect("Failed to find updated document from paste.");
 
-                    assert_eq!(content, Bytes::from("test"), "Content does not match.");
+                    assert_eq!(
+                        content,
+                        Some(Bytes::from("test")),
+                        "Content does not match."
+                    );
                 }
 
                 #[sqlx::test(fixtures(
@@ -1947,7 +1953,7 @@ mod tests {
 
                     assert_eq!(
                         content,
-                        Bytes::from("some cool text"),
+                        Some(Bytes::from("some cool text")),
                         "Content does not match."
                     );
                 }
